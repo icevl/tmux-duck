@@ -27,7 +27,6 @@ HEAVY_IMPORT_ROOTS = {
     "transformers",
 }
 SEARCH_IMPLEMENTATION_MODULES = {
-    "client",
     "index",
     "queue",
     "ranking",
@@ -213,21 +212,43 @@ def _imported_modules(path: Path) -> set[str]:
 def _resolve_import_from(path: Path, node: ast.ImportFrom) -> set[str]:
     module = node.module or ""
     if node.level == 0:
-        return {module} if module else set()
+        base = module
+    else:
+        try:
+            relative = path.resolve().relative_to(ROOT / "src")
+        except ValueError:
+            return {module} if module else set()
 
-    search_dir = ROOT / "src" / "codexbot" / "search"
-    try:
-        relative = path.resolve().relative_to(search_dir)
-    except ValueError:
-        return {module} if module else set()
+        package_parts = list(relative.with_suffix("").parts[:-1])
+        trim = max(node.level - 1, 0)
+        if trim:
+            package_parts = package_parts[:-trim]
+        if module:
+            package_parts.extend(module.split("."))
+        base = ".".join(package_parts)
 
-    package_parts = ["codexbot", "search", *relative.parent.parts]
-    trim = max(node.level - 1, 0)
-    if trim:
-        package_parts = package_parts[:-trim]
-    if module:
-        package_parts.extend(module.split("."))
-    return {".".join(package_parts)}
+    modules = {base} if base else set()
+    if base == "codexbot.search":
+        modules.update(
+            f"{base}.{alias.name}" for alias in node.names if alias.name != "*"
+        )
+    return modules
+
+
+def test_relative_import_resolver_catches_web_search_submodules() -> None:
+    """T-01-05: Web API relative imports resolve to full search submodules."""
+    api_path = ROOT / "src" / "codexbot" / "web" / "api.py"
+    tree = ast.parse(
+        "from ..search import client as search_client, retrieval\n",
+        filename=str(api_path),
+    )
+    [node] = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
+
+    assert _resolve_import_from(api_path, node) == {
+        "codexbot.search",
+        "codexbot.search.client",
+        "codexbot.search.retrieval",
+    }
 
 
 def test_web_search_boundary_has_no_heavy_imports() -> None:
