@@ -38,7 +38,7 @@ during startup, backfill, and ongoing indexing.
   uses current tmux `window_id` only as mutable routing metadata.
 - [ ] **CORP-05**: Codi removes, hides, or marks search results stale when their
   source session is no longer an open tmux session.
-- [ ] **CORP-06**: Codi treats the search index as derived and rebuildable from
+- [x] **CORP-06**: Codi treats the search index as derived and rebuildable from
   transcript/session state, not as a source of truth.
 
 ### Index Lifecycle
@@ -180,7 +180,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CORP-03 | Phase 1 | Complete |
 | CORP-04 | Phase 1 | Complete |
 | CORP-05 | Phase 3 | Pending |
-| CORP-06 | Phase 1 | Pending |
+| CORP-06 | Phase 1 | Complete |
 | INDX-01 | Phase 2 | Pending |
 | INDX-02 | Phase 2 | Pending |
 | INDX-03 | Phase 2 | Pending |

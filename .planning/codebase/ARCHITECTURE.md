@@ -64,6 +64,7 @@
 | Transcript monitor | Poll runtime transcript JSONL files by byte offset, parse new entries, and dispatch `NewMessage` events. | `src/codexbot/session_monitor.py` |
 | Monitor persistence | Persist per-runtime transcript file offsets and tracked session metadata. | `src/codexbot/monitor_state.py` |
 | Transcript parsing | Normalize Codex and Claude transcript records into display-ready message/tool/completion entries. | `src/codexbot/transcript_parser.py` |
+| Search contracts/state/provider | Define runtime-neutral search DTOs, reserve derived state under `CODEXBOT_DIR/search`, read active generation metadata, and return typed missing-index status/search responses without worker/model imports. | `src/codexbot/search/` |
 | Terminal parsing | Parse Codex/Claude terminal chrome, status lines, bash output, and interactive UI prompts from tmux pane text. | `src/codexbot/terminal_parser.py` |
 | Telegram delivery queue | Serialize per-user/topic Telegram sends, preserve ordering, coalesce status updates, and retry around flood waits. | `src/codexbot/handlers/message_queue.py` |
 | Telegram UI helpers | Build directory, runtime, window, resume-session, history, interactive prompt, and response rendering flows. | `src/codexbot/handlers/` |
@@ -123,6 +124,13 @@
 - Contains: byte-offset polling, transcript entry normalization, completion detection, UI/status parsing, monitor state persistence.
 - Depends on: Runtime transcript directories, `session_manager`, `tmux_manager`, local JSON files.
 - Used by: `handle_new_message()` in `src/codexbot/bot.py`, `EventBus` in `src/codexbot/web/events.py`, history endpoints in `src/codexbot/web/api.py`.
+
+**Search Contract and Derived-State Layer:**
+- Purpose: Define stable search provenance/status/request/response contracts and isolate search-owned derived metadata from authoritative session and monitor state.
+- Location: `src/codexbot/search/contracts.py`, `src/codexbot/search/state.py`, `src/codexbot/search/client.py`
+- Contains: Pydantic DTOs, `codexbot_dir() / "search"` namespace helpers, active generation metadata reads, and typed missing-index provider responses.
+- Depends on: `pydantic`, `src/codexbot/utils.py`, optional JSON metadata under `$CODEXBOT_DIR/search/`.
+- Used by: Future authenticated search/status API routes and later worker/index phases.
 
 **Delivery Layer:**
 - Purpose: Send parsed updates to external clients without breaking ordering or overloading Telegram.
@@ -184,6 +192,7 @@
 **State Management:**
 - `SessionManager` is a module-level singleton in `src/codexbot/session.py`; it persists schema-versioned window/topic state to `~/.codexbot/state.json`.
 - `MonitorState` in `src/codexbot/monitor_state.py` persists transcript offsets to `~/.codexbot/monitor_state.json`.
+- Search derived metadata lives under `~/.codexbot/search` or `CODEXBOT_DIR/search` through `src/codexbot/search/state.py`; it is rebuildable and must not write to `state.json` or `monitor_state.json`.
 - Telegram delivery state is module-level queue/worker maps keyed by `(user_id, thread_id)` in `src/codexbot/handlers/message_queue.py`.
 - Browser layout and terminal preferences use localStorage in `web-ui/src/App.tsx` and `web-ui/src/components/TerminalPanel.tsx`.
 - WebSocket subscribers and pane stream subscriptions are in-memory only in `src/codexbot/web/events.py` and `src/codexbot/web/streaming.py`.

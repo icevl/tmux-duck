@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-05-21T13:18:35.221Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-05-21T13:31:06.980Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 01 (search-contract-and-status-surface) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-21
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [███░░░░░░░] 33%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 6min | 2 tasks | 3 files |
+| Phase 01 P02 | 6min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,9 @@ Recent decisions affecting current work:
 - [Milestone]: Live indexing batches flush at 32 queued items or 60 seconds.
 - [Phase 01]: SearchRowIdentity derives from transcript provenance and chunk index while routing/display metadata lives in SearchRoutingMetadata.
 - [Phase 01]: Search contracts stay import-light and avoid worker, retrieval, index, embedding, and model dependencies on request-path modules.
+- [Phase 01]: Search-owned runtime state resolves only under codexbot_dir() / 'search' and never writes monitor_state.json. — Keeps derived search metadata isolated from Codi authoritative session and monitor state.
+- [Phase 01]: Missing-index status/search responses are typed normal responses with outcome not_ready and no transcript, secret, or local path leakage. — Lets Web/API callers distinguish not-ready search from transport failures or empty matching results.
+- [Phase 01]: SearchResponse echoes total_results, limit, hits_per_session, and outcome for provider/API consumers. — Aligns the committed contract with the approved plan 01-02 and plan 01-03 response shape.
 
 ### Pending Todos
 
@@ -90,6 +94,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-21T13:18:35.216Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-05-21T13:31:06.976Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None

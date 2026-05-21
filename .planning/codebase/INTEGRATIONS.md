@@ -69,6 +69,7 @@
   - `monitor_state.json`: session JSONL byte offsets managed by `src/codexbot/monitor_state.py` and `src/codexbot/session_monitor.py`.
   - `web_ui_secret`: cookie signing secret generated/persisted by `src/codexbot/config.py`.
   - `web_ui_totp_secret`: TOTP seed generated/persisted by `src/codexbot/config.py`.
+  - `search/`: derived search namespace reserved by `src/codexbot/search/state.py` for generation metadata and future index/queue state; not authoritative and rebuildable from session/transcript sources.
   - `skill_hints.json`: cached Codex skill hints managed by `src/codexbot/skill_hints.py`.
   - `codexbot.lock`: single-instance lock managed by `src/codexbot/main.py` and `src/codexbot/utils.py`.
 

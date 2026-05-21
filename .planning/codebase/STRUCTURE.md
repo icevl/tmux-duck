@@ -29,6 +29,7 @@ codi/
 |       |-- monitor_state.py          # Monitor offset persistence
 |       |-- transcript_parser.py      # Codex/Claude transcript normalization
 |       |-- terminal_parser.py        # Terminal UI/status parsing
+|       |-- search/                   # Search contracts, derived state helpers, and request-path provider
 |       |-- handlers/                 # Telegram delivery and interaction helpers
 |       |-- runtimes/                 # Codex and Claude runtime adapters
 |       |-- web/                      # FastAPI app, auth, events, streaming
@@ -67,6 +68,11 @@ codi/
 - Purpose: Encapsulate agent-runtime differences so Codex and Claude Code can share session, tmux, web, and Telegram flows.
 - Contains: Runtime protocol, runtime registry, Codex adapter, Claude adapter.
 - Key files: `src/codexbot/runtimes/base.py`, `src/codexbot/runtimes/__init__.py`, `src/codexbot/runtimes/codex.py`, `src/codexbot/runtimes/claude.py`.
+
+**`src/codexbot/search/`:**
+- Purpose: Lightweight search contracts and request-path-safe derived state/provider helpers for the session search feature.
+- Contains: Pydantic DTOs, search-owned state path helpers, generation metadata reads, and typed missing-index provider responses.
+- Key files: `src/codexbot/search/contracts.py`, `src/codexbot/search/state.py`, `src/codexbot/search/client.py`.
 
 **`src/codexbot/web/`:**
 - Purpose: Browser channel backend: FastAPI application, web authentication, WebSocket event bus, pane streaming, screenshots, and update checks.
@@ -158,6 +164,9 @@ codi/
 - `src/codexbot/tmux_manager.py`: tmux session/window/pane operations.
 - `src/codexbot/session_monitor.py`: Transcript monitoring and event dispatch.
 - `src/codexbot/transcript_parser.py`: Shared transcript normalization.
+- `src/codexbot/search/contracts.py`: Runtime-neutral search provenance, routing, request, status, and response DTOs.
+- `src/codexbot/search/state.py`: Search-owned derived state namespace and generation metadata reads.
+- `src/codexbot/search/client.py`: Request-path-safe missing-index status/search provider.
 - `src/codexbot/terminal_parser.py`: Terminal status, command, and interactive UI parsing.
 - `src/codexbot/runtimes/base.py`: Runtime adapter contract.
 - `src/codexbot/runtimes/codex.py`: Codex adapter.
@@ -174,6 +183,8 @@ codi/
 - `tests/codexbot/test_session.py`: Session state and binding behavior.
 - `tests/codexbot/test_session_monitor.py`: Monitor behavior.
 - `tests/codexbot/test_transcript_parser.py`: Transcript normalization behavior.
+- `tests/codexbot/test_search_contracts.py`: Search provenance, identity, request bounds, lifecycle, and import-boundary contracts.
+- `tests/codexbot/test_search_state.py`: Search state namespace, generation metadata, monitor isolation, and typed missing-index provider behavior.
 - `tests/codexbot/test_terminal_parser.py`: Terminal parser behavior.
 - `tests/codexbot/test_web_api.py`: FastAPI route behavior.
 - `tests/codexbot/test_web_events.py`: Web event behavior.

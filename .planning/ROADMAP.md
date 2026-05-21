@@ -43,7 +43,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — Reserve search-owned derived state and typed missing-index provider behavior.
+- [x] 01-02-PLAN.md — Reserve search-owned derived state and typed missing-index provider behavior.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -139,7 +139,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Search Contract and Status Surface | 1/3 | In Progress|  |
+| 1. Search Contract and Status Surface | 2/3 | In Progress|  |
 | 2. Worker Skeleton, Backfill, and Rebuild Path | 0/TBD | Not started | - |
 | 3. Live Queue and Convergence | 0/TBD | Not started | - |
 | 4. LanceDB Hybrid Retrieval and Ranking | 0/TBD | Not started | - |
