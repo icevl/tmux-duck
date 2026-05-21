@@ -9,7 +9,11 @@ from pydantic import ValidationError
 
 from codexbot.utils import atomic_write_json, codexbot_dir
 
-from .contracts import SearchGenerationMetadata, SearchWorkerStatus
+from .contracts import (
+    SearchBackfillManifest,
+    SearchGenerationMetadata,
+    SearchWorkerStatus,
+)
 
 
 SEARCH_SCHEMA_VERSION = 1
@@ -90,6 +94,62 @@ def read_generation_metadata() -> SearchGenerationMetadata | None:
     return metadata
 
 
+def read_generation_manifest(generation_id: str) -> SearchBackfillManifest | None:
+    """Read a completed generation manifest, ignoring incomplete generations."""
+    path = generation_manifest_path(generation_id)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(raw, dict):
+        return None
+
+    try:
+        manifest = SearchBackfillManifest(**raw)
+    except ValidationError:
+        return None
+
+    if manifest.schema_version != SEARCH_SCHEMA_VERSION:
+        return None
+    if manifest.generation.schema_version != SEARCH_SCHEMA_VERSION:
+        return None
+    if manifest.generation.generation_id != generation_id:
+        return None
+    if not manifest.completed:
+        return None
+    return manifest
+
+
+def write_generation_manifest(manifest: SearchBackfillManifest) -> None:
+    """Atomically persist a generation manifest under search-owned state."""
+    atomic_write_json(
+        generation_manifest_path(manifest.generation.generation_id),
+        manifest.model_dump(mode="json"),
+    )
+
+
+def activate_generation(
+    manifest: SearchBackfillManifest,
+) -> SearchGenerationMetadata:
+    """Atomically mark a completed inactive generation as the active one."""
+    generation_id = manifest.generation.generation_id
+    if manifest.schema_version != SEARCH_SCHEMA_VERSION:
+        raise ValueError("generation manifest schema is unsupported")
+    if manifest.generation.schema_version != SEARCH_SCHEMA_VERSION:
+        raise ValueError("generation metadata schema is unsupported")
+    if not manifest.completed:
+        raise ValueError("generation manifest is incomplete")
+    if read_generation_manifest(generation_id) is None:
+        raise ValueError("generation manifest is missing or incomplete")
+    if not generation_documents_path(generation_id).exists():
+        raise ValueError("generation documents are missing")
+
+    active = manifest.generation.model_copy(update={"active": True})
+    atomic_write_json(active_generation_metadata_path(), active.model_dump(mode="json"))
+    return active
+
+
 def read_worker_status() -> SearchWorkerStatus | None:
     """Read worker status, treating missing or invalid data as absent."""
     path = worker_status_path()
@@ -126,9 +186,12 @@ __all__ = [
     "generation_manifest_path",
     "generation_metadata_path",
     "generations_dir",
+    "activate_generation",
+    "read_generation_manifest",
     "read_generation_metadata",
     "read_worker_status",
     "search_dir",
     "worker_status_path",
+    "write_generation_manifest",
     "write_worker_status",
 ]

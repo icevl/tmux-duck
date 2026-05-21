@@ -143,6 +143,7 @@ class SearchBackfillManifest(BaseModel):
     generation: SearchGenerationMetadata
     counters: SearchCounters
     document_count: int = Field(ge=0)
+    completed: bool = True
     errors: list[str] = Field(default_factory=list, max_length=1000)
 
 

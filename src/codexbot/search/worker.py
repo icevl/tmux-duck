@@ -12,9 +12,9 @@ import logging
 from datetime import UTC, datetime
 from typing import Sequence
 
-from .contracts import SearchWorkerStatus
-from .state import write_worker_status
 from .backfill import materialize_initial_backfill
+from .contracts import SearchWorkerStatus
+from .state import activate_generation, write_worker_status
 
 logger = logging.getLogger(__name__)
 
@@ -27,23 +27,24 @@ def _failed_error_summary(exc: BaseException) -> str:
     return f"{type(exc).__name__}: search backfill failed"
 
 
-def run_initial_backfill() -> None:
-    """Materialize an inactive initial backfill generation."""
+def _run_generation_task(current_task: str) -> None:
+    """Materialize and activate a fresh generation for a local worker task."""
     write_worker_status(
         SearchWorkerStatus(
             status="running",
-            current_task="initial_backfill",
+            current_task=current_task,
             heartbeat_at=_now_iso(),
         )
     )
     try:
         manifest = asyncio.run(materialize_initial_backfill())
+        activate_generation(manifest)
     except Exception as exc:
-        logger.exception("search_initial_backfill_failed")
+        logger.exception("search_generation_task_failed task=%s", current_task)
         write_worker_status(
             SearchWorkerStatus(
                 status="failed",
-                current_task="initial_backfill",
+                current_task=current_task,
                 heartbeat_at=_now_iso(),
                 recent_error=_failed_error_summary(exc),
             )
@@ -53,11 +54,21 @@ def run_initial_backfill() -> None:
     write_worker_status(
         SearchWorkerStatus(
             status="completed",
-            current_task="initial_backfill",
+            current_task=current_task,
             heartbeat_at=_now_iso(),
             counters=manifest.counters,
         )
     )
+
+
+def run_initial_backfill() -> None:
+    """Materialize and activate an initial backfill generation."""
+    _run_generation_task("initial_backfill")
+
+
+def run_rebuild() -> None:
+    """Materialize and activate a fresh explicit rebuild generation."""
+    _run_generation_task("rebuild")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -66,13 +77,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         "command",
         nargs="?",
         default="initial-backfill",
-        choices=("initial-backfill",),
+        choices=("initial-backfill", "rebuild"),
     )
     args = parser.parse_args(argv)
 
     if args.command == "initial-backfill":
         try:
             run_initial_backfill()
+        except Exception:
+            return 1
+        return 0
+    if args.command == "rebuild":
+        try:
+            run_rebuild()
         except Exception:
             return 1
         return 0
@@ -83,4 +100,4 @@ if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
 
 
-__all__ = ["main", "run_initial_backfill"]
+__all__ = ["main", "run_initial_backfill", "run_rebuild"]

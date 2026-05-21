@@ -9,7 +9,11 @@ from .contracts import (
     SearchStatusResponse,
     SearchWorkerStatus,
 )
-from .state import read_generation_metadata, read_worker_status
+from .state import (
+    read_generation_manifest,
+    read_generation_metadata,
+    read_worker_status,
+)
 
 
 MISSING_INDEX_REASON = "search index has not been built"
@@ -70,6 +74,11 @@ def get_status(open_session_count: int | None = None) -> SearchStatusResponse:
             generation=None,
         )
 
+    manifest = read_generation_manifest(generation.generation_id)
+    counters = _counters(
+        open_session_count,
+        manifest.counters if manifest is not None else None,
+    )
     return SearchStatusResponse(
         state="unavailable",
         available=False,

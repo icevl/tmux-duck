@@ -98,6 +98,32 @@ def test_generation_metadata_reader_rejects_non_active_or_invalid_metadata(
     metadata_path.write_text("{invalid json", encoding="utf-8")
     assert read_generation_metadata() is None
 
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": SEARCH_SCHEMA_VERSION + 1,
+                "generation_id": "gen-newer",
+                "created_at": "2026-05-21T13:00:00Z",
+                "active": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert read_generation_metadata() is None
+
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": SEARCH_SCHEMA_VERSION,
+                "generation_id": "gen-inactive",
+                "created_at": "2026-05-21T13:00:00Z",
+                "active": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert read_generation_metadata() is None
+
 
 def test_activate_generation_is_success_only_and_atomic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -145,32 +171,6 @@ def test_incomplete_generation_manifest_is_ignored_by_recovery_and_status(
     assert status["state"] == "missing"
     assert status["available"] is False
     assert status["generation"] is None
-
-    metadata_path.write_text(
-        json.dumps(
-            {
-                "schema_version": SEARCH_SCHEMA_VERSION + 1,
-                "generation_id": "gen-newer",
-                "created_at": "2026-05-21T13:00:00Z",
-                "active": True,
-            }
-        ),
-        encoding="utf-8",
-    )
-    assert read_generation_metadata() is None
-
-    metadata_path.write_text(
-        json.dumps(
-            {
-                "schema_version": SEARCH_SCHEMA_VERSION,
-                "generation_id": "gen-inactive",
-                "created_at": "2026-05-21T13:00:00Z",
-                "active": False,
-            }
-        ),
-        encoding="utf-8",
-    )
-    assert read_generation_metadata() is None
 
 
 def test_active_generation_without_query_backend_is_unavailable(
