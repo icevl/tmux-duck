@@ -108,7 +108,7 @@ during startup, backfill, and ongoing indexing.
 - [ ] **OPS-01**: Codi runs embedding, indexing, LanceDB writes, backfill,
   search queries, and index maintenance outside the main FastAPI/event delivery
   hot path.
-- [ ] **OPS-02**: Codi exposes authenticated search and search-status API
+- [x] **OPS-02**: Codi exposes authenticated search and search-status API
   surfaces without importing embedding models in request handlers.
 - [ ] **OPS-03**: Codi reports worker heartbeat, queue lag, indexed/open session
   counts, backfill progress, and recent indexing errors to the Web UI.
@@ -205,7 +205,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WEB-06 | Phase 5 | Pending |
 | WEB-07 | Phase 5 | Pending |
 | OPS-01 | Phase 4 | Pending |
-| OPS-02 | Phase 1 | Pending |
+| OPS-02 | Phase 1 | Complete |
 | OPS-03 | Phase 6 | Pending |
 | OPS-04 | Phase 6 | Pending |
 | OPS-05 | Phase 6 | Pending |

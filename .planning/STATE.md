@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-05-21T13:31:06.980Z"
+status: verifying
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-05-21T13:42:11.662Z"
 last_activity: 2026-05-21
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 17
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 
 Phase: 01 (search-contract-and-status-surface) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-21
 
-Progress: [███████░░░] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [███████░░░] 67%
 *Updated after each plan completion*
 | Phase 01 P01 | 6min | 2 tasks | 3 files |
 | Phase 01 P02 | 6min | 2 tasks | 5 files |
+| Phase 01 P03 | 4min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Search-owned runtime state resolves only under codexbot_dir() / 'search' and never writes monitor_state.json. — Keeps derived search metadata isolated from Codi authoritative session and monitor state.
 - [Phase 01]: Missing-index status/search responses are typed normal responses with outcome not_ready and no transcript, secret, or local path leakage. — Lets Web/API callers distinguish not-ready search from transport failures or empty matching results.
 - [Phase 01]: SearchResponse echoes total_results, limit, hits_per_session, and outcome for provider/API consumers. — Aligns the committed contract with the approved plan 01-02 and plan 01-03 response shape.
+- [Phase 01]: Search API routes use existing Web UI auth and return typed 200 missing/not-ready responses for first-run search state. — Keeps search status as a normal authenticated API contract while indexing is absent.
+- [Phase 01]: Search status derives open-session counters from current tmux windows at request time and omits counters if tmux listing fails. — Keeps routing/status tied to live tmux state without exposing local tmux errors.
+- [Phase 01]: FastAPI search handlers import only lightweight search contracts/provider stubs, keeping model and index dependencies outside request handling. — Preserves OPS-02 hot-path isolation for future worker and retrieval phases.
 
 ### Pending Todos
 
@@ -94,6 +98,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-21T13:31:06.976Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-05-21T13:42:11.657Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
