@@ -28,6 +28,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { RenameDialog } from "./components/RenameDialog";
 import { Toast } from "./components/Toast";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { DuckLogo } from "./components/DuckLogo";
 
 type AuthState = "loading" | "anon" | "authed";
 
@@ -727,7 +728,10 @@ export function App() {
     return (
       <div className="login-shell">
         <div className="login-card">
-          <h1>Codi</h1>
+          <div className="login-brand">
+            <DuckLogo width={64} height={64} />
+            <h1>TmuxDuck</h1>
+          </div>
           <p className="subtitle">Loading…</p>
         </div>
       </div>
@@ -924,18 +928,13 @@ export function App() {
               <div className="name">Codi</div>
             </div>
           </div>
-          {sessionsLoaded ? (
+          {sessionsLoaded && (
             <div className="empty-state">
               <h2>No active sessions</h2>
               <p>Create a new one to get started.</p>
               <button className="primary" onClick={() => setCreating(true)}>
                 + New session
               </button>
-            </div>
-          ) : (
-            <div className="empty-state">
-              <div className="empty-state-spinner" />
-              <p>Loading sessions…</p>
             </div>
           )}
         </main>

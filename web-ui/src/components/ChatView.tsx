@@ -39,6 +39,7 @@ import {
 import { SkillsModal } from "./SkillsModal";
 import { Markdown } from "./Markdown";
 import { RuntimeIcon } from "./Sidebar";
+import { DuckLoader } from "./DuckLoader";
 
 const ICON = 16;
 
@@ -2080,10 +2081,7 @@ export function ChatView({
               <p>Send your first prompt below.</p>
             </div>
           ) : (
-            <div className="empty-state">
-              <div className="empty-state-spinner" />
-              <p>Loading messages…</p>
-            </div>
+            <DuckLoader />
           )
         ) : (
           <div className="messages-list" ref={messagesListRef}>
