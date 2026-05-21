@@ -14,6 +14,8 @@ import {
   Bot,
   Camera,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Eraser,
   GitCommit,
   Keyboard,
@@ -140,15 +142,33 @@ type ChoicePromptOption = {
   description: string;
   value: string;
 };
+type ChoicePromptQuestion = {
+  title: string;
+  options: ChoicePromptOption[];
+};
 type ChoicePrompt = {
   kind: "plan" | "request";
   title: string;
+  questions: ChoicePromptQuestion[];
+};
+type ChoicePageState = {
+  questionIndex: number;
+  optionPageIndex: number;
+};
+type ChoicePromptPage = ChoicePageState & {
+  question: ChoicePromptQuestion;
+  totalQuestions: number;
+  optionPageCount: number;
+  totalOptions: number;
+  startOption: number;
+  endOption: number;
   options: ChoicePromptOption[];
 };
 
 const HISTORY_CACHE_MAX_WINDOWS = 8;
 const HISTORY_CACHE_MAX_MESSAGES = 2000;
 const BOTTOM_STICKY_THRESHOLD_PX = 48;
+const CHOICE_OPTIONS_PER_PAGE = 6;
 
 let _clientIdCounter = 0;
 let _messageOrderCounter = 0;
@@ -264,6 +284,24 @@ function normalizePromptOptions(
   return options.length > 0 ? options : null;
 }
 
+function normalizePromptQuestions(rawQuestions: unknown): ChoicePromptQuestion[] | null {
+  if (!Array.isArray(rawQuestions)) return null;
+  const questions: ChoicePromptQuestion[] = [];
+  for (const item of rawQuestions) {
+    if (!isRecord(item) || hasBlockingPromptFlag(item)) return null;
+    const title =
+      stringValue(item.question) ||
+      stringValue(item.prompt) ||
+      stringValue(item.title) ||
+      stringValue(item.header);
+    const rawOptions = item.options ?? item.choices ?? item.items;
+    const options = normalizePromptOptions(rawOptions);
+    if (!title || !options) return null;
+    questions.push({ title, options });
+  }
+  return questions.length > 0 ? questions : null;
+}
+
 function choicePromptForMessage(m: SessionMessage): ChoicePrompt | null {
   if (m.role !== "assistant" || m.content_type !== "tool_use") return null;
   const toolName = m.tool_name ?? "";
@@ -272,16 +310,21 @@ function choicePromptForMessage(m: SessionMessage): ChoicePrompt | null {
     return {
       kind: "plan",
       title: "Plan decision",
-      options: [
+      questions: [
         {
-          label: "Yes, implement this plan",
-          description: "Switch to Default and start coding.",
-          value: "1",
-        },
-        {
-          label: "No, stay in Plan mode",
-          description: "Continue planning with the model.",
-          value: "2",
+          title: "Plan decision",
+          options: [
+            {
+              label: "Yes, implement this plan",
+              description: "Switch to Default and start coding.",
+              value: "1",
+            },
+            {
+              label: "No, stay in Plan mode",
+              description: "Continue planning with the model.",
+              value: "2",
+            },
+          ],
         },
       ],
     };
@@ -296,13 +339,15 @@ function choicePromptForMessage(m: SessionMessage): ChoicePrompt | null {
 
   let title = "";
   let rawOptions: unknown;
-  const questions = m.tool_input.questions;
-  if (Array.isArray(questions)) {
-    if (questions.length !== 1) return null;
-    const question = questions[0];
-    if (!isRecord(question) || hasBlockingPromptFlag(question)) return null;
-    title = stringValue(question.question);
-    rawOptions = question.options;
+  const questions = normalizePromptQuestions(
+    m.tool_input.questions ?? m.tool_input.pages,
+  );
+  if (questions) {
+    return {
+      kind: "request",
+      title: questions.length === 1 ? questions[0].title : "User input required",
+      questions,
+    };
   }
 
   if (!title) {
@@ -316,22 +361,180 @@ function choicePromptForMessage(m: SessionMessage): ChoicePrompt | null {
 
   const options = normalizePromptOptions(rawOptions);
   if (!title || !options) return null;
-  return { kind: "request", title, options };
+  return {
+    kind: "request",
+    title,
+    questions: [{ title, options }],
+  };
 }
 
 function promptMessageKey(m: ChatMessage): string {
   return `${m.tool_use_id || "tool"}:${m._clientId}`;
 }
 
+function numericChoiceValue(text: string): string | null {
+  const match = text.trim().match(/^\d+$/);
+  return match?.[0] ?? null;
+}
+
+function optionForValue(
+  prompt: ChoicePrompt,
+  questionIndex: number,
+  value: string,
+): ChoicePromptOption | null {
+  const question = prompt.questions[questionIndex];
+  if (!question) return null;
+  return question.options.find((option) => option.value === value) ?? null;
+}
+
+function choiceSelectionText(
+  prompt: ChoicePrompt,
+  questionIndex: number,
+  option: ChoicePromptOption,
+): string {
+  const prefix =
+    prompt.questions.length > 1
+      ? `Selected question ${questionIndex + 1}/${prompt.questions.length}, option ${option.value}`
+      : `Selected option ${option.value}`;
+  return option.description
+    ? `${prefix}: ${option.label} - ${option.description}`
+    : `${prefix}: ${option.label}`;
+}
+
+function promptProgress(
+  messages: ChatMessage[],
+  promptIndex: number,
+  prompt: ChoicePrompt,
+): { selectionCount: number; active: boolean } {
+  let selectionCount = 0;
+  for (let i = promptIndex + 1; i < messages.length; i += 1) {
+    const m = messages[i];
+    if (m.pending) continue;
+    if (m.content_type === "tool_result" || m.role === "assistant") {
+      return { selectionCount, active: false };
+    }
+    if (m.role !== "user") continue;
+    const value = numericChoiceValue(m.text);
+    if (!value) return { selectionCount, active: false };
+    const option = optionForValue(prompt, selectionCount, value);
+    if (!option) return { selectionCount, active: false };
+    selectionCount += 1;
+    if (selectionCount >= prompt.questions.length) {
+      return { selectionCount, active: false };
+    }
+  }
+  return { selectionCount, active: true };
+}
+
 function latestActiveChoiceMessageKey(messages: ChatMessage[]): string | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i];
-    if (m.role === "user" || m.content_type === "tool_result") return null;
     if (m.pending) continue;
     const prompt = choicePromptForMessage(m);
-    if (prompt) return promptMessageKey(m);
+    if (prompt) {
+      return promptProgress(messages, i, prompt).active ? promptMessageKey(m) : null;
+    }
+    if (m.content_type === "tool_result" || m.role === "assistant") return null;
   }
   return null;
+}
+
+function choiceSelectionTexts(messages: ChatMessage[]): Map<string, string> {
+  const result = new Map<string, string>();
+  for (let i = 0; i < messages.length; i += 1) {
+    const prompt = choicePromptForMessage(messages[i]);
+    if (!prompt) continue;
+    let questionIndex = 0;
+    for (
+      let j = i + 1;
+      j < messages.length && questionIndex < prompt.questions.length;
+      j += 1
+    ) {
+      const m = messages[j];
+      if (m.pending) continue;
+      if (m.content_type === "tool_result" || m.role === "assistant") break;
+      if (m.role !== "user") continue;
+      const value = numericChoiceValue(m.text);
+      if (!value) break;
+      const option = optionForValue(prompt, questionIndex, value);
+      if (!option) break;
+      result.set(m._clientId, choiceSelectionText(prompt, questionIndex, option));
+      questionIndex += 1;
+    }
+  }
+  return result;
+}
+
+function choicePromptPage(
+  prompt: ChoicePrompt,
+  state: ChoicePageState | undefined,
+): ChoicePromptPage {
+  const questionIndex = Math.max(
+    0,
+    Math.min(state?.questionIndex ?? 0, prompt.questions.length - 1),
+  );
+  const question = prompt.questions[questionIndex];
+  const optionPageCount = Math.max(
+    1,
+    Math.ceil(question.options.length / CHOICE_OPTIONS_PER_PAGE),
+  );
+  const optionPageIndex = Math.max(
+    0,
+    Math.min(state?.optionPageIndex ?? 0, optionPageCount - 1),
+  );
+  const startOption = optionPageIndex * CHOICE_OPTIONS_PER_PAGE;
+  const endOption = Math.min(
+    startOption + CHOICE_OPTIONS_PER_PAGE,
+    question.options.length,
+  );
+  return {
+    questionIndex,
+    optionPageIndex,
+    question,
+    totalQuestions: prompt.questions.length,
+    optionPageCount,
+    totalOptions: question.options.length,
+    startOption,
+    endOption,
+    options: question.options.slice(startOption, endOption),
+  };
+}
+
+function nextChoicePage(prompt: ChoicePrompt, page: ChoicePromptPage) {
+  if (page.optionPageIndex < page.optionPageCount - 1) {
+    return {
+      questionIndex: page.questionIndex,
+      optionPageIndex: page.optionPageIndex + 1,
+    };
+  }
+  if (page.questionIndex < prompt.questions.length - 1) {
+    return { questionIndex: page.questionIndex + 1, optionPageIndex: 0 };
+  }
+  return null;
+}
+
+function previousChoicePage(page: ChoicePromptPage) {
+  if (page.optionPageIndex > 0) {
+    return {
+      questionIndex: page.questionIndex,
+      optionPageIndex: page.optionPageIndex - 1,
+    };
+  }
+  if (page.questionIndex > 0) {
+    return { questionIndex: page.questionIndex - 1, optionPageIndex: 0 };
+  }
+  return null;
+}
+
+function choicePageLabel(page: ChoicePromptPage): string {
+  const parts: string[] = [];
+  if (page.totalQuestions > 1) {
+    parts.push(`Question ${page.questionIndex + 1}/${page.totalQuestions}`);
+  }
+  if (page.optionPageCount > 1) {
+    parts.push(`Options ${page.startOption + 1}-${page.endOption}/${page.totalOptions}`);
+  }
+  return parts.join(" · ");
 }
 
 function parseMessageTimestamp(value: string | undefined): number | null {
@@ -573,19 +776,30 @@ function formatMessageTime(iso: string | undefined): {
 // Markdown each time and large chats would lock the main thread.
 const MessageBubble = memo(function MessageBubble({
   m,
+  displayText,
   choicePrompt,
+  choicePage,
   choicePending = false,
   choiceDisabled = false,
+  onChoicePageChange,
   onSelectChoice,
 }: {
   m: ChatMessage;
+  displayText?: string;
   choicePrompt?: ChoicePrompt;
+  choicePage?: ChoicePromptPage;
   choicePending?: boolean;
   choiceDisabled?: boolean;
+  onChoicePageChange?: (page: ChoicePageState) => void;
   onSelectChoice?: (option: ChoicePromptOption) => void;
 }) {
   const t = formatMessageTime(m.timestamp);
   const isUser = m.role === "user" && m.content_type !== "tool_result";
+  const previousPage =
+    choicePrompt && choicePage ? previousChoicePage(choicePage) : null;
+  const nextPage =
+    choicePrompt && choicePage ? nextChoicePage(choicePrompt, choicePage) : null;
+  const pageLabel = choicePage ? choicePageLabel(choicePage) : "";
   return (
     <div className={`message-line ${isUser ? "user" : "assistant"}`}>
       <div className="message-avatar" aria-hidden="true">
@@ -608,12 +822,39 @@ const MessageBubble = memo(function MessageBubble({
             </time>
           )}
         </div>
-        <Markdown text={m.text} />
-        {choicePrompt && onSelectChoice && (
+        <Markdown text={displayText ?? m.text} />
+        {choicePrompt && choicePage && onSelectChoice && (
           <div className={`choice-panel ${choicePrompt.kind}`}>
-            <div className="choice-panel-title">{choicePrompt.title}</div>
+            <div className="choice-panel-header">
+              <div>
+                <div className="choice-panel-title">{choicePage.question.title}</div>
+                {pageLabel && <div className="choice-page-label">{pageLabel}</div>}
+              </div>
+              {(previousPage || nextPage) && onChoicePageChange && (
+                <div className="choice-page-controls">
+                  <button
+                    type="button"
+                    className="choice-page-button"
+                    aria-label="Previous choice page"
+                    disabled={choiceDisabled || choicePending || !previousPage}
+                    onClick={() => previousPage && onChoicePageChange(previousPage)}
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="choice-page-button"
+                    aria-label="Next choice page"
+                    disabled={choiceDisabled || choicePending || !nextPage}
+                    onClick={() => nextPage && onChoicePageChange(nextPage)}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
             <div className="choice-options">
-              {choicePrompt.options.map((option) => (
+              {choicePage.options.map((option) => (
                 <button
                   key={option.value}
                   type="button"
@@ -705,6 +946,9 @@ export function ChatView({
   const [slashRange, setSlashRange] = useState<SlashTokenRange | null>(null);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
   const [choiceSendingKey, setChoiceSendingKey] = useState<string | null>(null);
+  const [choicePageByKey, setChoicePageByKey] = useState<
+    Record<string, ChoicePageState>
+  >({});
   const [sending, setSending] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(session.name);
@@ -852,6 +1096,11 @@ export function ChatView({
     void loadSkillHints();
   }, [loadSkillHints]);
 
+  useEffect(() => {
+    setChoicePageByKey({});
+    setChoiceSendingKey(null);
+  }, [session.window_id]);
+
   const slashHints = useMemo(() => {
     if (!slashRange) return [];
     if (slashRange.trigger === "$") {
@@ -886,6 +1135,24 @@ export function ChatView({
         : null,
     [activeChoiceMessageKey, messages],
   );
+  const activeChoiceMessageIndex = useMemo(
+    () =>
+      activeChoiceMessage
+        ? messages.findIndex((m) => m._clientId === activeChoiceMessage._clientId)
+        : -1,
+    [activeChoiceMessage, messages],
+  );
+  const activeChoicePrompt = activeChoiceMessage
+    ? choicePromptForMessage(activeChoiceMessage)
+    : null;
+  const activeChoiceProgress =
+    activeChoicePrompt && activeChoiceMessageIndex >= 0
+      ? promptProgress(messages, activeChoiceMessageIndex, activeChoicePrompt)
+      : null;
+  const selectionTextByMessageId = useMemo(
+    () => choiceSelectionTexts(messages),
+    [messages],
+  );
   const displayMessages = useMemo(
     () =>
       activeChoiceMessage
@@ -893,6 +1160,25 @@ export function ChatView({
         : messages,
     [activeChoiceMessage, messages],
   );
+
+  useEffect(() => {
+    if (!activeChoiceMessageKey || !activeChoicePrompt || !activeChoiceProgress) {
+      return;
+    }
+    setChoicePageByKey((current) => {
+      if (current[activeChoiceMessageKey]) return current;
+      return {
+        ...current,
+        [activeChoiceMessageKey]: {
+          questionIndex: Math.min(
+            activeChoiceProgress.selectionCount,
+            activeChoicePrompt.questions.length - 1,
+          ),
+          optionPageIndex: 0,
+        },
+      };
+    });
+  }, [activeChoiceMessageKey, activeChoiceProgress, activeChoicePrompt]);
 
   useEffect(() => {
     setSlashActiveIndex((idx) =>
@@ -1674,13 +1960,48 @@ export function ChatView({
   );
 
   const handleChoiceSelect = useCallback(
-    async (m: ChatMessage, option: ChoicePromptOption) => {
+    async (
+      m: ChatMessage,
+      prompt: ChoicePrompt,
+      page: ChoicePromptPage,
+      option: ChoicePromptOption,
+    ) => {
       const key = promptMessageKey(m);
       setChoiceSendingKey(key);
       try {
         await api.sendText(session.window_id, option.value, true);
+        if (page.questionIndex < prompt.questions.length - 1) {
+          setChoicePageByKey((current) => ({
+            ...current,
+            [key]: {
+              questionIndex: page.questionIndex + 1,
+              optionPageIndex: 0,
+            },
+          }));
+        }
       } catch (err) {
         setChoiceSendingKey((current) => (current === key ? null : current));
+        showToast((err as Error).message, "error");
+      }
+    },
+    [session.window_id, showToast],
+  );
+
+  const handleChoicePageChange = useCallback(
+    async (
+      m: ChatMessage,
+      currentPage: ChoicePromptPage,
+      nextPage: ChoicePageState,
+    ) => {
+      const key = promptMessageKey(m);
+      const questionDelta = nextPage.questionIndex - currentPage.questionIndex;
+      try {
+        const keyName = questionDelta > 0 ? "Right" : "Left";
+        for (let i = 0; i < Math.abs(questionDelta); i += 1) {
+          await api.sendKey(session.window_id, keyName);
+        }
+        setChoicePageByKey((current) => ({ ...current, [key]: nextPage }));
+      } catch (err) {
         showToast((err as Error).message, "error");
       }
     },
@@ -2093,6 +2414,10 @@ export function ChatView({
               const choicePrompt = choicePromptForMessage(m) ?? undefined;
               const choiceKey = choicePrompt ? promptMessageKey(m) : null;
               const isActiveChoice = choiceKey === activeChoiceMessageKey;
+              const choicePage =
+                choicePrompt && choiceKey
+                  ? choicePromptPage(choicePrompt, choicePageByKey[choiceKey])
+                  : undefined;
               const cls =
                 "messages-row" +
                 (isFirst ? " messages-row-first" : "") +
@@ -2105,12 +2430,21 @@ export function ChatView({
                 >
                   <MessageBubble
                     m={m}
+                    displayText={selectionTextByMessageId.get(m._clientId)}
                     choicePrompt={isActiveChoice ? choicePrompt : undefined}
+                    choicePage={isActiveChoice ? choicePage : undefined}
                     choicePending={choiceKey === choiceSendingKey}
                     choiceDisabled={
                       choiceSendingKey !== null && choiceKey !== choiceSendingKey
                     }
-                    onSelectChoice={(option) => handleChoiceSelect(m, option)}
+                    onChoicePageChange={(page) => {
+                      if (choicePage) handleChoicePageChange(m, choicePage, page);
+                    }}
+                    onSelectChoice={(option) => {
+                      if (choicePrompt && choicePage) {
+                        handleChoiceSelect(m, choicePrompt, choicePage, option);
+                      }
+                    }}
                   />
                 </div>
               );
@@ -2131,19 +2465,45 @@ export function ChatView({
                 data-msg-key={activeChoiceMessage._clientId}
                 className="messages-row messages-row-last"
               >
-                <MessageBubble
-                  m={activeChoiceMessage}
-                  choicePrompt={
-                    choicePromptForMessage(activeChoiceMessage) ?? undefined
-                  }
-                  choicePending={
-                    promptMessageKey(activeChoiceMessage) === choiceSendingKey
-                  }
-                  choiceDisabled={false}
-                  onSelectChoice={(option) =>
-                    handleChoiceSelect(activeChoiceMessage, option)
-                  }
-                />
+                {(() => {
+                  const choicePrompt =
+                    choicePromptForMessage(activeChoiceMessage) ?? undefined;
+                  const choiceKey = promptMessageKey(activeChoiceMessage);
+                  const choicePage = choicePrompt
+                    ? choicePromptPage(choicePrompt, choicePageByKey[choiceKey])
+                    : undefined;
+                  return (
+                    <MessageBubble
+                      m={activeChoiceMessage}
+                      displayText={selectionTextByMessageId.get(
+                        activeChoiceMessage._clientId,
+                      )}
+                      choicePrompt={choicePrompt}
+                      choicePage={choicePage}
+                      choicePending={choiceKey === choiceSendingKey}
+                      choiceDisabled={false}
+                      onChoicePageChange={(page) => {
+                        if (choicePage) {
+                          handleChoicePageChange(
+                            activeChoiceMessage,
+                            choicePage,
+                            page,
+                          );
+                        }
+                      }}
+                      onSelectChoice={(option) => {
+                        if (choicePrompt && choicePage) {
+                          handleChoiceSelect(
+                            activeChoiceMessage,
+                            choicePrompt,
+                            choicePage,
+                            option,
+                          );
+                        }
+                      }}
+                    />
+                  );
+                })()}
               </div>
             )}
           </div>
