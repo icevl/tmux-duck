@@ -33,6 +33,10 @@ backfill, and ongoing indexing.
   activity from local transcript JSONL files.
 - [x] Session and monitor state are persisted under the Codi state directory and
   can be rebuilt from runtime/session sources.
+- [x] Validated in Phase 1: Codi exposes authenticated backend search/status
+  surfaces with stable provenance, typed missing/unavailable readiness semantics,
+  search-owned derived state under `CODEXBOT_DIR/search`, and no embedding/index
+  imports on FastAPI request paths.
 
 ### New Requirements
 
@@ -111,6 +115,8 @@ Interactive choices made during project initialization:
 | Index backend | LanceDB hybrid first | Provides a local vector store with full-text/hybrid capabilities and simple persisted storage. |
 | Embedding model | Qwen3-Embedding-0.6B candidate | Small enough for local use while likely strong for code and multilingual technical text. |
 | Live batching | 32 items or 60 seconds | Keeps new turns fresh without embedding every message synchronously. |
+| Phase 1 status contract | Missing/not-ready search is a typed 200 response, while active metadata without a query backend reports `unavailable` | Prevents the Web UI from treating a stubbed search backend as ready or confusing no matches with not-ready search. |
+| Phase 1 identity contract | Indexed row identity comes from transcript provenance plus chunk index; tmux window fields remain mutable routing metadata | Keeps search rows stable across renames, cwd changes, pinning, and tmux window movement. |
 
 ## Evolution
 
@@ -120,4 +126,4 @@ maintenance flow for rebuilding and compacting search indexes.
 
 ---
 
-Last updated: 2026-05-21 after initialization.
+Last updated: 2026-05-21 after Phase 1 completion.
