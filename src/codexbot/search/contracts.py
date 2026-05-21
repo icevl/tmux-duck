@@ -28,6 +28,12 @@ SearchIndexState: TypeAlias = Literal[
 ]
 SearchOutcome: TypeAlias = Literal["lexical", "semantic", "metadata", "hybrid"]
 SearchResponseOutcome: TypeAlias = Literal["ok", "not_ready", "unavailable"]
+SearchWorkerStatusState: TypeAlias = Literal[
+    "idle",
+    "running",
+    "completed",
+    "failed",
+]
 
 
 class TranscriptProvenance(BaseModel):
@@ -107,6 +113,16 @@ class SearchCounters(BaseModel):
     failed_items: int = Field(default=0, ge=0)
 
 
+class SearchWorkerStatus(BaseModel):
+    """Search worker heartbeat and current task state."""
+
+    status: SearchWorkerStatusState
+    current_task: str | None = Field(default=None, min_length=1, max_length=128)
+    heartbeat_at: str = Field(min_length=1, max_length=128)
+    recent_error: str | None = Field(default=None, max_length=2000)
+    counters: SearchCounters | None = None
+
+
 class SearchStatusResponse(BaseModel):
     """Search readiness response safe for request-path status surfaces."""
 
@@ -177,5 +193,7 @@ __all__ = [
     "SearchRowIdentity",
     "SearchSessionResult",
     "SearchStatusResponse",
+    "SearchWorkerStatus",
+    "SearchWorkerStatusState",
     "TranscriptProvenance",
 ]

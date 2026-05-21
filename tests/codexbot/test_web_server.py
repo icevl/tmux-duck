@@ -48,9 +48,13 @@ async def test_start_web_server_schedules_search_supervisor_without_waiting(
     )
     monkeypatch.setattr(config_module.config, "web_ui_secret", "secret", raising=False)
     monkeypatch.setattr(config_module.config, "web_ui_enabled", True, raising=False)
-    monkeypatch.setattr(config_module.config, "web_ui_totp_required", False, raising=False)
+    monkeypatch.setattr(
+        config_module.config, "web_ui_totp_required", False, raising=False
+    )
     monkeypatch.setattr(config_module.config, "web_ui_totp_secret", "", raising=False)
-    monkeypatch.setattr(config_module.config, "auto_update_enabled", False, raising=False)
+    monkeypatch.setattr(
+        config_module.config, "auto_update_enabled", False, raising=False
+    )
 
     started = asyncio.Event()
     release = asyncio.Event()
@@ -65,7 +69,11 @@ async def test_start_web_server_schedules_search_supervisor_without_waiting(
     async def fake_stream_pane_loop(_bus: object) -> None:
         await release.wait()
 
-    monkeypatch.setattr(web_server.search_supervisor, "start_worker_if_needed", fake_start_worker_if_needed)
+    monkeypatch.setattr(
+        web_server.search_supervisor,
+        "start_worker_if_needed",
+        fake_start_worker_if_needed,
+    )
     monkeypatch.setattr(EmbeddedUvicornServer, "_serve", fake_serve)
     monkeypatch.setattr(web_server, "stream_pane_loop", fake_stream_pane_loop)
 

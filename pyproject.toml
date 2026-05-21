@@ -24,6 +24,7 @@ dependencies = [
 
 [project.scripts]
 codexbot = "codexbot.main:main"
+codexbot-search-worker = "codexbot.search.worker:main"
 
 [project.optional-dependencies]
 dev = [
