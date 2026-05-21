@@ -24,7 +24,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 1: Search Contract and Status Surface
 
-**Goal:** Codi exposes a stable local search contract and honest status semantics before indexing work begins.
+**Goal:** As a Codi Web UI user, I want to call search-facing backend surfaces with stable provenance and honest readiness semantics, so that later indexing can become searchable without misleading or blocking existing open-session workflows.
 **Mode:** mvp
 **Depends on**: Nothing (first phase)
 **Requirements**: CORP-03, CORP-04, CORP-06, OPS-02
