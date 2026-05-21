@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from .contracts import (
     SEARCH_INDEX_STATES,
+    SearchBackfillDocument,
+    SearchBackfillManifest,
     SearchCounters,
     SearchGenerationMetadata,
     SearchHit,
@@ -23,6 +25,8 @@ from .contracts import (
 
 __all__ = [
     "SEARCH_INDEX_STATES",
+    "SearchBackfillDocument",
+    "SearchBackfillManifest",
     "SearchCounters",
     "SearchGenerationMetadata",
     "SearchHit",

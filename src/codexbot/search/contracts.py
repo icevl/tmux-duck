@@ -123,6 +123,29 @@ class SearchWorkerStatus(BaseModel):
     counters: SearchCounters | None = None
 
 
+class SearchBackfillDocument(BaseModel):
+    """One parser-backed chunk document produced by open-session backfill."""
+
+    identity: SearchRowIdentity
+    provenance: TranscriptProvenance
+    routing: SearchRoutingMetadata
+    text: str = Field(min_length=1, max_length=50000)
+    timestamp: str | None = Field(default=None, min_length=1, max_length=128)
+    source_order: int = Field(ge=0)
+    chunk_index: int = Field(ge=0)
+    chunk_count: int = Field(ge=1)
+
+
+class SearchBackfillManifest(BaseModel):
+    """Inactive generation manifest written beside derived backfill documents."""
+
+    schema_version: int = Field(default=1, ge=1)
+    generation: SearchGenerationMetadata
+    counters: SearchCounters
+    document_count: int = Field(ge=0)
+    errors: list[str] = Field(default_factory=list, max_length=1000)
+
+
 class SearchStatusResponse(BaseModel):
     """Search readiness response safe for request-path status surfaces."""
 
@@ -181,6 +204,8 @@ class SearchResponse(BaseModel):
 
 __all__ = [
     "SEARCH_INDEX_STATES",
+    "SearchBackfillDocument",
+    "SearchBackfillManifest",
     "SearchCounters",
     "SearchGenerationMetadata",
     "SearchHit",

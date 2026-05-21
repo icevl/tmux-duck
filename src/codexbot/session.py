@@ -26,7 +26,7 @@ from .runtimes import get_runtime
 from .skill_hints import skill_hint_registry
 from .slash_commands import slash_command_registry
 from .tmux_manager import tmux_manager
-from .transcript_parser import PendingToolInfo, TranscriptParser
+from .transcript_parser import ParsedEntry, PendingToolInfo, TranscriptParser
 from .utils import atomic_write_json
 
 logger = logging.getLogger(__name__)
@@ -126,6 +126,22 @@ class HistorySnapshot:
     oldest_timestamp: str | None
     newest_timestamp: str | None
     history_version: str
+
+
+@dataclass
+class ParsedTranscriptSession:
+    """Parser-level transcript entries resolved from one current tmux window."""
+
+    window_id: str
+    session: CodexSession
+    state: WindowState
+    transcript_source: str
+    entries: list[ParsedEntry]
+    pending_tools: dict[str, PendingToolInfo]
+
+    @property
+    def runtime(self) -> str:
+        return self.state.runtime
 
 
 @dataclass
@@ -1159,6 +1175,47 @@ class SessionManager:
             oldest_timestamp=_first_timestamp(messages),
             newest_timestamp=_last_timestamp(messages),
             history_version=entry.history_version,
+        )
+
+    async def read_parsed_transcript_for_window(
+        self, window_id: str
+    ) -> ParsedTranscriptSession | None:
+        """Resolve a window to parser-level transcript entries.
+
+        Search backfill uses this helper so it shares the same transcript parser
+        as history and monitoring without depending on Web UI history DTOs.
+        """
+        session = await self.resolve_session_for_window(window_id)
+        if not session or not session.file_path:
+            return None
+
+        file_path = Path(session.file_path)
+        if not file_path.exists():
+            return None
+
+        try:
+            entries = await self._read_transcript_entries(file_path)
+        except OSError as e:
+            logger.error("Error reading session file %s: %s", file_path, e)
+            return None
+
+        parsed_entries, pending_tools = TranscriptParser.parse_entries(entries)
+        state = self.get_window_state(window_id)
+        state_snapshot = WindowState(
+            session_id=state.session_id or session.session_id,
+            cwd=state.cwd,
+            window_name=state.window_name,
+            runtime=state.runtime,
+            pinned=state.pinned,
+            sort_order=state.sort_order,
+        )
+        return ParsedTranscriptSession(
+            window_id=window_id,
+            session=session,
+            state=state_snapshot,
+            transcript_source=str(file_path),
+            entries=parsed_entries,
+            pending_tools=pending_tools,
         )
 
     async def _get_history_cache_entry(
