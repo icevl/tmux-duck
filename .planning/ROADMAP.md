@@ -13,7 +13,7 @@ Codi session search will move from a stable local contract to a working open-ses
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Search Contract and Status Surface** - Establish the local search API, status semantics, provenance, and derived-index boundary.
+- [x] **Phase 1: Search Contract and Status Surface** - Establish the local search API, status semantics, provenance, and derived-index boundary. (completed 2026-05-21)
 - [ ] **Phase 2: Worker Skeleton, Backfill, and Rebuild Path** - Create asynchronous open-session indexing that can build or rebuild search storage without blocking Codi.
 - [ ] **Phase 3: Live Queue and Convergence** - Durably capture new transcript items and keep the derived index aligned with live open sessions.
 - [ ] **Phase 4: LanceDB Hybrid Retrieval and Ranking** - Deliver local lexical plus semantic search with ranked session groups and matching snippets.
@@ -47,7 +47,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-03-PLAN.md — Wire authenticated search/status API routes and import-boundary verification.
+- [x] 01-03-PLAN.md — Wire authenticated search/status API routes and import-boundary verification.
 
 ### Phase 2: Worker Skeleton, Backfill, and Rebuild Path
 
@@ -139,7 +139,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Search Contract and Status Surface | 2/3 | In Progress|  |
+| 1. Search Contract and Status Surface | 3/3 | Complete   | 2026-05-21 |
 | 2. Worker Skeleton, Backfill, and Rebuild Path | 0/TBD | Not started | - |
 | 3. Live Queue and Convergence | 0/TBD | Not started | - |
 | 4. LanceDB Hybrid Retrieval and Ranking | 0/TBD | Not started | - |
