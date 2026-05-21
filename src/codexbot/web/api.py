@@ -132,6 +132,11 @@ class SwitchBranchRequest(BaseModel):
     branch: str = Field(min_length=1, max_length=255)
 
 
+class ChooseOptionRequest(BaseModel):
+    option_index: int = Field(ge=0, le=99)
+    total: int = Field(ge=1, le=100)
+
+
 # Cap for the image-upload endpoint. Telegram bot accepts up to 20 MB photos,
 # matching that here keeps the two transports consistent.
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -1074,6 +1079,21 @@ def create_app(
         ok = await tmux_manager.send_keys(window_id, key, enter=False, literal=False)
         if not ok:
             raise HTTPException(400, detail="send_keys failed")
+        return {"ok": True}
+
+    @app.post("/api/sessions/{window_id}/choose")
+    async def choose_option(
+        window_id: str,
+        req: ChooseOptionRequest,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        from .interactive_monitor import navigate_and_choose
+
+        if req.option_index >= req.total:
+            raise HTTPException(400, detail="option_index out of range")
+        ok = await navigate_and_choose(window_id, req.option_index, req.total)
+        if not ok:
+            raise HTTPException(400, detail="navigate failed")
         return {"ok": True}
 
     @app.post("/api/sessions/{window_id}/command")

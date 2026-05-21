@@ -369,6 +369,12 @@ export const api = {
 
   runUpdate: () =>
     request<{ started: boolean }>("/api/update/run", { method: "POST" }),
+
+  chooseOption: (windowId: string, optionIndex: number, total: number) =>
+    request<{ ok: boolean }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/choose`,
+      { method: "POST", json: { option_index: optionIndex, total } },
+    ),
 };
 
 export type WsEvent =
@@ -441,6 +447,23 @@ export type WsEvent =
       current_sha: string;
       latest_sha: string;
       subject: string;
+      ts: number;
+      seq?: number;
+    }
+  | {
+      type: "interactive_prompt";
+      window_id: string;
+      runtime: string;
+      ui_name: string;
+      options: Array<{ label: string }>;
+      current_index: number;
+      content: string;
+      ts: number;
+      seq?: number;
+    }
+  | {
+      type: "interactive_prompt_cleared";
+      window_id: string;
       ts: number;
       seq?: number;
     };
