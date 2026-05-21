@@ -169,52 +169,52 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRCH-01 | TBD | Pending |
-| SRCH-02 | TBD | Pending |
-| SRCH-03 | TBD | Pending |
-| SRCH-04 | TBD | Pending |
-| SRCH-05 | TBD | Pending |
-| SRCH-06 | TBD | Pending |
-| CORP-01 | TBD | Pending |
-| CORP-02 | TBD | Pending |
-| CORP-03 | TBD | Pending |
-| CORP-04 | TBD | Pending |
-| CORP-05 | TBD | Pending |
-| CORP-06 | TBD | Pending |
-| INDX-01 | TBD | Pending |
-| INDX-02 | TBD | Pending |
-| INDX-03 | TBD | Pending |
-| INDX-04 | TBD | Pending |
-| INDX-05 | TBD | Pending |
-| INDX-06 | TBD | Pending |
-| INDX-07 | TBD | Pending |
-| INDX-08 | TBD | Pending |
-| RETR-01 | TBD | Pending |
-| RETR-02 | TBD | Pending |
-| RETR-03 | TBD | Pending |
-| RETR-04 | TBD | Pending |
-| RETR-05 | TBD | Pending |
-| RETR-06 | TBD | Pending |
-| RETR-07 | TBD | Pending |
-| RETR-08 | TBD | Pending |
-| WEB-01 | TBD | Pending |
-| WEB-02 | TBD | Pending |
-| WEB-03 | TBD | Pending |
-| WEB-04 | TBD | Pending |
-| WEB-05 | TBD | Pending |
-| WEB-06 | TBD | Pending |
-| WEB-07 | TBD | Pending |
-| OPS-01 | TBD | Pending |
-| OPS-02 | TBD | Pending |
-| OPS-03 | TBD | Pending |
-| OPS-04 | TBD | Pending |
-| OPS-05 | TBD | Pending |
-| OPS-06 | TBD | Pending |
+| SRCH-01 | Phase 5 | Pending |
+| SRCH-02 | Phase 4 | Pending |
+| SRCH-03 | Phase 5 | Pending |
+| SRCH-04 | Phase 4 | Pending |
+| SRCH-05 | Phase 4 | Pending |
+| SRCH-06 | Phase 4 | Pending |
+| CORP-01 | Phase 2 | Pending |
+| CORP-02 | Phase 2 | Pending |
+| CORP-03 | Phase 1 | Pending |
+| CORP-04 | Phase 1 | Pending |
+| CORP-05 | Phase 3 | Pending |
+| CORP-06 | Phase 1 | Pending |
+| INDX-01 | Phase 2 | Pending |
+| INDX-02 | Phase 2 | Pending |
+| INDX-03 | Phase 2 | Pending |
+| INDX-04 | Phase 3 | Pending |
+| INDX-05 | Phase 3 | Pending |
+| INDX-06 | Phase 3 | Pending |
+| INDX-07 | Phase 3 | Pending |
+| INDX-08 | Phase 2 | Pending |
+| RETR-01 | Phase 4 | Pending |
+| RETR-02 | Phase 4 | Pending |
+| RETR-03 | Phase 4 | Pending |
+| RETR-04 | Phase 4 | Pending |
+| RETR-05 | Phase 4 | Pending |
+| RETR-06 | Phase 4 | Pending |
+| RETR-07 | Phase 4 | Pending |
+| RETR-08 | Phase 4 | Pending |
+| WEB-01 | Phase 5 | Pending |
+| WEB-02 | Phase 5 | Pending |
+| WEB-03 | Phase 5 | Pending |
+| WEB-04 | Phase 5 | Pending |
+| WEB-05 | Phase 5 | Pending |
+| WEB-06 | Phase 5 | Pending |
+| WEB-07 | Phase 5 | Pending |
+| OPS-01 | Phase 4 | Pending |
+| OPS-02 | Phase 1 | Pending |
+| OPS-03 | Phase 6 | Pending |
+| OPS-04 | Phase 6 | Pending |
+| OPS-05 | Phase 6 | Pending |
+| OPS-06 | Phase 6 | Pending |
 
 **Coverage:**
 - v1 requirements: 41 total
-- Mapped to phases: 0
-- Unmapped: 41
+- Mapped to phases: 41
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-21*
