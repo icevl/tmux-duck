@@ -12,6 +12,7 @@ from .state import read_generation_metadata
 
 
 MISSING_INDEX_REASON = "search index has not been built"
+QUERY_BACKEND_UNAVAILABLE_REASON = "search query backend is not available"
 
 
 def _counters(open_session_count: int | None) -> SearchCounters | None:
@@ -35,10 +36,10 @@ def get_status(open_session_count: int | None = None) -> SearchStatusResponse:
         )
 
     return SearchStatusResponse(
-        state="ready",
-        available=True,
+        state="unavailable",
+        available=False,
         scope="open_sessions",
-        reason=None,
+        reason=QUERY_BACKEND_UNAVAILABLE_REASON,
         counters=counters,
         generation=generation,
     )

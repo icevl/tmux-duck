@@ -86,6 +86,42 @@ def test_generation_metadata_reader_rejects_non_active_or_invalid_metadata(
     assert read_generation_metadata() is None
 
 
+def test_active_generation_without_query_backend_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-05 and D-11: active metadata does not imply query availability yet."""
+    from codexbot.search.client import get_status, search
+    from codexbot.search.state import SEARCH_SCHEMA_VERSION, generation_metadata_path
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    metadata_path = generation_metadata_path()
+    metadata_path.parent.mkdir(parents=True)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": SEARCH_SCHEMA_VERSION,
+                "generation_id": "gen-active",
+                "created_at": "2026-05-21T13:00:00Z",
+                "active": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = get_status(open_session_count=3).model_dump(mode="json")
+    response = search(SearchRequest(query="term")).model_dump(mode="json")
+
+    assert status["state"] == "unavailable"
+    assert status["available"] is False
+    assert status["reason"] == "search query backend is not available"
+    assert status["counters"]["open_sessions"] == 3
+    assert status["generation"]["generation_id"] == "gen-active"
+    assert response["status"]["state"] == "unavailable"
+    assert response["status"]["available"] is False
+    assert response["outcome"] == "not_ready"
+    assert response["results"] == []
+
+
 def test_search_state_does_not_modify_monitor_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
