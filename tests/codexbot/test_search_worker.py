@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tomllib
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -139,3 +140,45 @@ def test_pyproject_exposes_search_worker_script() -> None:
         data["project"]["scripts"]["codexbot-search-worker"]
         == "codexbot.search.worker:main"
     )
+
+
+def test_initial_backfill_worker_materializes_generation_and_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Worker command writes artifacts and a completed status for the generation."""
+    from codexbot.search.contracts import SearchBackfillManifest
+    from codexbot.search.state import read_worker_status
+    from codexbot.search.worker import main
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    manifest = SearchBackfillManifest(
+        generation={
+            "schema_version": 1,
+            "generation_id": "gen-test",
+            "created_at": "2026-05-21T21:30:00Z",
+            "active": False,
+        },
+        counters=SearchCounters(
+            open_sessions=2,
+            indexed_sessions=2,
+            indexed_chunks=7,
+            failed_items=0,
+        ),
+        document_count=7,
+        errors=[],
+    )
+
+    async_materialize = AsyncMock(return_value=manifest)
+    monkeypatch.setattr(
+        "codexbot.search.worker.materialize_initial_backfill",
+        async_materialize,
+    )
+
+    assert main(["initial-backfill"]) == 0
+
+    async_materialize.assert_awaited_once()
+    status = read_worker_status()
+    assert status is not None
+    assert status.status == "completed"
+    assert status.current_task == "initial_backfill"
+    assert status.counters == manifest.counters
