@@ -62,7 +62,19 @@ Plans:
   3. Initial backfill covers every currently open tmux-backed Codex and Claude session.
   4. Backfill reads normalized Codex and Claude transcript records through the existing runtime transcript parsers and includes useful user, assistant, and tool/output text.
 
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Start the local search worker skeleton and expose truthful building status without blocking Codi.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02-02-PLAN.md — Backfill current open Codex and Claude sessions through parser-level transcript entries into chunk documents.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02-03-PLAN.md — Add explicit rebuild, atomic generation activation, recovery, and built-but-unqueryable status.
 
 ### Phase 3: Live Queue and Convergence
 
