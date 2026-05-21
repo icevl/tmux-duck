@@ -236,6 +236,87 @@ def test_search_stub_returns_typed_not_ready(
     assert body["hits_per_session"] == 2
 
 
+def test_search_status_after_successful_backfill_is_built_but_unavailable(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """D-14/D-15: HTTP status exposes generation counters but not readiness."""
+    from codexbot.search.contracts import SearchBackfillManifest, SearchCounters
+    from codexbot.search.state import (
+        activate_generation,
+        generation_documents_path,
+        write_generation_manifest,
+    )
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    manifest = SearchBackfillManifest(
+        generation={
+            "schema_version": 1,
+            "generation_id": "gen-api",
+            "created_at": "2026-05-21T22:30:00Z",
+            "active": False,
+        },
+        counters=SearchCounters(
+            open_sessions=1,
+            indexed_sessions=1,
+            indexed_chunks=6,
+            failed_items=0,
+        ),
+        document_count=6,
+        completed=True,
+        errors=[],
+    )
+    docs_path = generation_documents_path("gen-api")
+    docs_path.parent.mkdir(parents=True, exist_ok=True)
+    docs_path.write_text('{"text":"indexed"}\n', encoding="utf-8")
+    write_generation_manifest(manifest)
+    activate_generation(manifest)
+
+    fake_windows = [
+        TmuxWindow(
+            window_id="@51",
+            window_name="api-active-a",
+            cwd="/tmp/api-active-a",
+            pane_current_command="codex",
+        ),
+        TmuxWindow(
+            window_id="@52",
+            window_name="api-active-b",
+            cwd="/tmp/api-active-b",
+            pane_current_command="claude",
+        ),
+    ]
+
+    async def fake_list() -> list[TmuxWindow]:
+        return fake_windows
+
+    from codexbot.web import api as web_api
+
+    monkeypatch.setattr(web_api.tmux_manager, "list_windows", fake_list)
+
+    status_response = authed_client.get("/api/search/status")
+    search_response = authed_client.post("/api/search", json={"query": "indexed term"})
+
+    assert status_response.status_code == 200, status_response.text
+    assert search_response.status_code == 200, search_response.text
+    status_body = status_response.json()
+    search_body = search_response.json()
+    assert status_body["state"] == "unavailable"
+    assert status_body["available"] is False
+    assert status_body["reason"] == "search query backend is not available"
+    assert status_body["generation"]["generation_id"] == "gen-api"
+    assert status_body["counters"] == {
+        "open_sessions": 2,
+        "indexed_sessions": 1,
+        "indexed_chunks": 6,
+        "queued_items": 0,
+        "failed_items": 0,
+    }
+    assert search_body["status"]["state"] == "unavailable"
+    assert search_body["status"]["generation"]["generation_id"] == "gen-api"
+    assert search_body["outcome"] == "not_ready"
+    assert search_body["results"] == []
+
+
 @pytest.mark.parametrize(
     "payload",
     [

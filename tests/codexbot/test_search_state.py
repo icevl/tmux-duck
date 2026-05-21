@@ -10,6 +10,45 @@ import pytest
 from codexbot.search.contracts import SearchRequest
 
 
+def _manifest(
+    generation_id: str,
+    *,
+    completed: bool = True,
+    indexed_chunks: int = 4,
+):
+    from codexbot.search.contracts import SearchBackfillManifest, SearchCounters
+
+    return SearchBackfillManifest(
+        generation={
+            "schema_version": 1,
+            "generation_id": generation_id,
+            "created_at": "2026-05-21T22:20:00Z",
+            "active": False,
+        },
+        counters=SearchCounters(
+            open_sessions=2,
+            indexed_sessions=2,
+            indexed_chunks=indexed_chunks,
+            failed_items=0,
+        ),
+        document_count=indexed_chunks,
+        completed=completed,
+        errors=[],
+    )
+
+
+def _write_generation_files(generation_id: str, manifest) -> None:
+    from codexbot.search.state import (
+        generation_documents_path,
+        write_generation_manifest,
+    )
+
+    docs_path = generation_documents_path(generation_id)
+    docs_path.parent.mkdir(parents=True, exist_ok=True)
+    docs_path.write_text('{"text":"indexed"}\n', encoding="utf-8")
+    write_generation_manifest(manifest)
+
+
 def test_search_dir_resolves_configured_and_default_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -58,6 +97,54 @@ def test_generation_metadata_reader_rejects_non_active_or_invalid_metadata(
 
     metadata_path.write_text("{invalid json", encoding="utf-8")
     assert read_generation_metadata() is None
+
+
+def test_activate_generation_is_success_only_and_atomic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-09: active metadata is written only after a complete generation exists."""
+    from codexbot.search.state import (
+        activate_generation,
+        active_generation_metadata_path,
+        read_generation_metadata,
+    )
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    incomplete = _manifest("gen-incomplete", completed=False)
+    _write_generation_files("gen-incomplete", incomplete)
+
+    with pytest.raises(ValueError):
+        activate_generation(incomplete)
+
+    assert read_generation_metadata() is None
+    assert not active_generation_metadata_path().exists()
+
+    complete = _manifest("gen-complete", completed=True)
+    _write_generation_files("gen-complete", complete)
+    activated = activate_generation(complete)
+
+    assert activated.active is True
+    assert read_generation_metadata() == activated
+    assert active_generation_metadata_path().exists()
+
+
+def test_incomplete_generation_manifest_is_ignored_by_recovery_and_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-12/D-15: interrupted generations stay inactive and rerunnable."""
+    from codexbot.search.client import get_status
+    from codexbot.search.state import read_generation_manifest, read_generation_metadata
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    incomplete = _manifest("gen-interrupted", completed=False)
+    _write_generation_files("gen-interrupted", incomplete)
+
+    assert read_generation_manifest("gen-interrupted") is None
+    assert read_generation_metadata() is None
+    status = get_status(open_session_count=2).model_dump(mode="json")
+    assert status["state"] == "missing"
+    assert status["available"] is False
+    assert status["generation"] is None
 
     metadata_path.write_text(
         json.dumps(
@@ -118,6 +205,37 @@ def test_active_generation_without_query_backend_is_unavailable(
     assert status["generation"]["generation_id"] == "gen-active"
     assert response["status"]["state"] == "unavailable"
     assert response["status"]["available"] is False
+    assert response["outcome"] == "not_ready"
+    assert response["results"] == []
+
+
+def test_active_generation_status_reads_manifest_counters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-14/D-15: completed Phase 2 backfill is visible but not query-ready."""
+    from codexbot.search.client import get_status, search
+    from codexbot.search.state import activate_generation
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    manifest = _manifest("gen-active", indexed_chunks=9)
+    _write_generation_files("gen-active", manifest)
+    activate_generation(manifest)
+
+    status = get_status(open_session_count=5).model_dump(mode="json")
+    response = search(SearchRequest(query="term")).model_dump(mode="json")
+
+    assert status["state"] == "unavailable"
+    assert status["available"] is False
+    assert status["reason"] == "search query backend is not available"
+    assert status["generation"]["generation_id"] == "gen-active"
+    assert status["counters"] == {
+        "open_sessions": 5,
+        "indexed_sessions": 2,
+        "indexed_chunks": 9,
+        "queued_items": 0,
+        "failed_items": 0,
+    }
+    assert response["status"]["generation"]["generation_id"] == "gen-active"
     assert response["outcome"] == "not_ready"
     assert response["results"] == []
 
