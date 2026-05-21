@@ -58,6 +58,8 @@ from pydantic import BaseModel, Field
 
 from ..config import config
 from ..runtimes import all_runtimes, get_runtime
+from ..search import client as search_client
+from ..search.contracts import SearchRequest
 from ..session import session_manager
 from ..skill_hints import skill_hint_registry
 from ..slash_commands import slash_command_registry
@@ -560,6 +562,30 @@ def create_app(
             "enabled": auth.enabled,
             "totp_required": auth.totp_enabled,
         }
+
+    async def _search_open_session_count() -> int | None:
+        try:
+            windows = await tmux_manager.list_windows()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("search status could not list tmux windows: %s", exc)
+            return None
+        return len(windows)
+
+    @app.get("/api/search/status")
+    async def search_status(_user: str = Depends(require_auth)) -> dict[str, Any]:
+        open_session_count = await _search_open_session_count()
+        return search_client.get_status(
+            open_session_count=open_session_count
+        ).model_dump(mode="json")
+
+    @app.post("/api/search")
+    async def search(
+        req: SearchRequest, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        open_session_count = await _search_open_session_count()
+        return search_client.search(
+            req, open_session_count=open_session_count
+        ).model_dump(mode="json")
 
     # -----------------------------------------------------------------------
     # Sessions
