@@ -66,7 +66,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Start the local search worker skeleton and expose truthful building status without blocking Codi.
+- [x] 02-01-PLAN.md — Start the local search worker skeleton and expose truthful building status without blocking Codi.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -152,7 +152,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Search Contract and Status Surface | 3/3 | Complete   | 2026-05-21 |
-| 2. Worker Skeleton, Backfill, and Rebuild Path | 0/TBD | Not started | - |
+| 2. Worker Skeleton, Backfill, and Rebuild Path | 1/3 | In Progress|  |
 | 3. Live Queue and Convergence | 0/TBD | Not started | - |
 | 4. LanceDB Hybrid Retrieval and Ranking | 0/TBD | Not started | - |
 | 5. Web UI Search Experience and Navigation | 0/TBD | Not started | - |
