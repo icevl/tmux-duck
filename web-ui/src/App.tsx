@@ -363,7 +363,7 @@ export function App() {
     }
 
     const session = sessionsRef.current.find((s) => s.window_id === windowId);
-    const title = kind === "input" ? "Codi needs input" : "Codi finished";
+    const title = kind === "input" ? "TmuxDuck needs input" : "TmuxDuck finished";
     const body = session?.name ?? windowId;
     try {
       const notification = new Notification(title, {
@@ -925,7 +925,7 @@ export function App() {
               ☰
             </button>
             <div className="chat-title">
-              <div className="name">Codi</div>
+              <div className="name">TmuxDuck</div>
             </div>
           </div>
           {sessionsLoaded && (

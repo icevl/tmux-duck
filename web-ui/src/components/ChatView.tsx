@@ -1681,7 +1681,7 @@ export function ChatView({
           setShowSkills(true);
           return true;
         case "/start":
-          showToast("Codi — pick a session or create a new one");
+          showToast("TmuxDuck — pick a session or create a new one");
           return true;
         default:
           return false;
