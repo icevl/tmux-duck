@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   BellOff,
-  Bot,
   Brain,
   GripVertical,
   Loader2,
@@ -18,6 +17,7 @@ import {
 import { TunioPlayer } from "tunio-player";
 import "tunio-player/styles.css";
 import { SessionSummary } from "../api";
+import { DuckLogo } from "./DuckLogo";
 
 const ICON = 16;
 const OFFICE_STREAM_ID = "71824d03-660b-4722-843a-5e8fbe9ad4c2";
@@ -180,8 +180,8 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="brand">
-          <Bot size={16} className="brand-icon" />
-          Codi
+          <DuckLogo width={28} height={28} className="brand-icon" />
+          TmuxDuck
         </div>
         <div className="sidebar-header-actions">
           <button

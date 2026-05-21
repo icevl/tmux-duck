@@ -2,7 +2,7 @@
 
 Every `POLL_INTERVAL_SEC` the checker compares `git rev-parse HEAD` of the
 local repository against the latest commit SHA on
-`https://github.com/icevl/codi/commits/main`. When the SHAs diverge and
+`https://github.com/icevl/tmux-duck/commits/main`. When the SHAs diverge and
 the working tree is clean it publishes an `update_available` event on the
 shared `EventBus`. The web UI listens for that event, prompts the user,
 and on confirmation POSTs to `/api/update/run` which executes
@@ -28,7 +28,7 @@ from .events import EventBus
 
 logger = logging.getLogger(__name__)
 
-REPO = "icevl/codi"
+REPO = "icevl/tmux-duck"
 BRANCH = "main"
 POLL_INTERVAL_SEC = 600  # 10 minutes — well under the 60/hr unauth GitHub quota.
 GITHUB_API = f"https://api.github.com/repos/{REPO}/commits/{BRANCH}"
