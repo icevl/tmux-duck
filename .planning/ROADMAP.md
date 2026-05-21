@@ -31,7 +31,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Every planned indexed item has stable provenance for runtime, session ID when known, transcript source, transcript offset or index, role/content type, and optional tool identifier.
   3. Current tmux `window_id` is represented only as mutable routing metadata, while transcript provenance is the row identity for indexed content.
   4. Codi treats search state as a derived cache that can be rebuilt from transcript/session state and does not write search progress into `monitor_state.json`.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Define runtime-neutral search provenance, identity, request, and status contracts.
+- [ ] 01-02-PLAN.md — Reserve search-owned derived state and typed missing-index provider behavior.
+- [ ] 01-03-PLAN.md — Wire authenticated search/status API routes and import-boundary verification.
 
 ### Phase 2: Worker Skeleton, Backfill, and Rebuild Path
 **Goal:** Codi can create or rebuild a search index for open Codex and Claude sessions asynchronously while existing frontends keep working.
