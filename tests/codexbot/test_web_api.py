@@ -115,8 +115,9 @@ def test_search_requires_auth(client: TestClient) -> None:
 
 
 def test_search_status_returns_typed_missing(
-    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
     fake_windows = [
         TmuxWindow(
             window_id="@11",
@@ -150,8 +151,9 @@ def test_search_status_returns_typed_missing(
 
 
 def test_search_stub_returns_typed_not_ready(
-    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
     fake_windows = [
         TmuxWindow(
             window_id="@21",
@@ -205,8 +207,9 @@ def test_search_rejects_oversized_or_out_of_range_request(
 
 
 def test_search_responses_do_not_leak_sensitive_fields(
-    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
     fake_windows = [
         TmuxWindow(
             window_id="@31",
