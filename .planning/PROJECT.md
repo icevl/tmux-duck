@@ -37,6 +37,11 @@ backfill, and ongoing indexing.
   surfaces with stable provenance, typed missing/unavailable readiness semantics,
   search-owned derived state under `CODEXBOT_DIR/search`, and no embedding/index
   imports on FastAPI request paths.
+- [x] Validated in Phase 2: Codi starts a nonblocking local search worker path,
+  backfills currently open Codex/Claude sessions through parser-level transcript
+  entries, writes inactive search generation artifacts under
+  `CODEXBOT_DIR/search`, and atomically activates completed generations while
+  still reporting search as built but unavailable until retrieval exists.
 
 ### New Requirements
 
@@ -117,6 +122,8 @@ Interactive choices made during project initialization:
 | Live batching | 32 items or 60 seconds | Keeps new turns fresh without embedding every message synchronously. |
 | Phase 1 status contract | Missing/not-ready search is a typed 200 response, while active metadata without a query backend reports `unavailable` | Prevents the Web UI from treating a stubbed search backend as ready or confusing no matches with not-ready search. |
 | Phase 1 identity contract | Indexed row identity comes from transcript provenance plus chunk index; tmux window fields remain mutable routing metadata | Keeps search rows stable across renames, cwd changes, pinning, and tmux window movement. |
+| Phase 2 activation contract | Search generations are built inactive and only activated through an atomic metadata write after complete manifest and document artifacts exist | Prevents interrupted rebuilds from becoming active and keeps startup/rebuild rerunnable. |
+| Phase 2 readiness contract | Completed backfill exposes generation metadata and counters but remains `available=false` until query retrieval is implemented | Keeps the Web UI from treating prepared corpus artifacts as a searchable index. |
 
 ## Evolution
 
@@ -126,4 +133,4 @@ maintenance flow for rebuilding and compacting search indexes.
 
 ---
 
-Last updated: 2026-05-21 after Phase 1 completion.
+Last updated: 2026-05-21 after Phase 2 completion.
