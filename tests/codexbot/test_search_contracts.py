@@ -1,0 +1,251 @@
+"""Search contract tests for provenance, identity, request bounds, and imports."""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[2]
+EXPECTED_INDEX_STATES = {
+    "missing",
+    "building",
+    "partial",
+    "ready",
+    "stale",
+    "degraded",
+    "unavailable",
+}
+HEAVY_IMPORT_ROOTS = {
+    "fastembed",
+    "lancedb",
+    "sentence_transformers",
+    "torch",
+    "transformers",
+}
+SEARCH_IMPLEMENTATION_MODULES = {
+    "client",
+    "index",
+    "queue",
+    "ranking",
+    "retrieval",
+    "worker",
+}
+
+
+def _sample_provenance(**overrides: Any):
+    from codexbot.search.contracts import TranscriptProvenance
+
+    values = {
+        "runtime": "codex",
+        "session_id": "session-123",
+        "transcript_source": "~/.codex/sessions/session-123.jsonl",
+        "transcript_offset": 4096,
+        "transcript_index": 2,
+        "role": "assistant",
+        "content_type": "tool_result",
+        "tool_name": "Bash",
+        "tool_use_id": "toolu_123",
+        "source_event_kind": "jsonl_entry",
+    }
+    values.update(overrides)
+    return TranscriptProvenance(**values)
+
+
+def test_provenance_contract_contains_required_fields() -> None:
+    """CORP-03, D-01, D-02, and D-04: provenance is runtime-neutral."""
+    provenance = _sample_provenance()
+
+    assert provenance.runtime == "codex"
+    assert provenance.session_id == "session-123"
+    assert provenance.transcript_source.endswith("session-123.jsonl")
+    assert provenance.transcript_offset == 4096
+    assert provenance.transcript_index == 2
+    assert provenance.role == "assistant"
+    assert provenance.content_type == "tool_result"
+    assert provenance.tool_name == "Bash"
+    assert provenance.tool_use_id == "toolu_123"
+    assert provenance.source_event_kind == "jsonl_entry"
+
+    without_optional_session = _sample_provenance(session_id=None)
+    assert without_optional_session.session_id is None
+
+
+def test_row_identity_excludes_mutable_window_metadata() -> None:
+    """CORP-04 and D-03: row identity is stable when routing metadata changes."""
+    from codexbot.search.contracts import SearchRoutingMetadata, SearchRowIdentity
+
+    provenance = _sample_provenance()
+    identity = SearchRowIdentity.from_provenance(provenance, chunk_index=0)
+    varied_identity = SearchRowIdentity.from_provenance(provenance, chunk_index=0)
+
+    first_route = SearchRoutingMetadata(
+        window_id="@12",
+        name="billing-prod",
+        cwd="/repo/a",
+        runtime="codex",
+        session_id="session-123",
+        status="active",
+        pinned=True,
+        sort_order=1,
+    )
+    second_route = SearchRoutingMetadata(
+        window_id="@98",
+        name="renamed-session",
+        cwd="/repo/b",
+        runtime="codex",
+        session_id="session-123",
+        status="idle",
+        pinned=False,
+        sort_order=99,
+    )
+
+    assert first_route != second_route
+    assert identity == varied_identity
+    assert identity.model_dump() == varied_identity.model_dump()
+    assert set(identity.model_dump()).isdisjoint(
+        {"window_id", "name", "cwd", "status", "pinned", "sort_order"}
+    )
+
+
+def test_row_identity_supports_multiple_chunks_for_one_transcript_message() -> None:
+    """D-01: one transcript message can map to multiple chunk-level rows."""
+    from codexbot.search.contracts import SearchRowIdentity
+
+    provenance = _sample_provenance()
+
+    first_chunk = SearchRowIdentity.from_provenance(provenance, chunk_index=0)
+    second_chunk = SearchRowIdentity.from_provenance(provenance, chunk_index=1)
+
+    assert first_chunk != second_chunk
+    assert first_chunk.chunk_index == 0
+    assert second_chunk.chunk_index == 1
+
+
+def test_search_request_bounds_reject_oversized_inputs() -> None:
+    """T-01-02: request DTO bounds query text, total hits, and per-session hits."""
+    from codexbot.search.contracts import SearchRequest
+
+    with pytest.raises(ValueError):
+        SearchRequest(query="x" * 501, limit=10, hits_per_session=3)
+
+    with pytest.raises(ValueError):
+        SearchRequest(query="find stack trace", limit=0, hits_per_session=3)
+
+    with pytest.raises(ValueError):
+        SearchRequest(query="find stack trace", limit=51, hits_per_session=3)
+
+    with pytest.raises(ValueError):
+        SearchRequest(query="find stack trace", limit=10, hits_per_session=0)
+
+    with pytest.raises(ValueError):
+        SearchRequest(query="find stack trace", limit=10, hits_per_session=11)
+
+
+def test_lifecycle_vocabulary_matches_phase_contract() -> None:
+    """D-06: lifecycle states are exactly the approved search vocabulary."""
+    from codexbot.search.contracts import SEARCH_INDEX_STATES
+
+    assert set(SEARCH_INDEX_STATES) == EXPECTED_INDEX_STATES
+    assert len(SEARCH_INDEX_STATES) == len(EXPECTED_INDEX_STATES)
+
+
+def test_status_response_supports_typed_not_ready_state() -> None:
+    """D-05: not-yet-indexed search is represented as a typed response."""
+    from codexbot.search.contracts import SearchStatusResponse
+
+    status = SearchStatusResponse(
+        state="missing",
+        available=False,
+        scope="open_sessions",
+        reason="search index has not been built",
+        counters=None,
+        generation=None,
+    )
+
+    assert status.state == "missing"
+    assert status.available is False
+    assert status.scope == "open_sessions"
+    assert "index" in (status.reason or "")
+    assert status.counters is None
+    assert status.generation is None
+
+
+def test_generation_metadata_carries_rebuildable_identity() -> None:
+    """D-11: index generations expose rebuild metadata without transcript text."""
+    from codexbot.search.contracts import SearchGenerationMetadata
+
+    generation = SearchGenerationMetadata(
+        schema_version=1,
+        generation_id="gen-20260521",
+        created_at="2026-05-21T13:00:00Z",
+        active=True,
+    )
+
+    dumped = generation.model_dump()
+    assert dumped == {
+        "schema_version": 1,
+        "generation_id": "gen-20260521",
+        "created_at": "2026-05-21T13:00:00Z",
+        "active": True,
+    }
+    assert "text" not in dumped
+    assert "content" not in dumped
+
+
+def _imported_modules(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    modules: set[str] = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+            continue
+        if isinstance(node, ast.ImportFrom):
+            modules.update(_resolve_import_from(path, node))
+
+    return modules
+
+
+def _resolve_import_from(path: Path, node: ast.ImportFrom) -> set[str]:
+    module = node.module or ""
+    if node.level == 0:
+        return {module} if module else set()
+
+    search_dir = ROOT / "src" / "codexbot" / "search"
+    try:
+        relative = path.resolve().relative_to(search_dir)
+    except ValueError:
+        return {module} if module else set()
+
+    package_parts = ["codexbot", "search", *relative.parent.parts]
+    trim = max(node.level - 1, 0)
+    if trim:
+        package_parts = package_parts[:-trim]
+    if module:
+        package_parts.extend(module.split("."))
+    return {".".join(package_parts)}
+
+
+def test_web_search_boundary_has_no_heavy_imports() -> None:
+    """D-08 and T-01-05: request-path search imports stay lightweight."""
+    search_dir = ROOT / "src" / "codexbot" / "search"
+    paths = [ROOT / "src" / "codexbot" / "web" / "api.py"]
+    if search_dir.exists():
+        paths.extend(sorted(search_dir.glob("*.py")))
+
+    violations: list[str] = []
+    for path in paths:
+        for module in _imported_modules(path):
+            root = module.split(".", 1)[0]
+            if root in HEAVY_IMPORT_ROOTS:
+                violations.append(f"{path.relative_to(ROOT)} imports {module}")
+            if module.startswith("codexbot.search."):
+                leaf = module.rsplit(".", 1)[-1]
+                if leaf in SEARCH_IMPLEMENTATION_MODULES:
+                    violations.append(f"{path.relative_to(ROOT)} imports {module}")
+
+    assert not violations
