@@ -711,6 +711,12 @@ export function ChatView({
   const [streaming, setStreaming] = useState<{ text: string; status: string } | null>(
     null,
   );
+  const [interactivePrompt, setInteractivePrompt] = useState<{
+    uiName: string;
+    options: Array<{ label: string }>;
+    currentIndex: number;
+  } | null>(null);
+  const [interactiveSending, setInteractiveSending] = useState(false);
   const [attachments, setAttachments] = useState<
     Array<{ id: string; file: File; previewUrl: string }>
   >([]);
@@ -1006,6 +1012,8 @@ export function ChatView({
     setNameDraft(session.name);
     setEditingName(false);
     setStreaming(null);
+    setInteractivePrompt(null);
+    setInteractiveSending(false);
     setChoiceSendingKey(null);
     closeSlashHints();
     setAttachments((prev) => {
@@ -1440,6 +1448,20 @@ export function ChatView({
       if (event.type === "stream_end") {
         if (!isCurrentSession(event)) return;
         setStreaming(null);
+        return;
+      }
+      if (event.type === "interactive_prompt") {
+        if (event.window_id !== windowIdRef.current) return;
+        setInteractivePrompt({
+          uiName: event.ui_name,
+          options: event.options,
+          currentIndex: event.current_index,
+        });
+        return;
+      }
+      if (event.type === "interactive_prompt_cleared") {
+        if (event.window_id !== windowIdRef.current) return;
+        setInteractivePrompt(null);
         return;
       }
       if (event.type !== "message") return;
@@ -2161,6 +2183,44 @@ export function ChatView({
           </button>
         )}
       </div>
+
+      {interactivePrompt && (
+        <div className="interactive-prompt" role="dialog" aria-label="Agent is waiting">
+          <div className="interactive-prompt-header">
+            Agent is waiting for your choice
+          </div>
+          <div className="interactive-prompt-options">
+            {interactivePrompt.options.map((opt, idx) => (
+              <button
+                key={`${idx}-${opt.label}`}
+                type="button"
+                className={`interactive-prompt-option${
+                  idx === interactivePrompt.currentIndex ? " current" : ""
+                }`}
+                disabled={interactiveSending}
+                onClick={async () => {
+                  setInteractiveSending(true);
+                  try {
+                    await api.chooseOption(
+                      session.window_id,
+                      idx,
+                      interactivePrompt.options.length,
+                    );
+                    setInteractivePrompt(null);
+                  } catch (err) {
+                    showToast((err as Error).message, "error");
+                  } finally {
+                    setInteractiveSending(false);
+                  }
+                }}
+              >
+                <span className="interactive-prompt-option-num">{idx + 1}.</span>
+                <span className="interactive-prompt-option-label">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div
         className={`composer${dragOver ? " drag-over" : ""}`}

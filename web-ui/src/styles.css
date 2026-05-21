@@ -1205,6 +1205,72 @@ button.burger {
 }
 
 /* Composer */
+.interactive-prompt {
+  margin: 0 18px 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-1);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.interactive-prompt-header {
+  font-size: 12px;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.interactive-prompt-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.interactive-prompt-option {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-0);
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.interactive-prompt-option:hover:not(:disabled) {
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+}
+
+.interactive-prompt-option:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.interactive-prompt-option.current {
+  border-color: var(--accent);
+}
+
+.interactive-prompt-option-num {
+  flex: 0 0 auto;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-width: 22px;
+}
+
+.interactive-prompt-option-label {
+  flex: 1;
+  min-width: 0;
+}
+
 .composer {
   /* Floating card: lives inside the chat column padding instead of
      spanning panel edge-to-edge. Matches modern chat UIs (ChatGPT /

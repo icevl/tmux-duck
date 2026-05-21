@@ -26,6 +26,7 @@ from ..skill_hints import skill_hint_registry
 from ..slash_commands import slash_command_registry
 from .api import create_app
 from .events import EventBus, session_monitor_listener
+from .interactive_monitor import InteractivePromptMonitor
 from .streaming import stream_pane_loop
 from .update_checker import poll_loop as update_poll_loop
 
@@ -59,12 +60,14 @@ class WebServerHandle:
         bus: EventBus,
         stream_task: asyncio.Task[None] | None = None,
         update_task: asyncio.Task[None] | None = None,
+        interactive_monitor: InteractivePromptMonitor | None = None,
     ) -> None:
         self.server = server
         self.task = task
         self.bus = bus
         self.stream_task = stream_task
         self.update_task = update_task
+        self.interactive_monitor = interactive_monitor
         self.listener: Listener | None = None
 
 
@@ -151,6 +154,9 @@ async def start_web_server(
     else:
         logger.info("Auto-update checker disabled via CODEXBOT_AUTO_UPDATE")
 
+    interactive_monitor = InteractivePromptMonitor(bus)
+    await interactive_monitor.start()
+
     logger.info(
         "Web UI listening on http://%s:%d", config.web_ui_host, config.web_ui_port
     )
@@ -161,6 +167,7 @@ async def start_web_server(
         bus=bus,
         stream_task=stream_task,
         update_task=update_task,
+        interactive_monitor=interactive_monitor,
     )
     handle.listener = listener_ref
     _handle = handle
@@ -194,6 +201,11 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
         try:
             await handle.update_task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+    if handle.interactive_monitor is not None:
+        try:
+            await handle.interactive_monitor.stop()
+        except Exception:  # noqa: BLE001
             pass
     handle.server.should_exit = True
     try:
