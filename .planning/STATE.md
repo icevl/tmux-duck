@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-21T13:09:35.125Z"
-last_activity: 2026-05-21 -- Phase 01 execution started
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-05-21T13:18:35.221Z"
+last_activity: 2026-05-21
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-21)
 ## Current Position
 
 Phase: 01 (search-contract-and-status-surface) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 01
-Last activity: 2026-05-21 -- Phase 01 execution started
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-05-21
 
-Progress: [----------] 0%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [----------] 0%
 - Trend: n/a
 
 *Updated after each plan completion*
+| Phase 01 P01 | 6min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,8 @@ Recent decisions affecting current work:
 - [Milestone]: Search worker owns embedding, indexing, LanceDB writes, backfill, search, and maintenance outside the main Codi hot path.
 - [Milestone]: LanceDB hybrid retrieval and Qwen3-Embedding-0.6B are the starting choices, pending implementation validation.
 - [Milestone]: Live indexing batches flush at 32 queued items or 60 seconds.
+- [Phase 01]: SearchRowIdentity derives from transcript provenance and chunk index while routing/display metadata lives in SearchRoutingMetadata.
+- [Phase 01]: Search contracts stay import-light and avoid worker, retrieval, index, embedding, and model dependencies on request-path modules.
 
 ### Pending Todos
 
@@ -87,6 +90,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-21T11:58:47.891Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-search-contract-and-status-surface/01-CONTEXT.md
+Last session: 2026-05-21T13:18:35.216Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None

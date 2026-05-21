@@ -31,10 +31,10 @@ during startup, backfill, and ongoing indexing.
   text or terminal viewport scrollback.
 - [ ] **CORP-02**: Codi indexes useful user, assistant, and tool/output text
   from both Codex and Claude sessions.
-- [ ] **CORP-03**: Codi stores stable provenance for every indexed item,
+- [x] **CORP-03**: Codi stores stable provenance for every indexed item,
   including runtime, session ID when known, transcript source, transcript
   offset or index, role/content type, and optional tool identifier.
-- [ ] **CORP-04**: Codi uses transcript provenance as indexed row identity and
+- [x] **CORP-04**: Codi uses transcript provenance as indexed row identity and
   uses current tmux `window_id` only as mutable routing metadata.
 - [ ] **CORP-05**: Codi removes, hides, or marks search results stale when their
   source session is no longer an open tmux session.
@@ -177,8 +177,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRCH-06 | Phase 4 | Pending |
 | CORP-01 | Phase 2 | Pending |
 | CORP-02 | Phase 2 | Pending |
-| CORP-03 | Phase 1 | Pending |
-| CORP-04 | Phase 1 | Pending |
+| CORP-03 | Phase 1 | Complete |
+| CORP-04 | Phase 1 | Complete |
 | CORP-05 | Phase 3 | Pending |
 | CORP-06 | Phase 1 | Pending |
 | INDX-01 | Phase 2 | Pending |
