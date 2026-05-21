@@ -104,6 +104,151 @@ def test_protected_endpoint_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_search_status_requires_auth(client: TestClient) -> None:
+    r = client.get("/api/search/status")
+    assert r.status_code == 401
+
+
+def test_search_requires_auth(client: TestClient) -> None:
+    r = client.post("/api/search", json={"query": "billing failure"})
+    assert r.status_code == 401
+
+
+def test_search_status_returns_typed_missing(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_windows = [
+        TmuxWindow(
+            window_id="@11",
+            window_name="codex-search",
+            cwd="/tmp/codex-search",
+            pane_current_command="codex",
+        ),
+        TmuxWindow(
+            window_id="@12",
+            window_name="claude-search",
+            cwd="/tmp/claude-search",
+            pane_current_command="claude",
+        ),
+    ]
+
+    async def fake_list() -> list[TmuxWindow]:
+        return fake_windows
+
+    from codexbot.web import api as web_api
+
+    monkeypatch.setattr(web_api.tmux_manager, "list_windows", fake_list)
+
+    r = authed_client.get("/api/search/status")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["state"] == "missing"
+    assert body["available"] is False
+    assert body["scope"] == "open_sessions"
+    assert body["counters"]["open_sessions"] == 2
+
+
+def test_search_stub_returns_typed_not_ready(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_windows = [
+        TmuxWindow(
+            window_id="@21",
+            window_name="api-session",
+            cwd="/tmp/api-session",
+            pane_current_command="codex",
+        ),
+    ]
+
+    async def fake_list() -> list[TmuxWindow]:
+        return fake_windows
+
+    from codexbot.web import api as web_api
+
+    monkeypatch.setattr(web_api.tmux_manager, "list_windows", fake_list)
+
+    r = authed_client.post(
+        "/api/search",
+        json={"query": "auth callback failure", "limit": 7, "hits_per_session": 2},
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["query"] == "auth callback failure"
+    assert body["status"]["state"] == "missing"
+    assert body["status"]["available"] is False
+    assert body["status"]["scope"] == "open_sessions"
+    assert body["status"]["counters"]["open_sessions"] == 1
+    assert body["outcome"] == "not_ready"
+    assert body["results"] == []
+    assert body["total_results"] == 0
+    assert body["limit"] == 7
+    assert body["hits_per_session"] == 2
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"query": "x" * 501},
+        {"query": "valid", "limit": 0},
+        {"query": "valid", "limit": 51},
+        {"query": "valid", "hits_per_session": 0},
+        {"query": "valid", "hits_per_session": 11},
+    ],
+)
+def test_search_rejects_oversized_or_out_of_range_request(
+    authed_client: TestClient, payload: dict[str, Any]
+) -> None:
+    r = authed_client.post("/api/search", json=payload)
+    assert r.status_code == 422
+
+
+def test_search_responses_do_not_leak_sensitive_fields(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_windows = [
+        TmuxWindow(
+            window_id="@31",
+            window_name="safe-session",
+            cwd="/tmp/safe-session",
+            pane_current_command="codex",
+        ),
+    ]
+
+    async def fake_list() -> list[TmuxWindow]:
+        return fake_windows
+
+    from codexbot.web import api as web_api
+
+    monkeypatch.setattr(web_api.tmux_manager, "list_windows", fake_list)
+
+    status_response = authed_client.get("/api/search/status")
+    search_response = authed_client.post("/api/search", json={"query": "secret leak"})
+
+    assert status_response.status_code == 200, status_response.text
+    assert search_response.status_code == 200, search_response.text
+
+    serialized = json.dumps(
+        {"status": status_response.json(), "search": search_response.json()}
+    )
+    forbidden_fragments = [
+        "WEB_UI_PASSWORD",
+        "TELEGRAM_BOT_TOKEN",
+        "raw_transcript",
+        "transcript_text",
+        "monitor_state.json",
+        "lancedb",
+        "torch",
+        "transformers",
+        "sentence-transformers",
+        "sentence_transformers",
+        "embedding",
+    ]
+    for fragment in forbidden_fragments:
+        assert fragment not in serialized
+
+
 def test_list_sessions_returns_windows(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
