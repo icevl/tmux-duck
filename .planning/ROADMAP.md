@@ -14,7 +14,7 @@ Codi session search will move from a stable local contract to a working open-ses
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Search Contract and Status Surface** - Establish the local search API, status semantics, provenance, and derived-index boundary. (completed 2026-05-21)
-- [ ] **Phase 2: Worker Skeleton, Backfill, and Rebuild Path** - Create asynchronous open-session indexing that can build or rebuild search storage without blocking Codi.
+- [x] **Phase 2: Worker Skeleton, Backfill, and Rebuild Path** - Create asynchronous open-session indexing that can build or rebuild search storage without blocking Codi. (completed 2026-05-21)
 - [ ] **Phase 3: Live Queue and Convergence** - Durably capture new transcript items and keep the derived index aligned with live open sessions.
 - [ ] **Phase 4: LanceDB Hybrid Retrieval and Ranking** - Deliver local lexical plus semantic search with ranked session groups and matching snippets.
 - [ ] **Phase 5: Web UI Search Experience and Navigation** - Add the browser search workflow, status states, filters, snippets, and result navigation.
@@ -74,7 +74,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-03-PLAN.md — Add explicit rebuild, atomic generation activation, recovery, and built-but-unqueryable status.
+- [x] 02-03-PLAN.md — Add explicit rebuild, atomic generation activation, recovery, and built-but-unqueryable status.
 
 ### Phase 3: Live Queue and Convergence
 
@@ -152,7 +152,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Search Contract and Status Surface | 3/3 | Complete   | 2026-05-21 |
-| 2. Worker Skeleton, Backfill, and Rebuild Path | 2/3 | In Progress|  |
+| 2. Worker Skeleton, Backfill, and Rebuild Path | 3/3 | Complete   | 2026-05-21 |
 | 3. Live Queue and Convergence | 0/TBD | Not started | - |
 | 4. LanceDB Hybrid Retrieval and Ranking | 0/TBD | Not started | - |
 | 5. Web UI Search Experience and Navigation | 0/TBD | Not started | - |
