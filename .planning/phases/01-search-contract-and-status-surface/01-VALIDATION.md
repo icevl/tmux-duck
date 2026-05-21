@@ -1,10 +1,11 @@
 ---
 phase: 01
 slug: search-contract-and-status-surface
-status: draft
+status: verified
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-05-21
+validated: 2026-05-21
 ---
 
 # Phase 01 - Validation Strategy
@@ -38,10 +39,10 @@ created: 2026-05-21
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 01-W0-01 | 01 | 0 | CORP-03 | T-01-03 / T-01-04 | Provenance DTOs validate required fields without leaking runtime-specific raw records | unit | `uv run pytest tests/codexbot/test_search_contracts.py::test_provenance_contract_contains_required_fields -q` | Missing W0 | pending |
-| 01-W0-02 | 01 | 0 | CORP-04 | T-01-04 | Row identity excludes mutable `window_id`, cwd, display name, pinned, and sort metadata | unit | `uv run pytest tests/codexbot/test_search_contracts.py::test_row_identity_excludes_mutable_window_metadata -q` | Missing W0 | pending |
-| 01-W0-03 | 01 | 0 | CORP-06 | T-01-04 | Search state resolves under `$CODEXBOT_DIR/search/` and does not modify `monitor_state.json` | unit | `uv run pytest tests/codexbot/test_search_state.py::test_search_state_does_not_modify_monitor_state -q` | Missing W0 | pending |
-| 01-W0-04 | 01 | 0 | OPS-02 | T-01-01 / T-01-02 / T-01-05 | Search routes require auth, return typed 200 not-ready responses, and web handlers avoid heavy model/index imports | API + static | `uv run pytest tests/codexbot/test_web_api.py::test_search_status_requires_auth tests/codexbot/test_web_api.py::test_search_stub_returns_typed_not_ready tests/codexbot/test_search_contracts.py::test_web_search_boundary_has_no_heavy_imports -q` | Partial W0 | pending |
+| 01-W0-01 | 01 | 0 | CORP-03 | T-01-03 / T-01-04 | Provenance DTOs validate required fields without leaking runtime-specific raw records | unit | `uv run pytest tests/codexbot/test_search_contracts.py::test_provenance_contract_contains_required_fields -q` | `tests/codexbot/test_search_contracts.py` | green |
+| 01-W0-02 | 01 | 0 | CORP-04 | T-01-04 | Row identity excludes mutable `window_id`, cwd, display name, pinned, and sort metadata | unit | `uv run pytest tests/codexbot/test_search_contracts.py::test_row_identity_excludes_mutable_window_metadata -q` | `tests/codexbot/test_search_contracts.py` | green |
+| 01-W0-03 | 01 | 0 | CORP-06 | T-01-04 | Search state resolves under `$CODEXBOT_DIR/search/` and does not modify `monitor_state.json` | unit | `uv run pytest tests/codexbot/test_search_state.py::test_search_state_does_not_modify_monitor_state -q` | `tests/codexbot/test_search_state.py` | green |
+| 01-W0-04 | 01 | 0 | OPS-02 | T-01-01 / T-01-02 / T-01-05 | Search routes require auth, return typed 200 not-ready responses, and web handlers avoid heavy model/index imports | API + static | `uv run pytest tests/codexbot/test_web_api.py::test_search_status_requires_auth tests/codexbot/test_web_api.py::test_search_stub_returns_typed_not_ready tests/codexbot/test_search_contracts.py::test_web_search_boundary_has_no_heavy_imports -q` | `tests/codexbot/test_web_api.py`, `tests/codexbot/test_search_contracts.py` | green |
 
 *Status: pending / green / red / flaky*
 
@@ -49,9 +50,9 @@ created: 2026-05-21
 
 ## Wave 0 Requirements
 
-- [ ] `tests/codexbot/test_search_contracts.py` - stubs and assertions for CORP-03, CORP-04, and OPS-02 import-boundary behavior.
-- [ ] `tests/codexbot/test_search_state.py` - stubs and assertions for CORP-06 state namespace and monitor-state isolation.
-- [ ] `tests/codexbot/test_web_api.py` additions - authenticated `/api/search/status` and `/api/search` stub behavior.
+- [x] `tests/codexbot/test_search_contracts.py` - stubs and assertions for CORP-03, CORP-04, and OPS-02 import-boundary behavior.
+- [x] `tests/codexbot/test_search_state.py` - stubs and assertions for CORP-06 state namespace and monitor-state isolation.
+- [x] `tests/codexbot/test_web_api.py` additions - authenticated `/api/search/status` and `/api/search` stub behavior.
 
 ---
 
@@ -73,6 +74,23 @@ created: 2026-05-21
 | T-01-04 | Search mutates authoritative session or monitor state | Search state helpers write only under `$CODEXBOT_DIR/search/`, and tests prove `monitor_state.json` remains unchanged. |
 | T-01-05 | Heavy model/index imports in request handlers | Static import-boundary tests reject LanceDB, torch, transformers, sentence-transformers, and worker imports from Web API request modules. |
 
+## Validation Audit 2026-05-21
+
+| Metric | Count |
+|--------|-------|
+| Requirement rows audited | 4 |
+| Covered | 4 |
+| Partial | 0 |
+| Missing | 0 |
+| Generated test files | 0 |
+| Manual-only escalations | 0 |
+
+Audit evidence:
+
+- `uv run pytest tests/codexbot/test_search_contracts.py::test_provenance_contract_contains_required_fields tests/codexbot/test_search_contracts.py::test_row_identity_excludes_mutable_window_metadata tests/codexbot/test_search_state.py::test_search_state_does_not_modify_monitor_state tests/codexbot/test_web_api.py::test_search_status_requires_auth tests/codexbot/test_web_api.py::test_search_stub_returns_typed_not_ready tests/codexbot/test_search_contracts.py::test_web_search_boundary_has_no_heavy_imports -q` - PASS, 6 tests.
+- `uv run pytest tests/codexbot/test_search_contracts.py tests/codexbot/test_search_state.py tests/codexbot/test_web_api.py -q` - PASS, 58 tests.
+- No new tests were generated because all Phase 1 requirement rows already had automated coverage in the implemented test files.
+
 ## Validation Sign-Off
 
 - [x] All tasks have automated verify or Wave 0 dependencies
@@ -82,4 +100,4 @@ created: 2026-05-21
 - [x] Feedback latency target < 90s for targeted tests
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** approved 2026-05-21
+**Approval:** verified 2026-05-21
