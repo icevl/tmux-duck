@@ -27,6 +27,7 @@ SearchIndexState: TypeAlias = Literal[
     "unavailable",
 ]
 SearchOutcome: TypeAlias = Literal["lexical", "semantic", "metadata", "hybrid"]
+SearchResponseOutcome: TypeAlias = Literal["ok", "not_ready", "unavailable"]
 
 
 class TranscriptProvenance(BaseModel):
@@ -155,7 +156,11 @@ class SearchResponse(BaseModel):
     status: SearchStatusResponse
     query: str = Field(min_length=1, max_length=500)
     results: list[SearchSessionResult] = Field(default_factory=list, max_length=50)
+    total_results: int = Field(default=0, ge=0)
     total_sessions: int = Field(default=0, ge=0)
+    limit: int = Field(ge=1, le=50)
+    hits_per_session: int = Field(ge=1, le=10)
+    outcome: SearchResponseOutcome
 
 
 __all__ = [
@@ -167,6 +172,7 @@ __all__ = [
     "SearchOutcome",
     "SearchRequest",
     "SearchResponse",
+    "SearchResponseOutcome",
     "SearchRoutingMetadata",
     "SearchRowIdentity",
     "SearchSessionResult",
