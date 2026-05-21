@@ -20,7 +20,6 @@ from typing import Any
 from codexbot.session import ParsedTranscriptSession, SessionManager, session_manager
 from codexbot.tmux_manager import TmuxManager, TmuxWindow, tmux_manager
 from codexbot.transcript_parser import ParsedEntry
-from codexbot.utils import atomic_write_json
 
 from .contracts import (
     SearchBackfillDocument,
@@ -34,7 +33,7 @@ from .contracts import (
 from .state import (
     SEARCH_SCHEMA_VERSION,
     generation_documents_path,
-    generation_manifest_path,
+    write_generation_manifest,
 )
 
 logger = logging.getLogger(__name__)
@@ -304,10 +303,7 @@ async def materialize_backfill_generation(
         generation_documents_path(generation_id),
         (doc.model_dump(mode="json") for doc in result.documents),
     )
-    atomic_write_json(
-        generation_manifest_path(generation_id),
-        manifest.model_dump(mode="json"),
-    )
+    write_generation_manifest(manifest)
     return manifest
 
 
