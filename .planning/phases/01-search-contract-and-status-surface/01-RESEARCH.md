@@ -465,17 +465,17 @@ def search_dir() -> Path:
 |---|-------|---------|---------------|
 | A1 | The most likely future accidental heavy-import path is a client module that mixes stubs with later implementation imports. [ASSUMED] | Common Pitfalls | If wrong, the planner may put the import-boundary test in a less useful file; the broader forbidden-import check still catches the requirement. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should Phase 1 add `web-ui/src/api.ts` search client methods now?** [VERIFIED: web-ui/src/api.ts:93-151]
    - What we know: Phase 1 must expose authenticated API surfaces, but the Web UI search experience is Phase 5. [CITED: .planning/ROADMAP.md]
-   - What's unclear: The planner can choose backend-only API tests or add TypeScript client types without UI. [ASSUMED]
-   - Recommendation: Add backend API routes and tests; add frontend `api.searchStatus()` and `api.search()` types only if `pnpm --dir web-ui build` remains cheap in the selected plan. [CITED: .planning/codebase/STACK.md]
+   - RESOLVED: Phase 1 remains backend-only: do not add `web-ui/src/api.ts` typed client methods in Phase 1. [CITED: .planning/phases/01-search-contract-and-status-surface/01-03-PLAN.md]
+   - Implementation consequence: Add backend API routes and tests only; do not change frontend API client code or require frontend build validation for Phase 1. [CITED: .planning/codebase/STACK.md]
 
 2. **Should `SearchResponse` include an `outcome` field in addition to `status.state`?** [CITED: .planning/phases/01-search-contract-and-status-surface/01-CONTEXT.md]
    - What we know: The contract must distinguish missing/building/unavailable from normal empty results. [CITED: .planning/REQUIREMENTS.md]
-   - What's unclear: The context locks status vocabulary but does not lock response field names beyond status semantics. [CITED: .planning/phases/01-search-contract-and-status-surface/01-CONTEXT.md]
-   - Recommendation: Include `status.state` and `results`; include `outcome` only if tests prove it avoids ambiguity for future UI. [ASSUMED]
+   - RESOLVED: `SearchResponse` includes an explicit `outcome` field in addition to `status.state`. [CITED: .planning/phases/01-search-contract-and-status-surface/01-01-PLAN.md] [CITED: .planning/phases/01-search-contract-and-status-surface/01-02-PLAN.md] [CITED: .planning/phases/01-search-contract-and-status-surface/01-03-PLAN.md]
+   - Implementation consequence: Tests and provider/API contracts assert `outcome == "not_ready"` for missing-index search responses while `status.state` remains the lifecycle state. [CITED: .planning/phases/01-search-contract-and-status-surface/01-02-PLAN.md] [CITED: .planning/phases/01-search-contract-and-status-surface/01-03-PLAN.md]
 
 ## Environment Availability
 
@@ -581,4 +581,3 @@ Security enforcement is enabled because `.planning/config.json` does not set `se
 
 **Research date:** 2026-05-21 [VERIFIED: system date]
 **Valid until:** 2026-06-20 for Phase 1 contract patterns; re-check PyPI/Context7 if package or FastAPI/Pydantic APIs are changed before implementation. [ASSUMED]
-
