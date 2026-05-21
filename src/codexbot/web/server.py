@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Optional
 import uvicorn
 
 from ..config import config
+from ..search import supervisor as search_supervisor
 from ..session_monitor import NewMessage, SessionMonitor
 from ..skill_hints import skill_hint_registry
 from ..slash_commands import slash_command_registry
@@ -59,12 +60,14 @@ class WebServerHandle:
         bus: EventBus,
         stream_task: asyncio.Task[None] | None = None,
         update_task: asyncio.Task[None] | None = None,
+        search_task: asyncio.Task[None] | None = None,
     ) -> None:
         self.server = server
         self.task = task
         self.bus = bus
         self.stream_task = stream_task
         self.update_task = update_task
+        self.search_task = search_task
         self.listener: Listener | None = None
 
 
@@ -143,6 +146,9 @@ async def start_web_server(
     stream_task = asyncio.create_task(
         stream_pane_loop(bus), name="codexbot-web-pane-stream"
     )
+    search_task = asyncio.create_task(
+        search_supervisor.start_worker_if_needed(), name="codexbot-search-supervisor"
+    )
     update_task: asyncio.Task[None] | None = None
     if config.auto_update_enabled:
         update_task = asyncio.create_task(
@@ -161,6 +167,7 @@ async def start_web_server(
         bus=bus,
         stream_task=stream_task,
         update_task=update_task,
+        search_task=search_task,
     )
     handle.listener = listener_ref
     _handle = handle
@@ -193,6 +200,12 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
         handle.update_task.cancel()
         try:
             await handle.update_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+    if handle.search_task is not None:
+        handle.search_task.cancel()
+        try:
+            await handle.search_task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
     handle.server.should_exit = True

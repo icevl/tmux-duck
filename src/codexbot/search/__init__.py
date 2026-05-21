@@ -16,6 +16,8 @@ from .contracts import (
     SearchRowIdentity,
     SearchSessionResult,
     SearchStatusResponse,
+    SearchWorkerStatus,
+    SearchWorkerStatusState,
     TranscriptProvenance,
 )
 
@@ -33,5 +35,7 @@ __all__ = [
     "SearchRowIdentity",
     "SearchSessionResult",
     "SearchStatusResponse",
+    "SearchWorkerStatus",
+    "SearchWorkerStatusState",
     "TranscriptProvenance",
 ]
