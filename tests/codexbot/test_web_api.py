@@ -150,6 +150,53 @@ def test_search_status_returns_typed_missing(
     assert body["counters"]["open_sessions"] == 2
 
 
+def test_search_status_reports_building_backfill(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from codexbot.search.contracts import SearchCounters, SearchWorkerStatus
+    from codexbot.search.state import write_worker_status
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    write_worker_status(
+        SearchWorkerStatus(
+            status="running",
+            current_task="initial_backfill",
+            heartbeat_at="2026-05-21T21:03:00Z",
+            counters=SearchCounters(
+                open_sessions=1,
+                indexed_sessions=1,
+                indexed_chunks=3,
+                failed_items=0,
+            ),
+        )
+    )
+
+    async def fake_list() -> list[TmuxWindow]:
+        return [
+            TmuxWindow(
+                window_id="@41",
+                window_name="backfill-session",
+                cwd="/tmp/backfill-session",
+                pane_current_command="codex",
+            )
+        ]
+
+    from codexbot.web import api as web_api
+
+    monkeypatch.setattr(web_api.tmux_manager, "list_windows", fake_list)
+
+    r = authed_client.get("/api/search/status")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["state"] == "building"
+    assert body["available"] is False
+    assert body["generation"] is None
+    assert body["counters"]["open_sessions"] == 1
+    assert body["counters"]["indexed_sessions"] == 1
+    assert body["counters"]["indexed_chunks"] == 3
+
+
 def test_search_stub_returns_typed_not_ready(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

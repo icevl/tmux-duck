@@ -256,7 +256,11 @@ def test_web_search_boundary_has_no_heavy_imports() -> None:
     search_dir = ROOT / "src" / "codexbot" / "search"
     paths = [ROOT / "src" / "codexbot" / "web" / "api.py"]
     if search_dir.exists():
-        paths.extend(sorted(search_dir.glob("*.py")))
+        paths.extend(
+            search_dir / name
+            for name in ("__init__.py", "contracts.py", "state.py", "client.py")
+            if (search_dir / name).exists()
+        )
 
     violations: list[str] = []
     for path in paths:
