@@ -43,9 +43,9 @@ during startup, backfill, and ongoing indexing.
 
 ### Index Lifecycle
 
-- [ ] **INDX-01**: Codi creates the search storage under the configured Codi
+- [x] **INDX-01**: Codi creates the search storage under the configured Codi
   state directory when no existing search database is present.
-- [ ] **INDX-02**: Codi starts initial open-session backfill asynchronously so
+- [x] **INDX-02**: Codi starts initial open-session backfill asynchronously so
   FastAPI startup, WebSocket delivery, Telegram delivery, terminal handling,
   and the Web UI remain usable.
 - [ ] **INDX-03**: Codi backfills all currently open sessions during initial
@@ -58,7 +58,7 @@ during startup, backfill, and ongoing indexing.
   and live events do not create duplicate search documents.
 - [ ] **INDX-07**: Codi persists queue leases, retries, failed items, backfill
   watermarks, and worker status outside `monitor_state.json`.
-- [ ] **INDX-08**: Codi can recover search indexing after process restart
+- [x] **INDX-08**: Codi can recover search indexing after process restart
   without requiring users to manually clear state.
 
 ### Retrieval And Ranking
@@ -181,14 +181,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CORP-04 | Phase 1 | Complete |
 | CORP-05 | Phase 3 | Pending |
 | CORP-06 | Phase 1 | Complete |
-| INDX-01 | Phase 2 | Pending |
-| INDX-02 | Phase 2 | Pending |
+| INDX-01 | Phase 2 | Complete |
+| INDX-02 | Phase 2 | Complete |
 | INDX-03 | Phase 2 | Pending |
 | INDX-04 | Phase 3 | Pending |
 | INDX-05 | Phase 3 | Pending |
 | INDX-06 | Phase 3 | Pending |
 | INDX-07 | Phase 3 | Pending |
-| INDX-08 | Phase 2 | Pending |
+| INDX-08 | Phase 2 | Complete |
 | RETR-01 | Phase 4 | Pending |
 | RETR-02 | Phase 4 | Pending |
 | RETR-03 | Phase 4 | Pending |
