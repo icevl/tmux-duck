@@ -26,10 +26,10 @@ during startup, backfill, and ongoing indexing.
 
 ### Corpus And Provenance
 
-- [ ] **CORP-01**: Codi indexes normalized Codex and Claude transcript records
+- [x] **CORP-01**: Codi indexes normalized Codex and Claude transcript records
   through existing runtime transcript parsers rather than Telegram-truncated
   text or terminal viewport scrollback.
-- [ ] **CORP-02**: Codi indexes useful user, assistant, and tool/output text
+- [x] **CORP-02**: Codi indexes useful user, assistant, and tool/output text
   from both Codex and Claude sessions.
 - [x] **CORP-03**: Codi stores stable provenance for every indexed item,
   including runtime, session ID when known, transcript source, transcript
@@ -48,7 +48,7 @@ during startup, backfill, and ongoing indexing.
 - [x] **INDX-02**: Codi starts initial open-session backfill asynchronously so
   FastAPI startup, WebSocket delivery, Telegram delivery, terminal handling,
   and the Web UI remain usable.
-- [ ] **INDX-03**: Codi backfills all currently open sessions during initial
+- [x] **INDX-03**: Codi backfills all currently open sessions during initial
   indexing.
 - [ ] **INDX-04**: Codi durably queues new transcript items while initial
   backfill is running so live messages are not lost.
@@ -175,15 +175,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SRCH-04 | Phase 4 | Pending |
 | SRCH-05 | Phase 4 | Pending |
 | SRCH-06 | Phase 4 | Pending |
-| CORP-01 | Phase 2 | Pending |
-| CORP-02 | Phase 2 | Pending |
+| CORP-01 | Phase 2 | Complete |
+| CORP-02 | Phase 2 | Complete |
 | CORP-03 | Phase 1 | Complete |
 | CORP-04 | Phase 1 | Complete |
 | CORP-05 | Phase 3 | Pending |
 | CORP-06 | Phase 1 | Complete |
 | INDX-01 | Phase 2 | Complete |
 | INDX-02 | Phase 2 | Complete |
-| INDX-03 | Phase 2 | Pending |
+| INDX-03 | Phase 2 | Complete |
 | INDX-04 | Phase 3 | Pending |
 | INDX-05 | Phase 3 | Pending |
 | INDX-06 | Phase 3 | Pending |
