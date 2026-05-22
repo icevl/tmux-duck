@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 from .state import read_generation_metadata, read_worker_status
+from .worker import drain_live_queue_once
 
 logger = logging.getLogger(__name__)
 
@@ -34,4 +35,14 @@ async def start_worker_if_needed() -> None:
         logger.warning("Could not launch search worker: %s", exc)
 
 
-__all__ = ["start_worker_if_needed"]
+async def live_queue_loop(*, poll_interval_seconds: float = 1.0) -> None:
+    """Run live queue draining without blocking web startup."""
+    while True:
+        try:
+            await asyncio.to_thread(drain_live_queue_once)
+        except Exception:
+            logger.exception("search live queue loop failed")
+        await asyncio.sleep(poll_interval_seconds)
+
+
+__all__ = ["live_queue_loop", "start_worker_if_needed"]

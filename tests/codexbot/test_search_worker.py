@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import tomllib
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from codexbot.search.contracts import SearchCounters
+from codexbot.search.contracts import (
+    SearchBackfillDocument,
+    SearchCounters,
+    SearchRoutingMetadata,
+    SearchRowIdentity,
+    TranscriptProvenance,
+)
 
 
 def _manifest(generation_id: str, *, indexed_chunks: int = 7):
@@ -44,6 +51,62 @@ def _write_generation_files(generation_id: str, manifest) -> None:
     docs_path.parent.mkdir(parents=True, exist_ok=True)
     docs_path.write_text('{"text":"indexed"}\n', encoding="utf-8")
     write_generation_manifest(manifest)
+
+
+def _document(index: int, *, text: str | None = None) -> SearchBackfillDocument:
+    provenance = TranscriptProvenance(
+        runtime="codex",
+        session_id="session-1",
+        transcript_source="/tmp/session-1.jsonl",
+        transcript_offset=index * 10,
+        transcript_index=index,
+        role="assistant",
+        content_type="text",
+        source_event_kind="parsed_entry",
+        timestamp="2026-05-22T10:00:00Z",
+    )
+    return SearchBackfillDocument(
+        identity=SearchRowIdentity.from_provenance(provenance, chunk_index=0),
+        provenance=provenance,
+        routing=SearchRoutingMetadata(
+            window_id="@1",
+            name="codex",
+            cwd="/repo",
+            runtime="codex",
+            session_id="session-1",
+        ),
+        text=text or f"document {index}",
+        timestamp=provenance.timestamp,
+        source_order=index * 10,
+        chunk_index=0,
+        chunk_count=1,
+    )
+
+
+def _activate_empty_generation(tmp_path: Path, generation_id: str = "gen-live") -> None:
+    from codexbot.search.state import (
+        activate_generation,
+        generation_documents_path,
+        write_generation_manifest,
+    )
+
+    manifest = _manifest(generation_id, indexed_chunks=0)
+    docs_path = generation_documents_path(generation_id)
+    docs_path.parent.mkdir(parents=True, exist_ok=True)
+    docs_path.write_text("", encoding="utf-8")
+    write_generation_manifest(manifest)
+    activate_generation(manifest)
+
+
+def _read_docs(generation_id: str) -> list[dict]:
+    from codexbot.search.state import generation_documents_path
+
+    path = generation_documents_path(generation_id)
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def test_worker_status_write_is_search_owned_and_monitor_safe(
@@ -269,3 +332,151 @@ async def test_supervisor_starts_initial_backfill_only_when_no_active_generation
 
     await supervisor.start_worker_if_needed()
     assert calls == []
+
+
+def test_live_drain_flushes_at_32_ready_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.queue import enqueue_documents, get_queue_snapshot
+    from codexbot.search.worker import drain_live_queue_once
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    _activate_empty_generation(tmp_path)
+    enqueue_documents([_document(i) for i in range(31)])
+
+    assert drain_live_queue_once(batch_size=32) == 0
+    assert get_queue_snapshot().queued_items == 31
+
+    enqueue_documents([_document(31)])
+
+    assert drain_live_queue_once(batch_size=32) == 32
+    assert get_queue_snapshot().queued_items == 0
+    assert len(_read_docs("gen-live")) == 32
+
+
+def test_live_drain_flushes_smaller_batch_after_timer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from codexbot.search import worker
+    from codexbot.search.queue import enqueue_documents, get_queue_snapshot
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    _activate_empty_generation(tmp_path)
+    base = datetime(2026, 5, 22, 10, 0, tzinfo=UTC)
+    worker._last_live_flush_at = base
+    enqueue_documents([_document(1), _document(2)])
+
+    assert (
+        worker.drain_live_queue_once(
+            batch_size=32,
+            flush_interval_seconds=60,
+            now=base + timedelta(seconds=59),
+        )
+        == 0
+    )
+    assert get_queue_snapshot().queued_items == 2
+
+    assert (
+        worker.drain_live_queue_once(
+            batch_size=32,
+            flush_interval_seconds=60,
+            now=base + timedelta(seconds=60),
+        )
+        == 2
+    )
+    assert get_queue_snapshot().queued_items == 0
+    worker._last_live_flush_at = None
+
+
+def test_generation_document_upsert_is_idempotent_and_updates_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.live import (
+        read_generation_documents,
+        upsert_generation_documents,
+    )
+    from codexbot.search.state import read_generation_manifest
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    _activate_empty_generation(tmp_path)
+
+    first = _document(1, text="first")
+    second = first.model_copy(update={"text": "updated"})
+
+    assert upsert_generation_documents("gen-live", [first]) == 1
+    assert upsert_generation_documents("gen-live", [second]) == 1
+
+    documents = read_generation_documents("gen-live")
+    manifest = read_generation_manifest("gen-live")
+    assert len(documents) == 1
+    assert documents[0].text == "updated"
+    assert manifest is not None
+    assert manifest.document_count == 1
+    assert manifest.counters.indexed_chunks == 1
+
+
+def test_live_drain_retries_then_dead_letters_and_explicitly_requeues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search import worker
+    from codexbot.search.queue import (
+        enqueue_documents,
+        get_queue_snapshot,
+        read_queue_item,
+        requeue_failed_items,
+    )
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    _activate_empty_generation(tmp_path)
+    [queue_id] = enqueue_documents([_document(1)])
+
+    def fail_upsert(
+        _generation_id: str, _documents: list[SearchBackfillDocument]
+    ) -> int:
+        raise RuntimeError("temporary write failure")
+
+    monkeypatch.setattr(worker, "upsert_generation_documents", fail_upsert)
+
+    assert worker.drain_live_queue_once(force=True, max_attempts=2) == 0
+    assert read_queue_item(queue_id).status == "queued"  # type: ignore[union-attr]
+
+    assert worker.drain_live_queue_once(force=True, max_attempts=2) == 0
+    failed = read_queue_item(queue_id)
+    assert failed is not None
+    assert failed.status == "failed"
+    assert get_queue_snapshot().failed_items == 1
+
+    assert requeue_failed_items() == 1
+    requeued = read_queue_item(queue_id)
+    assert requeued is not None
+    assert requeued.status == "queued"
+    assert requeued.attempts == 0
+
+
+@pytest.mark.asyncio
+async def test_supervisor_live_queue_loop_runs_drain_without_blocking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from codexbot.search import supervisor
+
+    calls = 0
+
+    def fake_drain() -> int:
+        nonlocal calls
+        calls += 1
+        if calls >= 2:
+            raise asyncio.CancelledError
+        return 0
+
+    async def fake_sleep(_seconds: float) -> None:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(supervisor, "drain_live_queue_once", fake_drain)
+    monkeypatch.setattr(supervisor.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await supervisor.live_queue_loop()
+
+    assert calls == 1

@@ -56,11 +56,12 @@ def _doc(
     chunk_index: int = 0,
     cwd: str = "/repo",
     window_id: str = "@1",
+    transcript_source: str = "/tmp/session-1.jsonl",
 ) -> SearchBackfillDocument:
     provenance = TranscriptProvenance(
         runtime="codex",
         session_id="session-1",
-        transcript_source="/tmp/session-1.jsonl",
+        transcript_source=transcript_source,
         transcript_offset=offset,
         transcript_index=index,
         role="assistant",
@@ -102,6 +103,18 @@ def _source(entries: list[ParsedEntry] | None = None) -> ParsedTranscriptSession
         transcript_source="/tmp/session-1.jsonl",
         entries=entries or [],
         pending_tools={},
+    )
+
+
+def _source_with_path(path: str) -> ParsedTranscriptSession:
+    source = _source([])
+    return ParsedTranscriptSession(
+        window_id=source.window_id,
+        session=source.session,
+        state=source.state,
+        transcript_source=path,
+        entries=source.entries,
+        pending_tools=source.pending_tools,
     )
 
 
@@ -185,10 +198,16 @@ def test_leases_expire_and_bounded_retries_dead_letter_rows(
     assert expired.queue_id == queue_id
     assert expired.attempts == 2
 
-    assert fail_item(queue_id, "WEB_UI_PASSWORD=secret /tmp/private.jsonl", max_attempts=3) == "queued"
+    assert (
+        fail_item(queue_id, "WEB_UI_PASSWORD=secret /tmp/private.jsonl", max_attempts=3)
+        == "queued"
+    )
     [retry] = lease_ready_items(limit=1, now=now + timedelta(seconds=3))
     assert retry.attempts == 3
-    assert fail_item(queue_id, RuntimeError("raw transcript content"), max_attempts=3) == "failed"
+    assert (
+        fail_item(queue_id, RuntimeError("raw transcript content"), max_attempts=3)
+        == "failed"
+    )
 
     failed = read_queue_item(queue_id)
     assert failed is not None
@@ -404,3 +423,38 @@ async def test_replay_uses_watermarks_and_updates_after_enqueue(
     assert watermark is not None
     assert watermark.transcript_offset == 20
     assert monitor_state.read_text(encoding="utf-8") == '{"tracked_sessions":{}}\n'
+
+
+@pytest.mark.asyncio
+async def test_stale_source_helper_hides_closed_session_documents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.live import (
+        filter_stale_documents,
+        read_generation_documents,
+        refresh_stale_sources,
+        upsert_generation_documents,
+    )
+    from codexbot.search.queue import list_stale_sources
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    open_doc = _doc(text="open", transcript_source="/tmp/open.jsonl")
+    stale_doc = _doc(
+        text="closed",
+        offset=20,
+        index=1,
+        transcript_source="/tmp/closed.jsonl",
+    )
+    upsert_generation_documents("gen-stale", [open_doc, stale_doc])
+
+    stale_sources = await refresh_stale_sources(
+        session_manager=FakeSessionManager(_source_with_path("/tmp/open.jsonl")),
+        tmux_manager=FakeTmuxManager([TmuxWindow("@1", "codex", "/repo", "codex")]),
+        generation_id="gen-stale",
+    )
+
+    documents = read_generation_documents("gen-stale")
+    routeable = filter_stale_documents(documents)
+    assert stale_sources == {"/tmp/closed.jsonl"}
+    assert list_stale_sources() == {"/tmp/closed.jsonl"}
+    assert [doc.text for doc in routeable] == ["open"]

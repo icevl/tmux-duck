@@ -104,7 +104,9 @@ def sanitize_error(error: BaseException | str) -> str:
         r"\1=[secret]",
         text,
     )
-    text = re.sub(r"\b[A-Z0-9_]*(TOKEN|SECRET|PASSWORD|KEY)[A-Z0-9_]*\b", "[secret]", text)
+    text = re.sub(
+        r"\b[A-Z0-9_]*(TOKEN|SECRET|PASSWORD|KEY)[A-Z0-9_]*\b", "[secret]", text
+    )
     text = text.replace("secret", "[redacted]")
     text = re.sub(r"(?<!\w)/(?:[^\s:]+/?)+", "[path]", text)
     return text[:MAX_ERROR_LENGTH]
@@ -589,7 +591,10 @@ def replace_stale_sources(
             INSERT INTO stale_sources(transcript_source, runtime, session_id, stale_at)
             VALUES (?, ?, ?, ?)
             """,
-            [(source, runtime, session_id, now) for source, runtime, session_id in sources],
+            [
+                (source, runtime, session_id, now)
+                for source, runtime, session_id in sources
+            ],
         )
 
 

@@ -26,15 +26,12 @@ def _counters(
     existing: SearchCounters | None = None,
     queue_snapshot: SearchQueueSnapshot | None = None,
 ) -> SearchCounters | None:
-    has_queue_values = (
-        queue_snapshot is not None
-        and (
-            queue_snapshot.queued_items > 0
-            or queue_snapshot.leased_items > 0
-            or queue_snapshot.failed_items > 0
-            or queue_snapshot.stale_sources > 0
-            or queue_snapshot.recent_error is not None
-        )
+    has_queue_values = queue_snapshot is not None and (
+        queue_snapshot.queued_items > 0
+        or queue_snapshot.leased_items > 0
+        or queue_snapshot.failed_items > 0
+        or queue_snapshot.stale_sources > 0
+        or queue_snapshot.recent_error is not None
     )
     if existing is None and open_session_count is None and not has_queue_values:
         return None
