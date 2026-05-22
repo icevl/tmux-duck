@@ -12,16 +12,16 @@ during startup, backfill, and ongoing indexing.
 
 - [ ] **SRCH-01**: User can start a session search from the existing Web UI
   session workflow without losing the currently selected session or draft input.
-- [ ] **SRCH-02**: User can search across currently open tmux-backed Codex and
+- [x] **SRCH-02**: User can search across currently open tmux-backed Codex and
   Claude sessions only.
 - [ ] **SRCH-03**: User can see that v1 search scope is limited to open sessions
   when index status or result context is displayed.
-- [ ] **SRCH-04**: User can receive results grouped as ranked sessions with
+- [x] **SRCH-04**: User can receive results grouped as ranked sessions with
   nested matching message snippets.
-- [ ] **SRCH-05**: User can search session metadata such as runtime, session
+- [x] **SRCH-05**: User can search session metadata such as runtime, session
   name, cwd/project path, tmux window ID, session ID when known, status, pinned
   state, and recent activity.
-- [ ] **SRCH-06**: User can narrow search results by runtime, cwd/project,
+- [x] **SRCH-06**: User can narrow search results by runtime, cwd/project,
   role/content type, session status, and recent time range.
 
 ### Corpus And Provenance
@@ -63,25 +63,25 @@ during startup, backfill, and ongoing indexing.
 
 ### Retrieval And Ranking
 
-- [ ] **RETR-01**: User can find exact technical terms such as file paths,
+- [x] **RETR-01**: User can find exact technical terms such as file paths,
   commands, stack traces, symbols, ticket IDs, and quoted phrases through
   lexical search.
-- [ ] **RETR-02**: User can find sessions from meaning-based queries through
+- [x] **RETR-02**: User can find sessions from meaning-based queries through
   local semantic search.
-- [ ] **RETR-03**: Codi combines lexical and semantic matches into hybrid ranked
+- [x] **RETR-03**: Codi combines lexical and semantic matches into hybrid ranked
   results rather than exposing two separate result lists.
-- [ ] **RETR-04**: Codi uses a local embedding model suitable for Mac mini
+- [x] **RETR-04**: Codi uses a local embedding model suitable for Mac mini
   deployment, starting with Qwen3-Embedding-0.6B unless validation selects a
   better small local model.
-- [ ] **RETR-05**: Codi does not send transcript text to cloud embedding or
+- [x] **RETR-05**: Codi does not send transcript text to cloud embedding or
   hosted search services.
-- [ ] **RETR-06**: User can see top sessions with bounded top hits per session,
+- [x] **RETR-06**: User can see top sessions with bounded top hits per session,
   hit counts, scores or relevance ordering, and match labels such as lexical,
   semantic, metadata, or hybrid.
-- [ ] **RETR-07**: User can inspect concise snippets with role/tool labels,
+- [x] **RETR-07**: User can inspect concise snippets with role/tool labels,
   timestamps or transcript positions when available, and exact-match highlights
   where applicable.
-- [ ] **RETR-08**: Codi validates ranking with fixtures that cover exact terms,
+- [x] **RETR-08**: Codi validates ranking with fixtures that cover exact terms,
   semantic paraphrases, repeated text, Codex records, Claude records, and
   session metadata matches.
 
@@ -105,7 +105,7 @@ during startup, backfill, and ongoing indexing.
 
 ### Operations
 
-- [ ] **OPS-01**: Codi runs embedding, indexing, LanceDB writes, backfill,
+- [x] **OPS-01**: Codi runs embedding, indexing, LanceDB writes, backfill,
   search queries, and index maintenance outside the main FastAPI/event delivery
   hot path.
 - [x] **OPS-02**: Codi exposes authenticated search and search-status API
@@ -170,11 +170,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SRCH-01 | Phase 5 | Pending |
-| SRCH-02 | Phase 4 | Pending |
+| SRCH-02 | Phase 4 | Complete |
 | SRCH-03 | Phase 5 | Pending |
-| SRCH-04 | Phase 4 | Pending |
-| SRCH-05 | Phase 4 | Pending |
-| SRCH-06 | Phase 4 | Pending |
+| SRCH-04 | Phase 4 | Complete |
+| SRCH-05 | Phase 4 | Complete |
+| SRCH-06 | Phase 4 | Complete |
 | CORP-01 | Phase 2 | Complete |
 | CORP-02 | Phase 2 | Complete |
 | CORP-03 | Phase 1 | Complete |
@@ -189,14 +189,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INDX-06 | Phase 3 | Complete |
 | INDX-07 | Phase 3 | Complete |
 | INDX-08 | Phase 2 | Complete |
-| RETR-01 | Phase 4 | Pending |
-| RETR-02 | Phase 4 | Pending |
-| RETR-03 | Phase 4 | Pending |
-| RETR-04 | Phase 4 | Pending |
-| RETR-05 | Phase 4 | Pending |
-| RETR-06 | Phase 4 | Pending |
-| RETR-07 | Phase 4 | Pending |
-| RETR-08 | Phase 4 | Pending |
+| RETR-01 | Phase 4 | Complete |
+| RETR-02 | Phase 4 | Complete |
+| RETR-03 | Phase 4 | Complete |
+| RETR-04 | Phase 4 | Complete |
+| RETR-05 | Phase 4 | Complete |
+| RETR-06 | Phase 4 | Complete |
+| RETR-07 | Phase 4 | Complete |
+| RETR-08 | Phase 4 | Complete |
 | WEB-01 | Phase 5 | Pending |
 | WEB-02 | Phase 5 | Pending |
 | WEB-03 | Phase 5 | Pending |
@@ -204,7 +204,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WEB-05 | Phase 5 | Pending |
 | WEB-06 | Phase 5 | Pending |
 | WEB-07 | Phase 5 | Pending |
-| OPS-01 | Phase 4 | Pending |
+| OPS-01 | Phase 4 | Complete |
 | OPS-02 | Phase 1 | Complete |
 | OPS-03 | Phase 6 | Pending |
 | OPS-04 | Phase 6 | Pending |

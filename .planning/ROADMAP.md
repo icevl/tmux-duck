@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Search Contract and Status Surface** - Establish the local search API, status semantics, provenance, and derived-index boundary. (completed 2026-05-21)
 - [x] **Phase 2: Worker Skeleton, Backfill, and Rebuild Path** - Create asynchronous open-session indexing that can build or rebuild search storage without blocking Codi. (completed 2026-05-21)
 - [x] **Phase 3: Live Queue and Convergence** - Durably capture new transcript items and keep the derived index aligned with live open sessions. (completed 2026-05-22)
-- [ ] **Phase 4: LanceDB Hybrid Retrieval and Ranking** - Deliver local lexical plus semantic search with ranked session groups and matching snippets.
+- [x] **Phase 4: LanceDB Hybrid Retrieval and Ranking** - Deliver local lexical plus semantic search with ranked session groups and matching snippets. (completed 2026-05-22)
 - [ ] **Phase 5: Web UI Search Experience and Navigation** - Add the browser search workflow, status states, filters, snippets, and result navigation.
 - [ ] **Phase 6: Operational Hardening and Model Tuning** - Validate local performance, worker failure behavior, metrics, and degraded search modes.
 
@@ -166,6 +166,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 1. Search Contract and Status Surface | 3/3 | Complete   | 2026-05-21 |
 | 2. Worker Skeleton, Backfill, and Rebuild Path | 3/3 | Complete   | 2026-05-21 |
 | 3. Live Queue and Convergence | 3/3 | Complete   | 2026-05-22 |
-| 4. LanceDB Hybrid Retrieval and Ranking | 2/3 | In Progress|  |
+| 4. LanceDB Hybrid Retrieval and Ranking | 3/3 | Complete   | 2026-05-22 |
 | 5. Web UI Search Experience and Navigation | 0/TBD | Not started | - |
 | 6. Operational Hardening and Model Tuning | 0/TBD | Not started | - |
