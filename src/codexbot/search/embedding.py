@@ -24,9 +24,11 @@ class EmbeddingProvider(Protocol):
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed transcript chunks."""
+        ...
 
     def embed_query(self, text: str) -> list[float]:
         """Embed a user search query."""
+        ...
 
 
 @dataclass(frozen=True)

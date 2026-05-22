@@ -312,6 +312,38 @@ def test_rebuild_worker_activates_fresh_generation(
     assert active.active is True
 
 
+def test_smoke_search_index_reports_model_dimension_and_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from codexbot.search.contracts import SearchIndexMetadata
+    from codexbot.search.worker import main
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+
+    def fake_materialize(generation_id: str, **_kwargs: object) -> SearchIndexMetadata:
+        return SearchIndexMetadata(
+            schema_version=1,
+            generation_id=generation_id,
+            model_id="fake/qwen",
+            vector_dimension=1024,
+            table_name="chunks",
+            created_at="2026-05-22T10:00:00Z",
+            completed=True,
+        )
+
+    monkeypatch.setattr(
+        "codexbot.search.worker.materialize_generation_index",
+        fake_materialize,
+    )
+
+    assert main(["smoke-search-index"]) == 0
+    body = json.loads(capsys.readouterr().out)
+    assert body["ok"] is True
+    assert body["model_id"] == "fake/qwen"
+    assert body["vector_dimension"] == 1024
+    assert body["index_path"].endswith("/lancedb")
+
+
 @pytest.mark.asyncio
 async def test_supervisor_starts_initial_backfill_only_when_no_active_generation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

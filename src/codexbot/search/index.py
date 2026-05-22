@@ -8,7 +8,13 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from .contracts import SearchBackfillDocument, SearchIndexMetadata, SearchRowIdentity
+from .contracts import (
+    SearchBackfillDocument,
+    SearchIndexMetadata,
+    SearchRoutingMetadata,
+    SearchRowIdentity,
+    TranscriptProvenance,
+)
 from .embedding import EmbeddingProvider, get_embedding_provider
 from .live import read_generation_documents
 from .state import (
@@ -197,16 +203,111 @@ def has_completed_index(generation_id: str) -> bool:
     return read_index_metadata(generation_id) is not None
 
 
+def document_from_row(row: dict[str, Any]) -> SearchBackfillDocument:
+    """Rehydrate a search document from a flattened LanceDB row."""
+    identity_raw = row.get("identity")
+    provenance_raw = row.get("provenance")
+    routing_raw = row.get("routing")
+    identity = (
+        SearchRowIdentity(**identity_raw)
+        if isinstance(identity_raw, dict)
+        else SearchRowIdentity(
+            runtime=str(row["runtime"]),
+            transcript_source=str(row["transcript_source"]),
+            transcript_offset=row.get("transcript_offset"),
+            transcript_index=row.get("transcript_index"),
+            role=str(row["role"]),
+            content_type=str(row["content_type"]),
+            tool_use_id=row.get("tool_use_id"),
+            chunk_index=int(row.get("chunk_index") or 0),
+        )
+    )
+    provenance = (
+        TranscriptProvenance(**provenance_raw)
+        if isinstance(provenance_raw, dict)
+        else TranscriptProvenance(
+            runtime=str(row["runtime"]),
+            session_id=row.get("session_id"),
+            transcript_source=str(row["transcript_source"]),
+            transcript_offset=row.get("transcript_offset"),
+            transcript_index=row.get("transcript_index"),
+            role=str(row["role"]),
+            content_type=str(row["content_type"]),
+            tool_name=row.get("tool_name"),
+            tool_use_id=row.get("tool_use_id"),
+            source_event_kind=str(row.get("source_event_kind") or "indexed_row"),
+            timestamp=row.get("timestamp"),
+        )
+    )
+    routing = (
+        SearchRoutingMetadata(**routing_raw)
+        if isinstance(routing_raw, dict)
+        else SearchRoutingMetadata(
+            window_id=str(row["window_id"]),
+            name=row.get("name"),
+            cwd=str(row["cwd"]),
+            runtime=str(row["runtime"]),
+            session_id=row.get("session_id"),
+            status=row.get("status"),
+            pinned=bool(row.get("pinned", False)),
+            sort_order=row.get("sort_order"),
+        )
+    )
+    return SearchBackfillDocument(
+        identity=identity,
+        provenance=provenance,
+        routing=routing,
+        text=str(row.get("text") or ""),
+        timestamp=row.get("timestamp"),
+        source_order=int(row.get("source_order") or 0),
+        chunk_index=int(row.get("chunk_index") or identity.chunk_index),
+        chunk_count=int(row.get("chunk_count") or 1),
+    )
+
+
+def semantic_scores_for_query(
+    generation_id: str,
+    *,
+    query: str,
+    limit: int,
+    provider: EmbeddingProvider | None = None,
+    connection: Any | None = None,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> dict[str, float]:
+    """Return normalized semantic candidate scores keyed by stable row id."""
+    embedder = provider or get_embedding_provider()
+    query_vector = embedder.embed_query(query)
+    conn = connection or connect_lancedb(generation_id)
+    table = conn.open_table(table_name)
+    rows = table.search(query_vector).limit(limit).to_list()
+    scores: dict[str, float] = {}
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        row_id = row.get("row_id")
+        if not isinstance(row_id, str):
+            continue
+        raw_score = row.get("_relevance_score", row.get("_score"))
+        if isinstance(raw_score, int | float):
+            score = max(0.0, min(1.0, float(raw_score)))
+        else:
+            score = max(0.0, 1.0 - (index * 0.05))
+        scores[row_id] = score
+    return scores
+
+
 __all__ = [
     "DEFAULT_TABLE_NAME",
     "connect_lancedb",
     "create_indexes",
+    "document_from_row",
     "has_completed_index",
     "materialize_generation_index",
     "open_or_create_table",
     "row_for_document",
     "row_id_for_identity",
     "rows_for_documents",
+    "semantic_scores_for_query",
     "upsert_index_documents",
     "upsert_rows",
 ]
