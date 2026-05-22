@@ -1582,6 +1582,15 @@ button.burger {
   align-items: center;
 }
 
+button.primary.send-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .composer:focus-within {
   border-color: rgba(255, 255, 255, 0.22);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5),

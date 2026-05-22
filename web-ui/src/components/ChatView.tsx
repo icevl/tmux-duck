@@ -21,6 +21,7 @@ import {
   MoreVertical,
   Paperclip,
   Pencil,
+  SendHorizontal,
   Terminal as TerminalIcon,
   Trash2,
   User,
@@ -2455,11 +2456,13 @@ export function ChatView({
               <Paperclip size={ICON} />
             </button>
             <button
-              className="primary"
+              className="primary send-button"
               disabled={sending || (!text.trim() && attachments.length === 0)}
               onClick={() => send(text)}
+              title="Send"
+              aria-label="Send"
             >
-              {sending ? "Sending…" : "Send"}
+              <SendHorizontal size={ICON} />
             </button>
           </div>
         </div>
