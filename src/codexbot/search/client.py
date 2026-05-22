@@ -19,6 +19,7 @@ from .state import (
 
 MISSING_INDEX_REASON = "search index has not been built"
 QUERY_BACKEND_UNAVAILABLE_REASON = "search query backend is not available"
+LEXICAL_DEGRADED_STATUS_REASON = "semantic index is unavailable; lexical search is available"
 
 
 def _counters(
@@ -134,11 +135,22 @@ def get_status(open_session_count: int | None = None) -> SearchStatusResponse:
         manifest.counters if manifest is not None else None,
         queue_snapshot,
     )
+    if manifest is not None:
+        reason = queue_reason or LEXICAL_DEGRADED_STATUS_REASON
+        return SearchStatusResponse(
+            state="degraded",
+            available=True,
+            scope="open_sessions",
+            reason=reason,
+            counters=counters,
+            generation=generation,
+        )
+
     return SearchStatusResponse(
-        state="degraded" if queue_reason is not None else "unavailable",
+        state="unavailable",
         available=False,
         scope="open_sessions",
-        reason=queue_reason or QUERY_BACKEND_UNAVAILABLE_REASON,
+        reason=QUERY_BACKEND_UNAVAILABLE_REASON,
         counters=counters,
         generation=generation,
     )
@@ -147,9 +159,19 @@ def get_status(open_session_count: int | None = None) -> SearchStatusResponse:
 def search(
     req: SearchRequest, *, open_session_count: int | None = None
 ) -> SearchResponse:
-    """Return a typed empty response until retrieval phases are implemented."""
+    """Return a typed search response through the lightweight request boundary."""
+    status = get_status(open_session_count=open_session_count)
+    if status.generation is not None and status.available:
+        from .retrieval import search_generation_lexical
+
+        return search_generation_lexical(
+            req,
+            generation=status.generation,
+            status=status,
+        )
+
     return SearchResponse(
-        status=get_status(open_session_count=open_session_count),
+        status=status,
         query=req.query,
         results=[],
         total_results=0,
