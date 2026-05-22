@@ -36,7 +36,7 @@ during startup, backfill, and ongoing indexing.
   offset or index, role/content type, and optional tool identifier.
 - [x] **CORP-04**: Codi uses transcript provenance as indexed row identity and
   uses current tmux `window_id` only as mutable routing metadata.
-- [ ] **CORP-05**: Codi removes, hides, or marks search results stale when their
+- [x] **CORP-05**: Codi removes, hides, or marks search results stale when their
   source session is no longer an open tmux session.
 - [x] **CORP-06**: Codi treats the search index as derived and rebuildable from
   transcript/session state, not as a source of truth.
@@ -50,13 +50,13 @@ during startup, backfill, and ongoing indexing.
   and the Web UI remain usable.
 - [x] **INDX-03**: Codi backfills all currently open sessions during initial
   indexing.
-- [ ] **INDX-04**: Codi durably queues new transcript items while initial
+- [x] **INDX-04**: Codi durably queues new transcript items while initial
   backfill is running so live messages are not lost.
-- [ ] **INDX-05**: Codi drains live indexing work in batches when at least 32
+- [x] **INDX-05**: Codi drains live indexing work in batches when at least 32
   queued items are ready or 60 seconds have passed since the previous flush.
-- [ ] **INDX-06**: Codi keeps live queue items idempotent so duplicate backfill
+- [x] **INDX-06**: Codi keeps live queue items idempotent so duplicate backfill
   and live events do not create duplicate search documents.
-- [ ] **INDX-07**: Codi persists queue leases, retries, failed items, backfill
+- [x] **INDX-07**: Codi persists queue leases, retries, failed items, backfill
   watermarks, and worker status outside `monitor_state.json`.
 - [x] **INDX-08**: Codi can recover search indexing after process restart
   without requiring users to manually clear state.
@@ -179,15 +179,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CORP-02 | Phase 2 | Complete |
 | CORP-03 | Phase 1 | Complete |
 | CORP-04 | Phase 1 | Complete |
-| CORP-05 | Phase 3 | Pending |
+| CORP-05 | Phase 3 | Complete |
 | CORP-06 | Phase 1 | Complete |
 | INDX-01 | Phase 2 | Complete |
 | INDX-02 | Phase 2 | Complete |
 | INDX-03 | Phase 2 | Complete |
-| INDX-04 | Phase 3 | Pending |
-| INDX-05 | Phase 3 | Pending |
-| INDX-06 | Phase 3 | Pending |
-| INDX-07 | Phase 3 | Pending |
+| INDX-04 | Phase 3 | Complete |
+| INDX-05 | Phase 3 | Complete |
+| INDX-06 | Phase 3 | Complete |
+| INDX-07 | Phase 3 | Complete |
 | INDX-08 | Phase 2 | Complete |
 | RETR-01 | Phase 4 | Pending |
 | RETR-02 | Phase 4 | Pending |
@@ -218,4 +218,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-05-21*
-*Last updated: 2026-05-21 after research synthesis*
+*Last updated: 2026-05-22 after Phase 3 verification*

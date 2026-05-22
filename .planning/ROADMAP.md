@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Search Contract and Status Surface** - Establish the local search API, status semantics, provenance, and derived-index boundary. (completed 2026-05-21)
 - [x] **Phase 2: Worker Skeleton, Backfill, and Rebuild Path** - Create asynchronous open-session indexing that can build or rebuild search storage without blocking Codi. (completed 2026-05-21)
-- [ ] **Phase 3: Live Queue and Convergence** - Durably capture new transcript items and keep the derived index aligned with live open sessions.
+- [x] **Phase 3: Live Queue and Convergence** - Durably capture new transcript items and keep the derived index aligned with live open sessions. (completed 2026-05-22)
 - [ ] **Phase 4: LanceDB Hybrid Retrieval and Ranking** - Deliver local lexical plus semantic search with ranked session groups and matching snippets.
 - [ ] **Phase 5: Web UI Search Experience and Navigation** - Add the browser search workflow, status states, filters, snippets, and result navigation.
 - [ ] **Phase 6: Operational Hardening and Model Tuning** - Validate local performance, worker failure behavior, metrics, and degraded search modes.
@@ -90,7 +90,19 @@ Plans:
   4. Queue leases, retries, failed items, backfill watermarks, and worker status persist outside `monitor_state.json` and recover after process restart.
   5. Results for sessions that are no longer open are hidden, removed, or marked stale instead of routing to a dead tmux window.
 
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+**Wave 1**
+
+- [x] 03-01-PLAN.md — Create the durable search live-queue state layer that can persist queue rows, leases, retries, failures, and transcript watermarks.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 03-02-PLAN.md — Connect live transcript activity to the durable queue by reusing parser/backfill document logic and search-owned watermarks.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 03-03-PLAN.md — Complete live queue convergence with batching, idempotent generation upsert, retries, and stale-source filtering.
 
 ### Phase 4: LanceDB Hybrid Retrieval and Ranking
 
@@ -153,7 +165,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 |-------|----------------|--------|-----------|
 | 1. Search Contract and Status Surface | 3/3 | Complete   | 2026-05-21 |
 | 2. Worker Skeleton, Backfill, and Rebuild Path | 3/3 | Complete   | 2026-05-21 |
-| 3. Live Queue and Convergence | 0/TBD | Not started | - |
+| 3. Live Queue and Convergence | 3/3 | Complete   | 2026-05-22 |
 | 4. LanceDB Hybrid Retrieval and Ranking | 0/TBD | Not started | - |
 | 5. Web UI Search Experience and Navigation | 0/TBD | Not started | - |
 | 6. Operational Hardening and Model Tuning | 0/TBD | Not started | - |
