@@ -166,6 +166,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 1. Search Contract and Status Surface | 3/3 | Complete   | 2026-05-21 |
 | 2. Worker Skeleton, Backfill, and Rebuild Path | 3/3 | Complete   | 2026-05-21 |
 | 3. Live Queue and Convergence | 3/3 | Complete   | 2026-05-22 |
-| 4. LanceDB Hybrid Retrieval and Ranking | 0/TBD | Not started | - |
+| 4. LanceDB Hybrid Retrieval and Ranking | 1/3 | In Progress|  |
 | 5. Web UI Search Experience and Navigation | 0/TBD | Not started | - |
 | 6. Operational Hardening and Model Tuning | 0/TBD | Not started | - |
