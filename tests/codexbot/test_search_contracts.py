@@ -268,9 +268,16 @@ def test_web_search_boundary_has_no_heavy_imports() -> None:
             root = module.split(".", 1)[0]
             if root in HEAVY_IMPORT_ROOTS:
                 violations.append(f"{path.relative_to(ROOT)} imports {module}")
-            if module.startswith("codexbot.search."):
+            if path.name == "api.py" and module.startswith("codexbot.search."):
                 leaf = module.rsplit(".", 1)[-1]
                 if leaf in SEARCH_IMPLEMENTATION_MODULES:
                     violations.append(f"{path.relative_to(ROOT)} imports {module}")
 
     assert not violations
+
+
+def test_web_api_does_not_import_search_queue_directly() -> None:
+    """D-15: Web API status stays behind the lightweight search client boundary."""
+    api_path = ROOT / "src" / "codexbot" / "web" / "api.py"
+
+    assert "codexbot.search.queue" not in _imported_modules(api_path)

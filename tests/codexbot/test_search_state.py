@@ -62,6 +62,19 @@ def test_search_dir_resolves_configured_and_default_paths(
     assert search_dir() == Path.home() / ".codexbot" / "search"
 
 
+def test_queue_db_path_stays_under_search_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-10: live queue state is search-owned, not monitor/session state."""
+    from codexbot.search.state import queue_db_path, search_dir
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+
+    assert queue_db_path() == tmp_path / "search" / "queue.sqlite"
+    assert queue_db_path().parent == search_dir()
+    assert queue_db_path().is_relative_to(search_dir())
+
+
 def test_generation_metadata_path_stays_under_search_dir_and_missing_reads_none(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
