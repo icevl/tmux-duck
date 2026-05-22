@@ -34,6 +34,7 @@ SearchWorkerStatusState: TypeAlias = Literal[
     "completed",
     "failed",
 ]
+SearchQueueItemStatus: TypeAlias = Literal["queued", "leased", "done", "failed"]
 
 
 class TranscriptProvenance(BaseModel):
@@ -111,6 +112,18 @@ class SearchCounters(BaseModel):
     indexed_chunks: int = Field(default=0, ge=0)
     queued_items: int = Field(default=0, ge=0)
     failed_items: int = Field(default=0, ge=0)
+
+
+class SearchQueueSnapshot(BaseModel):
+    """Safe queue summary exposed through request-path search status."""
+
+    queued_items: int = Field(default=0, ge=0)
+    leased_items: int = Field(default=0, ge=0)
+    failed_items: int = Field(default=0, ge=0)
+    oldest_queued_at: str | None = Field(default=None, max_length=128)
+    oldest_queued_age_seconds: float | None = Field(default=None, ge=0)
+    recent_error: str | None = Field(default=None, max_length=500)
+    stale_sources: int = Field(default=0, ge=0)
 
 
 class SearchWorkerStatus(BaseModel):
@@ -212,6 +225,8 @@ __all__ = [
     "SearchHit",
     "SearchIndexState",
     "SearchOutcome",
+    "SearchQueueItemStatus",
+    "SearchQueueSnapshot",
     "SearchRequest",
     "SearchResponse",
     "SearchResponseOutcome",

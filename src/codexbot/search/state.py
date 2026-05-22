@@ -23,6 +23,7 @@ GENERATIONS_DIRNAME = "generations"
 GENERATION_DOCUMENTS_FILENAME = "documents.jsonl"
 GENERATION_MANIFEST_FILENAME = "manifest.json"
 WORKER_STATUS_FILENAME = "worker_status.json"
+QUEUE_DB_FILENAME = "queue.sqlite"
 
 
 def search_dir() -> Path:
@@ -69,6 +70,11 @@ def generation_manifest_path(generation_id: str) -> Path:
 def worker_status_path() -> Path:
     """Return the search worker status path."""
     return search_dir() / WORKER_STATUS_FILENAME
+
+
+def queue_db_path() -> Path:
+    """Return the search-owned SQLite queue database path."""
+    return search_dir() / QUEUE_DB_FILENAME
 
 
 def read_generation_metadata() -> SearchGenerationMetadata | None:
@@ -178,6 +184,7 @@ __all__ = [
     "GENERATION_METADATA_FILENAME",
     "GENERATION_MANIFEST_FILENAME",
     "GENERATIONS_DIRNAME",
+    "QUEUE_DB_FILENAME",
     "SEARCH_SCHEMA_VERSION",
     "WORKER_STATUS_FILENAME",
     "active_generation_metadata_path",
@@ -187,6 +194,7 @@ __all__ = [
     "generation_metadata_path",
     "generations_dir",
     "activate_generation",
+    "queue_db_path",
     "read_generation_manifest",
     "read_generation_metadata",
     "read_worker_status",
