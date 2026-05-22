@@ -239,7 +239,9 @@ def test_active_generation_status_reads_manifest_counters_and_degrades_to_lexica
 
     assert status["state"] == "degraded"
     assert status["available"] is True
-    assert status["reason"] == "semantic index is unavailable; lexical search is available"
+    assert (
+        status["reason"] == "semantic index is unavailable; lexical search is available"
+    )
     assert status["generation"]["generation_id"] == "gen-active"
     assert status["counters"] == {
         "open_sessions": 5,

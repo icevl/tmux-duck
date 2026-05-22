@@ -122,13 +122,17 @@ def document_matches_filters(
     return True
 
 
-def _technical_labels(query: str, text: str, quoted: list[str], tokens: list[str]) -> set[str]:
+def _technical_labels(
+    query: str, text: str, quoted: list[str], tokens: list[str]
+) -> set[str]:
     labels: set[str] = set()
     if any(_contains_casefold(text, phrase) for phrase in quoted):
         labels.add("quoted_phrase")
     if _PATH_RE.search(query) or any("/" in token for token in tokens):
         labels.add("path")
-    if "$" in query or any(token in {"uv", "git", "pytest", "pnpm", "tmux"} for token in tokens):
+    if "$" in query or any(
+        token in {"uv", "git", "pytest", "pnpm", "tmux"} for token in tokens
+    ):
         labels.add("command")
     if _STACK_RE.search(query) or _STACK_RE.search(text):
         labels.add("stack")
@@ -264,7 +268,11 @@ def session_results_from_candidates(
     grouped: dict[str, list[RankedCandidate]] = {}
     for candidate in sorted(
         candidates,
-        key=lambda item: (-item.score, item.document.source_order, item.document.chunk_index),
+        key=lambda item: (
+            -item.score,
+            item.document.source_order,
+            item.document.chunk_index,
+        ),
     ):
         grouped.setdefault(candidate.document.routing.window_id, []).append(candidate)
 

@@ -23,7 +23,9 @@ class FakeEmbedder:
     vector_dimension = 1024
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [[float(index + 1)] * self.vector_dimension for index, _ in enumerate(texts)]
+        return [
+            [float(index + 1)] * self.vector_dimension for index, _ in enumerate(texts)
+        ]
 
     def embed_query(self, text: str) -> list[float]:
         return [0.5] * self.vector_dimension
@@ -169,7 +171,9 @@ def test_index_metadata_records_model_without_transcript_text(
     assert "text" not in dumped
 
 
-def test_embedding_index_and_worker_imports_are_lazy(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_embedding_index_and_worker_imports_are_lazy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     heavy = {"lancedb", "sentence_transformers", "torch", "transformers"}
     for name in list(sys.modules):
         if name.split(".", 1)[0] in heavy:

@@ -236,6 +236,91 @@ def test_search_stub_returns_typed_not_ready(
     assert body["hits_per_session"] == 2
 
 
+def test_search_route_returns_grouped_hybrid_payload(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.contracts import (
+        SearchHit,
+        SearchResponse,
+        SearchRoutingMetadata,
+        SearchRowIdentity,
+        SearchSessionResult,
+        SearchStatusResponse,
+        TranscriptProvenance,
+    )
+    from codexbot.web import api as web_api
+
+    async def fake_list() -> list[TmuxWindow]:
+        return [
+            TmuxWindow(
+                window_id="@77",
+                window_name="hybrid-session",
+                cwd="/repo/codi",
+                pane_current_command="codex",
+            )
+        ]
+
+    provenance = TranscriptProvenance(
+        runtime="codex",
+        session_id="session-77",
+        transcript_source="/tmp/session-77.jsonl",
+        transcript_offset=1,
+        transcript_index=1,
+        role="assistant",
+        content_type="text",
+        source_event_kind="parsed_entry",
+        timestamp="2026-05-22T10:00:00Z",
+    )
+    identity = SearchRowIdentity.from_provenance(provenance, chunk_index=0)
+
+    def fake_search(req, *, open_session_count=None):  # type: ignore[no-untyped-def]
+        assert open_session_count == 1
+        return SearchResponse(
+            status=SearchStatusResponse(state="ready", available=True),
+            query=req.query,
+            results=[
+                SearchSessionResult(
+                    routing=SearchRoutingMetadata(
+                        window_id="@77",
+                        name="hybrid-session",
+                        cwd="/repo/codi",
+                        runtime="codex",
+                        session_id="session-77",
+                    ),
+                    hits=[
+                        SearchHit(
+                            identity=identity,
+                            provenance=provenance,
+                            snippet="hybrid exact and semantic match",
+                            score=0.9,
+                            outcomes=["hybrid"],
+                            source_order=1,
+                            match_labels=["hybrid"],
+                        )
+                    ],
+                    hit_count=1,
+                    score=0.9,
+                )
+            ],
+            total_results=1,
+            total_sessions=1,
+            limit=req.limit,
+            hits_per_session=req.hits_per_session,
+            outcome="ok",
+        )
+
+    monkeypatch.setattr(web_api.tmux_manager, "list_windows", fake_list)
+    monkeypatch.setattr(web_api.search_client, "search", fake_search)
+
+    r = authed_client.post("/api/search", json={"query": "hybrid query"})
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"]["state"] == "ready"
+    assert body["results"][0]["routing"]["window_id"] == "@77"
+    assert body["results"][0]["hits"][0]["outcomes"] == ["hybrid"]
+
+
 def test_search_status_after_successful_backfill_is_lexical_degraded(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -302,7 +387,10 @@ def test_search_status_after_successful_backfill_is_lexical_degraded(
     search_body = search_response.json()
     assert status_body["state"] == "degraded"
     assert status_body["available"] is True
-    assert status_body["reason"] == "semantic index is unavailable; lexical search is available"
+    assert (
+        status_body["reason"]
+        == "semantic index is unavailable; lexical search is available"
+    )
     assert status_body["generation"]["generation_id"] == "gen-api"
     assert status_body["counters"] == {
         "open_sessions": 2,

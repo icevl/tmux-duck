@@ -109,6 +109,26 @@ def _activate_generation(
     activate_generation(manifest)
 
 
+def _write_ready_index(
+    monkeypatch: pytest.MonkeyPatch,
+    generation_id: str = "gen-retrieval",
+) -> None:
+    from codexbot.search.contracts import SearchIndexMetadata
+    from codexbot.search.state import write_index_metadata
+
+    write_index_metadata(
+        SearchIndexMetadata(
+            schema_version=1,
+            generation_id=generation_id,
+            model_id="fake/qwen",
+            vector_dimension=1024,
+            table_name="chunks",
+            created_at="2026-05-22T10:00:00Z",
+            completed=True,
+        )
+    )
+
+
 def test_lexical_exact_technical_match_returns_grouped_highlighted_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -279,3 +299,116 @@ def test_no_lexical_matches_returns_empty_ok_result(
     assert body["status"]["state"] == "degraded"
     assert body["results"] == []
     assert body["total_results"] == 0
+
+
+def test_semantic_paraphrase_can_retrieve_without_lexical_overlap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import search
+    from codexbot.search.index import row_id_for_identity
+
+    target = _doc(
+        text="persistent shell survives attach mode and browser tab reload",
+        window_id="@60",
+    )
+    distractor = _doc(text="unrelated billing callback issue", window_id="@61")
+    _activate_generation(tmp_path, monkeypatch, [target, distractor])
+    _write_ready_index(monkeypatch)
+    target_row_id = row_id_for_identity(target.identity)
+
+    monkeypatch.setattr(
+        "codexbot.search.retrieval.semantic_scores_for_query",
+        lambda *_args, **_kwargs: {target_row_id: 0.96},
+    )
+
+    body = search(SearchRequest(query="keep console alive")).model_dump(mode="json")
+
+    assert body["status"]["state"] == "ready"
+    assert body["results"][0]["routing"]["window_id"] == "@60"
+    hit = body["results"][0]["hits"][0]
+    assert "semantic" in hit["outcomes"]
+    assert "semantic" in hit["match_labels"]
+
+
+def test_hybrid_hit_label_when_lexical_and_semantic_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import search
+    from codexbot.search.index import row_id_for_identity
+
+    target = _doc(
+        text="inspect src/codexbot/web/api.py for search route validation",
+        window_id="@70",
+    )
+    _activate_generation(tmp_path, monkeypatch, [target])
+    _write_ready_index(monkeypatch)
+
+    monkeypatch.setattr(
+        "codexbot.search.retrieval.semantic_scores_for_query",
+        lambda *_args, **_kwargs: {row_id_for_identity(target.identity): 0.91},
+    )
+
+    body = search(SearchRequest(query="src/codexbot/web/api.py")).model_dump(
+        mode="json"
+    )
+
+    hit = body["results"][0]["hits"][0]
+    assert body["status"]["state"] == "ready"
+    assert "hybrid" in hit["outcomes"]
+    assert "hybrid" in hit["match_labels"]
+
+
+def test_semantic_failure_returns_safe_lexical_degraded_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import search
+
+    _activate_generation(
+        tmp_path,
+        monkeypatch,
+        [_doc(text="callback failure in worker output", window_id="@80")],
+    )
+    _write_ready_index(monkeypatch)
+
+    def fail_semantic(*_args: object, **_kwargs: object) -> dict[str, float]:
+        raise RuntimeError("WEB_UI_PASSWORD=secret /tmp/private/session.jsonl")
+
+    monkeypatch.setattr(
+        "codexbot.search.retrieval.semantic_scores_for_query",
+        fail_semantic,
+    )
+
+    body = search(SearchRequest(query="callback failure")).model_dump(mode="json")
+    serialized = json.dumps(body)
+
+    assert body["status"]["state"] == "degraded"
+    assert body["status"]["available"] is True
+    assert body["results"][0]["routing"]["window_id"] == "@80"
+    assert "WEB_UI_PASSWORD" not in serialized
+    assert "secret" not in serialized
+    assert "/tmp/private" not in serialized
+
+
+def test_ready_index_no_matches_differs_from_missing_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import get_status, search
+
+    _activate_generation(
+        tmp_path,
+        monkeypatch,
+        [_doc(text="unrelated session output", window_id="@90")],
+    )
+    _write_ready_index(monkeypatch)
+    monkeypatch.setattr(
+        "codexbot.search.retrieval.semantic_scores_for_query",
+        lambda *_args, **_kwargs: {},
+    )
+
+    status = get_status().model_dump(mode="json")
+    body = search(SearchRequest(query="missing query")).model_dump(mode="json")
+
+    assert status["state"] == "ready"
+    assert status["available"] is True
+    assert body["outcome"] == "ok"
+    assert body["results"] == []

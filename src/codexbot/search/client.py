@@ -20,7 +20,9 @@ from .state import (
 
 MISSING_INDEX_REASON = "search index has not been built"
 QUERY_BACKEND_UNAVAILABLE_REASON = "search query backend is not available"
-LEXICAL_DEGRADED_STATUS_REASON = "semantic index is unavailable; lexical search is available"
+LEXICAL_DEGRADED_STATUS_REASON = (
+    "semantic index is unavailable; lexical search is available"
+)
 
 
 def _counters(
@@ -176,9 +178,9 @@ def search(
     """Return a typed search response through the lightweight request boundary."""
     status = get_status(open_session_count=open_session_count)
     if status.generation is not None and status.available:
-        from .retrieval import search_generation_lexical
+        from .retrieval import search_generation
 
-        return search_generation_lexical(
+        return search_generation(
             req,
             generation=status.generation,
             status=status,

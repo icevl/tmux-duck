@@ -8,12 +8,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Sequence
 
-from .backfill import materialize_initial_backfill
-from .contracts import SearchWorkerStatus
+from .backfill import materialize_initial_backfill, new_generation_id
+from .contracts import (
+    SearchBackfillDocument,
+    SearchRoutingMetadata,
+    SearchRowIdentity,
+    SearchWorkerStatus,
+    TranscriptProvenance,
+)
 from .index import materialize_generation_index, upsert_index_documents
 from .live import upsert_generation_documents
 from .queue import (
@@ -22,6 +30,7 @@ from .queue import (
     lease_ready_items,
     ready_item_count,
     record_queue_error,
+    sanitize_error,
 )
 from .state import activate_generation, read_generation_metadata, write_worker_status
 
@@ -82,6 +91,79 @@ def run_initial_backfill() -> None:
 def run_rebuild() -> None:
     """Materialize and activate a fresh explicit rebuild generation."""
     _run_generation_task("rebuild")
+
+
+def _smoke_document() -> SearchBackfillDocument:
+    provenance = TranscriptProvenance(
+        runtime="codex",
+        session_id="smoke-session",
+        transcript_source="smoke-transcript",
+        transcript_offset=0,
+        transcript_index=0,
+        role="assistant",
+        content_type="text",
+        source_event_kind="smoke",
+        timestamp=_now_iso(),
+    )
+    return SearchBackfillDocument(
+        identity=SearchRowIdentity.from_provenance(provenance, chunk_index=0),
+        provenance=provenance,
+        routing=SearchRoutingMetadata(
+            window_id="@smoke",
+            name="smoke",
+            cwd="/",
+            runtime="codex",
+            session_id="smoke-session",
+            status="active",
+        ),
+        text="Codi local search smoke test for Qwen embedding and LanceDB index.",
+        timestamp=provenance.timestamp,
+        source_order=0,
+        chunk_index=0,
+        chunk_count=1,
+    )
+
+
+def run_smoke_search_index() -> int:
+    """Embed a tiny local batch and materialize a one-row local index."""
+    generation_id = f"smoke-{new_generation_id()}"
+    started = time.monotonic()
+    try:
+        metadata = materialize_generation_index(
+            generation_id,
+            documents=[_smoke_document()],
+        )
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "generation_id": generation_id,
+                    "error": sanitize_error(exc),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 1
+
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    from .state import generation_lancedb_dir
+
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "generation_id": generation_id,
+                "model_id": metadata.model_id,
+                "vector_dimension": metadata.vector_dimension,
+                "table_name": metadata.table_name,
+                "index_path": str(generation_lancedb_dir(generation_id)),
+                "elapsed_ms": elapsed_ms,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
 
 
 def _seconds_since_flush(now: datetime) -> float:
@@ -162,7 +244,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "command",
         nargs="?",
         default="initial-backfill",
-        choices=("initial-backfill", "rebuild", "live-loop", "live-drain-once"),
+        choices=(
+            "initial-backfill",
+            "rebuild",
+            "live-loop",
+            "live-drain-once",
+            "smoke-search-index",
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -192,6 +280,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         except Exception:
             return 1
         return 0
+    if args.command == "smoke-search-index":
+        return run_smoke_search_index()
     return 2
 
 
@@ -207,4 +297,5 @@ __all__ = [
     "run_initial_backfill",
     "run_live_loop",
     "run_rebuild",
+    "run_smoke_search_index",
 ]
