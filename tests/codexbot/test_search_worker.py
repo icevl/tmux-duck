@@ -251,6 +251,7 @@ def test_initial_backfill_worker_materializes_generation_and_status(
 
     async_materialize = AsyncMock(return_value=manifest)
     activate_generation = Mock(return_value=manifest.generation)
+    materialize_index = Mock()
     monkeypatch.setattr(
         "codexbot.search.worker.materialize_initial_backfill",
         async_materialize,
@@ -259,10 +260,15 @@ def test_initial_backfill_worker_materializes_generation_and_status(
         "codexbot.search.worker.activate_generation",
         activate_generation,
     )
+    monkeypatch.setattr(
+        "codexbot.search.worker.materialize_generation_index",
+        materialize_index,
+    )
 
     assert main(["initial-backfill"]) == 0
 
     async_materialize.assert_awaited_once()
+    materialize_index.assert_called_once_with("gen-test")
     activate_generation.assert_called_once_with(manifest)
     status = read_worker_status()
     assert status is not None
@@ -286,14 +292,20 @@ def test_rebuild_worker_activates_fresh_generation(
     new_manifest = _manifest("gen-new", indexed_chunks=8)
     _write_generation_files("gen-new", new_manifest)
     async_materialize = AsyncMock(return_value=new_manifest)
+    materialize_index = Mock()
     monkeypatch.setattr(
         "codexbot.search.worker.materialize_initial_backfill",
         async_materialize,
+    )
+    monkeypatch.setattr(
+        "codexbot.search.worker.materialize_generation_index",
+        materialize_index,
     )
 
     assert main(["rebuild"]) == 0
 
     async_materialize.assert_awaited_once()
+    materialize_index.assert_called_once_with("gen-new")
     active = read_generation_metadata()
     assert active is not None
     assert active.generation_id == "gen-new"
@@ -342,6 +354,8 @@ def test_live_drain_flushes_at_32_ready_rows(
 
     monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
     _activate_empty_generation(tmp_path)
+    upsert_index = Mock()
+    monkeypatch.setattr("codexbot.search.worker.upsert_index_documents", upsert_index)
     enqueue_documents([_document(i) for i in range(31)])
 
     assert drain_live_queue_once(batch_size=32) == 0
@@ -350,6 +364,7 @@ def test_live_drain_flushes_at_32_ready_rows(
     enqueue_documents([_document(31)])
 
     assert drain_live_queue_once(batch_size=32) == 32
+    upsert_index.assert_called_once()
     assert get_queue_snapshot().queued_items == 0
     assert len(_read_docs("gen-live")) == 32
 
@@ -364,6 +379,8 @@ def test_live_drain_flushes_smaller_batch_after_timer(
 
     monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
     _activate_empty_generation(tmp_path)
+    upsert_index = Mock()
+    monkeypatch.setattr("codexbot.search.worker.upsert_index_documents", upsert_index)
     base = datetime(2026, 5, 22, 10, 0, tzinfo=UTC)
     worker._last_live_flush_at = base
     enqueue_documents([_document(1), _document(2)])
@@ -386,6 +403,7 @@ def test_live_drain_flushes_smaller_batch_after_timer(
         )
         == 2
     )
+    upsert_index.assert_called_once()
     assert get_queue_snapshot().queued_items == 0
     worker._last_live_flush_at = None
 
@@ -437,7 +455,7 @@ def test_live_drain_retries_then_dead_letters_and_explicitly_requeues(
     ) -> int:
         raise RuntimeError("temporary write failure")
 
-    monkeypatch.setattr(worker, "upsert_generation_documents", fail_upsert)
+    monkeypatch.setattr(worker, "upsert_index_documents", fail_upsert)
 
     assert worker.drain_live_queue_once(force=True, max_attempts=2) == 0
     assert read_queue_item(queue_id).status == "queued"  # type: ignore[union-attr]
