@@ -14,6 +14,7 @@ from typing import Sequence
 
 from .backfill import materialize_initial_backfill
 from .contracts import SearchWorkerStatus
+from .index import materialize_generation_index, upsert_index_documents
 from .live import upsert_generation_documents
 from .queue import (
     complete_items,
@@ -49,6 +50,7 @@ def _run_generation_task(current_task: str) -> None:
     )
     try:
         manifest = asyncio.run(materialize_initial_backfill())
+        materialize_generation_index(manifest.generation.generation_id)
         activate_generation(manifest)
     except Exception as exc:
         logger.exception("search_generation_task_failed task=%s", current_task)
@@ -125,6 +127,10 @@ def drain_live_queue_once(
     queue_ids = [item.queue_id for item in items]
     try:
         upsert_generation_documents(
+            generation.generation_id,
+            [item.document for item in items],
+        )
+        upsert_index_documents(
             generation.generation_id,
             [item.document for item in items],
         )

@@ -13,6 +13,7 @@ from .contracts import (
 from .state import (
     read_generation_manifest,
     read_generation_metadata,
+    read_index_metadata,
     read_worker_status,
 )
 
@@ -136,6 +137,17 @@ def get_status(open_session_count: int | None = None) -> SearchStatusResponse:
         queue_snapshot,
     )
     if manifest is not None:
+        index_metadata = read_index_metadata(generation.generation_id)
+        if index_metadata is not None:
+            return SearchStatusResponse(
+                state="degraded" if queue_reason is not None else "ready",
+                available=True,
+                scope="open_sessions",
+                reason=queue_reason,
+                counters=counters,
+                generation=generation,
+                index=index_metadata,
+            )
         reason = queue_reason or LEXICAL_DEGRADED_STATUS_REASON
         return SearchStatusResponse(
             state="degraded",
@@ -144,6 +156,7 @@ def get_status(open_session_count: int | None = None) -> SearchStatusResponse:
             reason=reason,
             counters=counters,
             generation=generation,
+            index=None,
         )
 
     return SearchStatusResponse(
@@ -153,6 +166,7 @@ def get_status(open_session_count: int | None = None) -> SearchStatusResponse:
         reason=QUERY_BACKEND_UNAVAILABLE_REASON,
         counters=counters,
         generation=generation,
+        index=None,
     )
 
 

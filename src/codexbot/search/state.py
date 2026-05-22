@@ -12,6 +12,7 @@ from codexbot.utils import atomic_write_json, codexbot_dir
 from .contracts import (
     SearchBackfillManifest,
     SearchGenerationMetadata,
+    SearchIndexMetadata,
     SearchWorkerStatus,
 )
 
@@ -22,6 +23,8 @@ ACTIVE_GENERATION_METADATA_FILENAME = GENERATION_METADATA_FILENAME
 GENERATIONS_DIRNAME = "generations"
 GENERATION_DOCUMENTS_FILENAME = "documents.jsonl"
 GENERATION_MANIFEST_FILENAME = "manifest.json"
+GENERATION_LANCEDB_DIRNAME = "lancedb"
+GENERATION_INDEX_METADATA_FILENAME = "index.json"
 WORKER_STATUS_FILENAME = "worker_status.json"
 QUEUE_DB_FILENAME = "queue.sqlite"
 
@@ -65,6 +68,16 @@ def generation_documents_path(generation_id: str) -> Path:
 def generation_manifest_path(generation_id: str) -> Path:
     """Return the manifest artifact path for one generation."""
     return generation_dir(generation_id) / GENERATION_MANIFEST_FILENAME
+
+
+def generation_lancedb_dir(generation_id: str) -> Path:
+    """Return the generation-owned local LanceDB directory."""
+    return generation_dir(generation_id) / GENERATION_LANCEDB_DIRNAME
+
+
+def generation_index_metadata_path(generation_id: str) -> Path:
+    """Return the generation-owned local retrieval index metadata path."""
+    return generation_dir(generation_id) / GENERATION_INDEX_METADATA_FILENAME
 
 
 def worker_status_path() -> Path:
@@ -135,6 +148,41 @@ def write_generation_manifest(manifest: SearchBackfillManifest) -> None:
     )
 
 
+def read_index_metadata(generation_id: str) -> SearchIndexMetadata | None:
+    """Read completed local retrieval index metadata for a generation."""
+    path = generation_index_metadata_path(generation_id)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(raw, dict):
+        return None
+
+    try:
+        metadata = SearchIndexMetadata(**raw)
+    except ValidationError:
+        return None
+
+    if metadata.schema_version != SEARCH_SCHEMA_VERSION:
+        return None
+    if metadata.generation_id != generation_id:
+        return None
+    if not metadata.completed:
+        return None
+    return metadata
+
+
+def write_index_metadata(metadata: SearchIndexMetadata) -> None:
+    """Atomically persist local retrieval index metadata."""
+    if metadata.schema_version != SEARCH_SCHEMA_VERSION:
+        raise ValueError("index metadata schema is unsupported")
+    atomic_write_json(
+        generation_index_metadata_path(metadata.generation_id),
+        metadata.model_dump(mode="json"),
+    )
+
+
 def activate_generation(
     manifest: SearchBackfillManifest,
 ) -> SearchGenerationMetadata:
@@ -181,6 +229,8 @@ def write_worker_status(status: SearchWorkerStatus) -> None:
 __all__ = [
     "ACTIVE_GENERATION_METADATA_FILENAME",
     "GENERATION_DOCUMENTS_FILENAME",
+    "GENERATION_INDEX_METADATA_FILENAME",
+    "GENERATION_LANCEDB_DIRNAME",
     "GENERATION_METADATA_FILENAME",
     "GENERATION_MANIFEST_FILENAME",
     "GENERATIONS_DIRNAME",
@@ -190,6 +240,8 @@ __all__ = [
     "active_generation_metadata_path",
     "generation_dir",
     "generation_documents_path",
+    "generation_index_metadata_path",
+    "generation_lancedb_dir",
     "generation_manifest_path",
     "generation_metadata_path",
     "generations_dir",
@@ -197,9 +249,11 @@ __all__ = [
     "queue_db_path",
     "read_generation_manifest",
     "read_generation_metadata",
+    "read_index_metadata",
     "read_worker_status",
     "search_dir",
     "worker_status_path",
     "write_generation_manifest",
+    "write_index_metadata",
     "write_worker_status",
 ]
