@@ -64,6 +64,9 @@ async def test_start_web_server_schedules_search_supervisor_without_waiting(
         started.set()
         await release.wait()
 
+    async def fake_live_queue_loop() -> None:
+        await release.wait()
+
     async def fake_serve(self: EmbeddedUvicornServer, sockets: object = None) -> None:
         await release.wait()
 
@@ -75,12 +78,18 @@ async def test_start_web_server_schedules_search_supervisor_without_waiting(
         "start_worker_if_needed",
         fake_start_worker_if_needed,
     )
+    monkeypatch.setattr(
+        web_server.search_supervisor,
+        "live_queue_loop",
+        fake_live_queue_loop,
+    )
     monkeypatch.setattr(EmbeddedUvicornServer, "_serve", fake_serve)
     monkeypatch.setattr(web_server, "stream_pane_loop", fake_stream_pane_loop)
 
     handle = await web_server.start_web_server(monitor=None, bot=None)
 
     assert handle is not None
+    assert handle.search_live_task is not None
     await asyncio.wait_for(started.wait(), timeout=1.0)
 
     release.set()
@@ -126,6 +135,9 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
     async def fake_start_worker_if_needed() -> None:
         await release.wait()
 
+    async def fake_live_queue_loop() -> None:
+        await release.wait()
+
     async def fake_replay_open_session_queue() -> int:
         replay_started.set()
         await release.wait()
@@ -143,6 +155,11 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
         fake_start_worker_if_needed,
     )
     monkeypatch.setattr(
+        web_server.search_supervisor,
+        "live_queue_loop",
+        fake_live_queue_loop,
+    )
+    monkeypatch.setattr(
         web_server,
         "replay_open_session_queue",
         fake_replay_open_session_queue,
@@ -153,6 +170,7 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
     handle = await web_server.start_web_server(monitor=monitor, bot=None)  # type: ignore[arg-type]
 
     assert handle is not None
+    assert handle.search_live_task is not None
     assert handle.listener in monitor.listeners
     assert handle.search_listener in monitor.listeners
     assert len(monitor.listeners) == 2
@@ -160,7 +178,9 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
 
     # The listener is callable and returns promptly for monitor fan-out.
     assert handle.search_listener is not None
-    await handle.search_listener(NewMessage(session_id="missing", text="", is_complete=False))
+    await handle.search_listener(
+        NewMessage(session_id="missing", text="", is_complete=False)
+    )
 
     release.set()
     await web_server.stop_web_server(monitor=monitor)  # type: ignore[arg-type]

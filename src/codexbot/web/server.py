@@ -62,7 +62,8 @@ class WebServerHandle:
         stream_task: asyncio.Task[None] | None = None,
         update_task: asyncio.Task[None] | None = None,
         search_task: asyncio.Task[None] | None = None,
-        search_replay_task: asyncio.Task[None] | None = None,
+        search_replay_task: asyncio.Task[int] | None = None,
+        search_live_task: asyncio.Task[None] | None = None,
         search_producer: LiveQueueProducer | None = None,
     ) -> None:
         self.server = server
@@ -72,6 +73,7 @@ class WebServerHandle:
         self.update_task = update_task
         self.search_task = search_task
         self.search_replay_task = search_replay_task
+        self.search_live_task = search_live_task
         self.search_producer = search_producer
         self.listener: Listener | None = None
         self.search_listener: Listener | None = None
@@ -102,7 +104,7 @@ async def start_web_server(
     skill_hint_registry.set_event_publisher(bus.publish)
 
     search_producer: LiveQueueProducer | None = None
-    search_replay_task: asyncio.Task[None] | None = None
+    search_replay_task: asyncio.Task[int] | None = None
     if monitor is not None:
 
         async def _listener(msg: NewMessage) -> None:
@@ -165,6 +167,9 @@ async def start_web_server(
     search_task = asyncio.create_task(
         search_supervisor.start_worker_if_needed(), name="codexbot-search-supervisor"
     )
+    search_live_task = asyncio.create_task(
+        search_supervisor.live_queue_loop(), name="codexbot-search-live-worker"
+    )
     update_task: asyncio.Task[None] | None = None
     if config.auto_update_enabled:
         update_task = asyncio.create_task(
@@ -185,6 +190,7 @@ async def start_web_server(
         update_task=update_task,
         search_task=search_task,
         search_replay_task=search_replay_task,
+        search_live_task=search_live_task,
         search_producer=search_producer,
     )
     handle.listener = listener_ref
@@ -227,6 +233,12 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
         handle.search_task.cancel()
         try:
             await handle.search_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+    if handle.search_live_task is not None:
+        handle.search_live_task.cancel()
+        try:
+            await handle.search_live_task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
     if handle.search_replay_task is not None:

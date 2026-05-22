@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from codexbot.session import ParsedTranscriptSession, SessionManager, session_manager
 from codexbot.session_monitor import NewMessage
@@ -19,9 +24,19 @@ from .backfill import (
 )
 from .queue import (
     enqueue_documents,
+    list_stale_sources,
+    parse_document,
     read_watermark,
     record_queue_error,
+    replace_stale_sources,
     upsert_watermark,
+)
+from .contracts import SearchBackfillDocument
+from .state import (
+    generation_documents_path,
+    read_generation_manifest,
+    read_generation_metadata,
+    write_generation_manifest,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,6 +68,38 @@ def _entry_after_watermark(entry: ParsedEntry, watermark: object | None) -> bool
     if entry.transcript_index is not None and watermark_index is not None:
         return entry.transcript_index > watermark_index
     return True
+
+
+def _identity_key(document: SearchBackfillDocument) -> str:
+    identity = document.identity
+    return json.dumps(
+        identity.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _atomic_write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(path.parent),
+        suffix=".tmp",
+        prefix=f".{path.name}.",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 async def _window_for_id(
@@ -248,8 +295,130 @@ async def replay_open_session_queue(
     return queued_documents
 
 
+def read_generation_documents(generation_id: str) -> list[SearchBackfillDocument]:
+    """Read valid generation documents, ignoring corrupt historical lines."""
+    path = generation_documents_path(generation_id)
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    documents = []
+    for line in lines:
+        document = parse_document(line)
+        if document is not None:
+            documents.append(document)
+    return documents
+
+
+def upsert_generation_documents(
+    generation_id: str,
+    documents: list[SearchBackfillDocument],
+) -> int:
+    """Atomically upsert live documents by stable row identity."""
+    existing = {
+        _identity_key(document): document
+        for document in read_generation_documents(generation_id)
+    }
+    for document in documents:
+        existing[_identity_key(document)] = document
+    ordered = sorted(
+        existing.values(),
+        key=lambda doc: (
+            getattr(doc.provenance, "transcript_source", ""),
+            getattr(doc, "source_order", 0),
+            getattr(doc, "chunk_index", 0),
+        ),
+    )
+    _atomic_write_jsonl(
+        generation_documents_path(generation_id),
+        [document.model_dump(mode="json") for document in ordered],
+    )
+
+    manifest = read_generation_manifest(generation_id)
+    if manifest is not None:
+        session_ids = {
+            document.provenance.session_id
+            for document in ordered
+            if document.provenance.session_id
+        }
+        counters = manifest.counters.model_copy(
+            update={
+                "indexed_sessions": max(
+                    manifest.counters.indexed_sessions,
+                    len(session_ids),
+                ),
+                "indexed_chunks": len(ordered),
+            }
+        )
+        write_generation_manifest(
+            manifest.model_copy(
+                update={
+                    "counters": counters,
+                    "document_count": len(ordered),
+                }
+            )
+        )
+    return len(ordered)
+
+
+async def refresh_stale_sources(
+    *,
+    session_manager: SessionManager = session_manager,
+    tmux_manager: TmuxManager = tmux_manager,
+    generation_id: str | None = None,
+) -> set[str]:
+    """Mark generation document sources whose tmux window is no longer open."""
+    generation = read_generation_metadata()
+    target_generation_id = generation_id or (
+        generation.generation_id if generation is not None else None
+    )
+    if target_generation_id is None:
+        replace_stale_sources([])
+        return set()
+
+    active_sources: set[str] = set()
+    windows = await tmux_manager.list_windows()
+    for window in windows:
+        source = await session_manager.read_parsed_transcript_for_window(
+            window.window_id
+        )
+        if source is not None:
+            active_sources.add(source.transcript_source)
+
+    stale: list[tuple[str, str, str | None]] = []
+    for document in read_generation_documents(target_generation_id):
+        source = document.provenance.transcript_source
+        if source not in active_sources:
+            stale.append(
+                (
+                    source,
+                    document.provenance.runtime,
+                    document.provenance.session_id,
+                )
+            )
+    unique_stale = sorted(set(stale))
+    replace_stale_sources(unique_stale)
+    return {source for source, _runtime, _session_id in unique_stale}
+
+
+def filter_stale_documents(
+    documents: list[SearchBackfillDocument],
+) -> list[SearchBackfillDocument]:
+    """Hide stale-source documents from normal v1 routing."""
+    stale_sources = list_stale_sources()
+    return [
+        document
+        for document in documents
+        if document.provenance.transcript_source not in stale_sources
+    ]
+
+
 __all__ = [
     "LiveQueueProducer",
+    "filter_stale_documents",
+    "read_generation_documents",
     "replay_open_session_queue",
     "resolve_source_for_session",
+    "refresh_stale_sources",
+    "upsert_generation_documents",
 ]
