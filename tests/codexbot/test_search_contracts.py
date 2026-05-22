@@ -143,6 +143,34 @@ def test_search_request_bounds_reject_oversized_inputs() -> None:
     with pytest.raises(ValueError):
         SearchRequest(query="find stack trace", limit=10, hits_per_session=11)
 
+    with pytest.raises(ValueError):
+        SearchRequest(query="find stack trace", recent_seconds=0)
+
+
+def test_phase4_search_request_exposes_backend_filters() -> None:
+    """D-07: Phase 4 backend filters are part of the request contract."""
+    from codexbot.search.contracts import SearchRequest
+
+    req = SearchRequest(
+        query="callback failure",
+        window_id="@12",
+        session_id="session-12",
+        runtime="codex",
+        cwd="/repo/codi",
+        role="assistant",
+        content_type="text",
+        status="active",
+        pinned=True,
+        recent_after="2026-05-22T10:00:00Z",
+        recent_seconds=600,
+    )
+
+    assert req.window_id == "@12"
+    assert req.session_id == "session-12"
+    assert req.pinned is True
+    assert req.recent_after == "2026-05-22T10:00:00Z"
+    assert req.recent_seconds == 600
+
 
 def test_lifecycle_vocabulary_matches_phase_contract() -> None:
     """D-06: lifecycle states are exactly the approved search vocabulary."""
@@ -171,6 +199,51 @@ def test_status_response_supports_typed_not_ready_state() -> None:
     assert "index" in (status.reason or "")
     assert status.counters is None
     assert status.generation is None
+    assert status.index is None
+
+
+def test_search_hit_exposes_highlights_and_rejects_invalid_spans() -> None:
+    """D-06/D-08: hits expose normalized scores and exact spans only."""
+    from codexbot.search.contracts import (
+        SearchHighlight,
+        SearchHit,
+        SearchRowIdentity,
+    )
+
+    provenance = _sample_provenance()
+    identity = SearchRowIdentity.from_provenance(provenance, chunk_index=0)
+    hit = SearchHit(
+        identity=identity,
+        provenance=provenance,
+        snippet="open src/codexbot/web/api.py and inspect the stack trace",
+        score=0.82,
+        outcomes=["lexical"],
+        source_order=17,
+        timestamp="2026-05-22T10:00:00Z",
+        highlights=[SearchHighlight(start=5, end=31, label="path")],
+        match_labels=["path", "lexical"],
+    )
+
+    dumped = hit.model_dump()
+    assert dumped["score"] == 0.82
+    assert dumped["source_order"] == 17
+    assert dumped["highlights"] == [{"start": 5, "end": 31, "label": "path"}]
+    assert "raw_score" not in dumped
+    assert "backend_score" not in dumped
+
+    with pytest.raises(ValueError):
+        SearchHighlight(start=10, end=10, label="exact")
+
+    with pytest.raises(ValueError):
+        SearchHit(
+            identity=identity,
+            provenance=provenance,
+            snippet="short",
+            score=0.5,
+            outcomes=["lexical"],
+            source_order=1,
+            highlights=[SearchHighlight(start=0, end=8, label="exact")],
+        )
 
 
 def test_generation_metadata_carries_rebuildable_identity() -> None:

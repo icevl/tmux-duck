@@ -222,7 +222,7 @@ def test_active_generation_without_query_backend_is_unavailable(
     assert response["results"] == []
 
 
-def test_active_generation_status_reads_manifest_counters(
+def test_active_generation_status_reads_manifest_counters_and_degrades_to_lexical(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """D-14/D-15: completed Phase 2 backfill is visible but not query-ready."""
@@ -237,9 +237,9 @@ def test_active_generation_status_reads_manifest_counters(
     status = get_status(open_session_count=5).model_dump(mode="json")
     response = search(SearchRequest(query="term")).model_dump(mode="json")
 
-    assert status["state"] == "unavailable"
-    assert status["available"] is False
-    assert status["reason"] == "search query backend is not available"
+    assert status["state"] == "degraded"
+    assert status["available"] is True
+    assert status["reason"] == "semantic index is unavailable; lexical search is available"
     assert status["generation"]["generation_id"] == "gen-active"
     assert status["counters"] == {
         "open_sessions": 5,
@@ -249,7 +249,7 @@ def test_active_generation_status_reads_manifest_counters(
         "failed_items": 0,
     }
     assert response["status"]["generation"]["generation_id"] == "gen-active"
-    assert response["outcome"] == "not_ready"
+    assert response["outcome"] == "ok"
     assert response["results"] == []
 
 

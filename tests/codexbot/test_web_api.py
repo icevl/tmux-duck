@@ -236,7 +236,7 @@ def test_search_stub_returns_typed_not_ready(
     assert body["hits_per_session"] == 2
 
 
-def test_search_status_after_successful_backfill_is_built_but_unavailable(
+def test_search_status_after_successful_backfill_is_lexical_degraded(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """D-14/D-15: HTTP status exposes generation counters but not readiness."""
@@ -300,9 +300,9 @@ def test_search_status_after_successful_backfill_is_built_but_unavailable(
     assert search_response.status_code == 200, search_response.text
     status_body = status_response.json()
     search_body = search_response.json()
-    assert status_body["state"] == "unavailable"
-    assert status_body["available"] is False
-    assert status_body["reason"] == "search query backend is not available"
+    assert status_body["state"] == "degraded"
+    assert status_body["available"] is True
+    assert status_body["reason"] == "semantic index is unavailable; lexical search is available"
     assert status_body["generation"]["generation_id"] == "gen-api"
     assert status_body["counters"] == {
         "open_sessions": 2,
@@ -311,9 +311,9 @@ def test_search_status_after_successful_backfill_is_built_but_unavailable(
         "queued_items": 0,
         "failed_items": 0,
     }
-    assert search_body["status"]["state"] == "unavailable"
+    assert search_body["status"]["state"] == "degraded"
     assert search_body["status"]["generation"]["generation_id"] == "gen-api"
-    assert search_body["outcome"] == "not_ready"
+    assert search_body["outcome"] == "ok"
     assert search_body["results"] == []
 
 

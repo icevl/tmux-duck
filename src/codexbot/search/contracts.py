@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, TypeAlias
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 SEARCH_INDEX_STATES = (
@@ -104,6 +104,19 @@ class SearchGenerationMetadata(BaseModel):
     active: bool
 
 
+class SearchIndexMetadata(BaseModel):
+    """Generation-owned local retrieval index metadata."""
+
+    schema_version: int = Field(ge=1)
+    generation_id: str = Field(min_length=1, max_length=255)
+    model_id: str = Field(min_length=1, max_length=255)
+    vector_dimension: int = Field(ge=1, le=4096)
+    table_name: str = Field(min_length=1, max_length=255)
+    created_at: str = Field(min_length=1, max_length=128)
+    completed: bool
+    recent_error: str | None = Field(default=None, max_length=500)
+
+
 class SearchCounters(BaseModel):
     """Nullable lifecycle counters populated by later state/worker phases."""
 
@@ -169,6 +182,21 @@ class SearchStatusResponse(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
     counters: SearchCounters | None = None
     generation: SearchGenerationMetadata | None = None
+    index: SearchIndexMetadata | None = None
+
+
+class SearchHighlight(BaseModel):
+    """Exact match span inside a returned snippet."""
+
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    label: str = Field(min_length=1, max_length=64)
+
+    @model_validator(mode="after")
+    def _validate_span(self) -> "SearchHighlight":
+        if self.end <= self.start:
+            raise ValueError("highlight end must be greater than start")
+        return self
 
 
 class SearchHit(BaseModel):
@@ -177,8 +205,20 @@ class SearchHit(BaseModel):
     identity: SearchRowIdentity
     provenance: TranscriptProvenance
     snippet: str = Field(max_length=2000)
-    score: float | None = None
+    score: float = Field(ge=0, le=1)
     outcomes: list[SearchOutcome] = Field(default_factory=list, max_length=8)
+    source_order: int = Field(ge=0)
+    timestamp: str | None = Field(default=None, max_length=128)
+    highlights: list[SearchHighlight] = Field(default_factory=list, max_length=32)
+    match_labels: list[str] = Field(default_factory=list, max_length=16)
+
+    @model_validator(mode="after")
+    def _validate_highlights_fit_snippet(self) -> "SearchHit":
+        snippet_length = len(self.snippet)
+        for highlight in self.highlights:
+            if highlight.end > snippet_length:
+                raise ValueError("highlight span exceeds snippet length")
+        return self
 
 
 class SearchSessionResult(BaseModel):
@@ -201,6 +241,11 @@ class SearchRequest(BaseModel):
     role: str | None = Field(default=None, min_length=1, max_length=64)
     content_type: str | None = Field(default=None, min_length=1, max_length=64)
     status: str | None = Field(default=None, min_length=1, max_length=64)
+    window_id: str | None = Field(default=None, min_length=1, max_length=64)
+    session_id: str | None = Field(default=None, min_length=1, max_length=255)
+    pinned: bool | None = None
+    recent_after: str | None = Field(default=None, min_length=1, max_length=128)
+    recent_seconds: int | None = Field(default=None, ge=1, le=31_536_000)
 
 
 class SearchResponse(BaseModel):
@@ -223,6 +268,8 @@ __all__ = [
     "SearchCounters",
     "SearchGenerationMetadata",
     "SearchHit",
+    "SearchHighlight",
+    "SearchIndexMetadata",
     "SearchIndexState",
     "SearchOutcome",
     "SearchQueueItemStatus",
