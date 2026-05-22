@@ -7,12 +7,45 @@ from pathlib import Path
 
 import pytest
 
+from codexbot.session import CodexSession, ParsedTranscriptSession, WindowState
 from codexbot.search.contracts import (
     SearchBackfillDocument,
     SearchRoutingMetadata,
     SearchRowIdentity,
     TranscriptProvenance,
 )
+from codexbot.session_monitor import NewMessage
+from codexbot.tmux_manager import TmuxWindow
+from codexbot.transcript_parser import ParsedEntry
+
+
+class FakeTmuxManager:
+    def __init__(self, windows: list[TmuxWindow]) -> None:
+        self.windows = windows
+
+    async def list_windows(self) -> list[TmuxWindow]:
+        return list(self.windows)
+
+
+class FakeSessionManager:
+    def __init__(self, source: ParsedTranscriptSession | None) -> None:
+        self.source = source
+        self.window_states = {
+            "@1": WindowState(
+                session_id="session-1",
+                cwd="/repo",
+                window_name="codex",
+                runtime="codex",
+            )
+        }
+
+    async def read_parsed_transcript_for_window(
+        self,
+        window_id: str,
+    ) -> ParsedTranscriptSession | None:
+        if window_id == "@1":
+            return self.source
+        return None
 
 
 def _doc(
@@ -53,6 +86,22 @@ def _doc(
         source_order=offset,
         chunk_index=chunk_index,
         chunk_count=1,
+    )
+
+
+def _source(entries: list[ParsedEntry] | None = None) -> ParsedTranscriptSession:
+    return ParsedTranscriptSession(
+        window_id="@1",
+        session=CodexSession("session-1", "", 1, "/tmp/session-1.jsonl"),
+        state=WindowState(
+            session_id="session-1",
+            cwd="/repo",
+            window_name="codex",
+            runtime="codex",
+        ),
+        transcript_source="/tmp/session-1.jsonl",
+        entries=entries or [],
+        pending_tools={},
     )
 
 
@@ -195,3 +244,163 @@ def test_search_status_includes_queue_lag_and_failures(
     assert body["counters"]["open_sessions"] == 2
     assert body["counters"]["failed_items"] == 1
     assert "queue" in body["reason"]
+
+
+@pytest.mark.asyncio
+async def test_live_producer_enqueues_useful_monitor_messages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.live import LiveQueueProducer
+    from codexbot.search.queue import get_queue_snapshot, read_watermark
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    producer = LiveQueueProducer(
+        session_manager=FakeSessionManager(_source()),
+        tmux_manager=FakeTmuxManager([TmuxWindow("@1", "codex", "/repo", "codex")]),
+    )
+
+    await producer.listener(
+        NewMessage(
+            session_id="session-1",
+            text="live answer",
+            is_complete=False,
+            role="assistant",
+            content_type="text",
+            timestamp="2026-05-22T10:00:00Z",
+            transcript_offset=100,
+            transcript_index=2,
+        )
+    )
+    await producer.drain_pending()
+
+    snapshot = get_queue_snapshot()
+    assert snapshot.queued_items == 1
+    watermark = read_watermark("codex", "/tmp/session-1.jsonl")
+    assert watermark is not None
+    assert watermark.transcript_offset == 100
+
+    from codexbot.search.queue import lease_ready_items
+
+    [item] = lease_ready_items(limit=1)
+    assert item.document.text == "live answer"
+    assert item.document.provenance.transcript_offset == 100
+    assert item.document.routing.window_id == "@1"
+
+
+@pytest.mark.asyncio
+async def test_live_producer_skips_completion_and_empty_messages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.live import LiveQueueProducer
+    from codexbot.search.queue import get_queue_snapshot
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    producer = LiveQueueProducer(
+        session_manager=FakeSessionManager(_source()),
+        tmux_manager=FakeTmuxManager([TmuxWindow("@1", "codex", "/repo", "codex")]),
+    )
+
+    await producer.enqueue_message(
+        NewMessage(
+            session_id="session-1",
+            text="",
+            is_complete=True,
+            message_type="completion",
+            content_type="completion",
+        )
+    )
+    await producer.enqueue_message(
+        NewMessage(session_id="session-1", text="   ", is_complete=False)
+    )
+
+    assert get_queue_snapshot().queued_items == 0
+
+
+@pytest.mark.asyncio
+async def test_live_producer_records_safe_errors_without_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search import live
+    from codexbot.search.live import LiveQueueProducer
+    from codexbot.search.queue import get_queue_snapshot
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+
+    def fail_enqueue(_documents: list[SearchBackfillDocument]) -> list[str]:
+        raise RuntimeError("WEB_UI_PASSWORD=secret /tmp/session.jsonl")
+
+    monkeypatch.setattr(live, "enqueue_documents", fail_enqueue)
+    producer = LiveQueueProducer(
+        session_manager=FakeSessionManager(_source()),
+        tmux_manager=FakeTmuxManager([TmuxWindow("@1", "codex", "/repo", "codex")]),
+    )
+
+    await producer.enqueue_message(
+        NewMessage(
+            session_id="session-1",
+            text="live answer",
+            is_complete=False,
+            transcript_offset=1,
+            transcript_index=0,
+        )
+    )
+
+    snapshot = get_queue_snapshot()
+    assert snapshot.recent_error is not None
+    assert "WEB_UI_PASSWORD" not in snapshot.recent_error
+    assert "secret" not in snapshot.recent_error
+    assert "/tmp/session" not in snapshot.recent_error
+
+
+@pytest.mark.asyncio
+async def test_replay_uses_watermarks_and_updates_after_enqueue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.live import replay_open_session_queue
+    from codexbot.search.queue import (
+        get_queue_snapshot,
+        lease_ready_items,
+        read_watermark,
+        upsert_watermark,
+    )
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    monitor_state = tmp_path / "monitor_state.json"
+    monitor_state.write_text('{"tracked_sessions":{}}\n', encoding="utf-8")
+    entries = [
+        ParsedEntry(
+            role="assistant",
+            text="already queued",
+            content_type="text",
+            transcript_offset=10,
+            transcript_index=0,
+        ),
+        ParsedEntry(
+            role="assistant",
+            text="missed after restart",
+            content_type="text",
+            transcript_offset=20,
+            transcript_index=0,
+        ),
+    ]
+    upsert_watermark(
+        runtime="codex",
+        session_id="session-1",
+        transcript_source="/tmp/session-1.jsonl",
+        transcript_offset=10,
+        transcript_index=0,
+    )
+
+    queued = await replay_open_session_queue(
+        session_manager=FakeSessionManager(_source(entries)),
+        tmux_manager=FakeTmuxManager([TmuxWindow("@1", "codex", "/repo", "codex")]),
+    )
+
+    assert queued == 1
+    assert get_queue_snapshot().queued_items == 1
+    [item] = lease_ready_items(limit=1)
+    assert item.document.text == "missed after restart"
+    watermark = read_watermark("codex", "/tmp/session-1.jsonl")
+    assert watermark is not None
+    assert watermark.transcript_offset == 20
+    assert monitor_state.read_text(encoding="utf-8") == '{"tracked_sessions":{}}\n'

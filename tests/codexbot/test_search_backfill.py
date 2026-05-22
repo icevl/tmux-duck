@@ -11,7 +11,7 @@ import pytest
 
 from codexbot.session import CodexSession, SessionManager, WindowState
 from codexbot.tmux_manager import TmuxWindow
-from codexbot.transcript_parser import TranscriptParser
+from codexbot.transcript_parser import ParsedEntry, TranscriptParser
 
 
 @dataclass
@@ -304,6 +304,50 @@ async def test_long_entries_split_into_stable_chunk_identities(
     identities = [doc.identity.model_dump_json() for doc in result.documents]
     assert len(set(identities)) == 3
     assert [doc.identity.chunk_index for doc in result.documents] == [0, 1, 2]
+
+
+def test_public_document_builder_matches_backfill_chunking() -> None:
+    from codexbot.search.backfill import documents_for_entry, routing_for_source
+    from codexbot.session import ParsedTranscriptSession
+
+    session = CodexSession("session-1", "", 1, "/tmp/session.jsonl")
+    state = WindowState(
+        session_id="session-1",
+        cwd="/repo",
+        window_name="codex",
+        runtime="codex",
+    )
+    source = ParsedTranscriptSession(
+        window_id="@1",
+        session=session,
+        state=state,
+        transcript_source="/tmp/session.jsonl",
+        entries=[],
+        pending_tools={},
+    )
+    routing = routing_for_source(source, TmuxWindow("@1", "codex", "/repo", "codex"))
+    assert routing is not None
+
+    docs = documents_for_entry(
+        source=source,
+        routing=routing,
+        entry=ParsedEntry(
+            role="assistant",
+            text="alpha beta gamma delta epsilon",
+            content_type="text",
+            timestamp="2026-05-22T10:00:00Z",
+            transcript_offset=42,
+            transcript_index=3,
+        ),
+        fallback_order=0,
+        chunk_max_chars=10,
+        chunk_overlap_chars=0,
+    )
+
+    assert [doc.text for doc in docs] == ["alpha beta", "gamma del", "ta epsilon"]
+    assert [doc.chunk_index for doc in docs] == [0, 1, 2]
+    assert all(doc.identity.transcript_offset == 42 for doc in docs)
+    assert all(doc.provenance.transcript_source == "/tmp/session.jsonl" for doc in docs)
 
 
 @pytest.mark.asyncio
