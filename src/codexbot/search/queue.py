@@ -99,7 +99,13 @@ def sanitize_error(error: BaseException | str) -> str:
         text = f"{type(error).__name__}: {str(error).splitlines()[0] if str(error) else 'search queue error'}"
     else:
         text = str(error).splitlines()[0] if str(error) else "search queue error"
+    text = re.sub(
+        r"(\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)[A-Z0-9_]*\b)\s*=\s*\S+",
+        r"\1=[secret]",
+        text,
+    )
     text = re.sub(r"\b[A-Z0-9_]*(TOKEN|SECRET|PASSWORD|KEY)[A-Z0-9_]*\b", "[secret]", text)
+    text = text.replace("secret", "[redacted]")
     text = re.sub(r"(?<!\w)/(?:[^\s:]+/?)+", "[path]", text)
     return text[:MAX_ERROR_LENGTH]
 

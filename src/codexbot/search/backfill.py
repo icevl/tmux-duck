@@ -95,7 +95,7 @@ def _source_order(entry: ParsedEntry, fallback: int) -> int:
     return fallback
 
 
-def _routing_for_source(
+def routing_for_source(
     source: ParsedTranscriptSession,
     window: TmuxWindow,
 ) -> SearchRoutingMetadata | None:
@@ -114,7 +114,7 @@ def _routing_for_source(
     )
 
 
-def _documents_for_entry(
+def documents_for_entry(
     *,
     source: ParsedTranscriptSession,
     routing: SearchRoutingMetadata,
@@ -164,21 +164,21 @@ def _documents_for_entry(
     ]
 
 
-def _documents_for_source(
+def documents_for_source(
     source: ParsedTranscriptSession,
     window: TmuxWindow,
     *,
     chunk_max_chars: int,
     chunk_overlap_chars: int,
 ) -> list[SearchBackfillDocument]:
-    routing = _routing_for_source(source, window)
+    routing = routing_for_source(source, window)
     if routing is None:
         return []
 
     documents: list[SearchBackfillDocument] = []
     for fallback_order, entry in enumerate(source.entries):
         documents.extend(
-            _documents_for_entry(
+            documents_for_entry(
                 source=source,
                 routing=routing,
                 entry=entry,
@@ -225,7 +225,7 @@ async def collect_open_session_documents(
             failed_items += 1
             continue
 
-        session_documents = _documents_for_source(
+        session_documents = documents_for_source(
             source,
             window,
             chunk_max_chars=chunk_max_chars,
@@ -325,7 +325,10 @@ __all__ = [
     "DEFAULT_CHUNK_OVERLAP_CHARS",
     "OpenSessionBackfillResult",
     "collect_open_session_documents",
+    "documents_for_entry",
+    "documents_for_source",
     "materialize_backfill_generation",
     "materialize_initial_backfill",
     "new_generation_id",
+    "routing_for_source",
 ]
