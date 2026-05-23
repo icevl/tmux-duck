@@ -157,7 +157,9 @@ async def tick(bus: EventBus) -> None:
         return
     latest, subject = remote
     has_update = bool(
-        current and not dirty and await asyncio.to_thread(_remote_is_ahead, current, latest)
+        current
+        and not dirty
+        and await asyncio.to_thread(_remote_is_ahead, current, latest)
     )
     prev = _state["has_update"]
     _state["current_sha"] = current

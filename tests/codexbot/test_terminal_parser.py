@@ -17,12 +17,36 @@ class TestParseStatusLine:
     @pytest.mark.parametrize(
         ("spinner", "rest", "expected"),
         [
-            ("·", "Working on task (esc to interrupt)", "Working on task (esc to interrupt)"),
-            ("✻", "  Reading file (esc to interrupt)  ", "Reading file (esc to interrupt)"),
-            ("✽", "Thinking deeply (esc to interrupt)", "Thinking deeply (esc to interrupt)"),
-            ("✶", "Analyzing code (esc to interrupt)", "Analyzing code (esc to interrupt)"),
-            ("✳", "Processing input (esc to interrupt)", "Processing input (esc to interrupt)"),
-            ("✢", "Building project (esc to interrupt)", "Building project (esc to interrupt)"),
+            (
+                "·",
+                "Working on task (esc to interrupt)",
+                "Working on task (esc to interrupt)",
+            ),
+            (
+                "✻",
+                "  Reading file (esc to interrupt)  ",
+                "Reading file (esc to interrupt)",
+            ),
+            (
+                "✽",
+                "Thinking deeply (esc to interrupt)",
+                "Thinking deeply (esc to interrupt)",
+            ),
+            (
+                "✶",
+                "Analyzing code (esc to interrupt)",
+                "Analyzing code (esc to interrupt)",
+            ),
+            (
+                "✳",
+                "Processing input (esc to interrupt)",
+                "Processing input (esc to interrupt)",
+            ),
+            (
+                "✢",
+                "Building project (esc to interrupt)",
+                "Building project (esc to interrupt)",
+            ),
         ],
     )
     def test_spinner_chars(self, spinner: str, rest: str, expected: str, chrome: str):
