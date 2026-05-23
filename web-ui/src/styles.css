@@ -919,6 +919,19 @@ button.burger {
   animation: duck-levitate 2.4s ease-in-out infinite;
 }
 
+.waiting-duck-row {
+  display: flex;
+  align-items: center;
+  padding-top: 24px;
+  padding-bottom: 20px;
+  /* Override .messages-row's `contain: paint` so the levitating duck
+     isn't clipped at the row's top edge. Sit in our own stacking context
+     so the duck always paints above the previous bubble row. */
+  contain: layout;
+  position: relative;
+  z-index: 1;
+}
+
 @keyframes duck-levitate {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-10px); }
@@ -991,22 +1004,6 @@ button.burger {
 
 .bubble.pending {
   opacity: 0.6;
-}
-
-.bubble.streaming {
-  border-style: dashed;
-  border-color: var(--border-strong);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.bubble.streaming .stream-body {
-  margin: 0;
-  white-space: pre-wrap;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
 }
 
 .bubble .meta {
@@ -2803,6 +2800,14 @@ button.primary.send-button {
      desktop-sized avatar/tail space. */
   .messages-row {
     padding: 0 12px;
+  }
+
+  /* Mobile composer sits close to the chat edge — give the waiting
+     duck more breathing room so it doesn't kiss the bubble above
+     or the composer below. */
+  .waiting-duck-row {
+    padding-top: 30px;
+    padding-bottom: 26px;
   }
 
   .bubble {
