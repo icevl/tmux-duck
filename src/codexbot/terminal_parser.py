@@ -415,14 +415,17 @@ def parse_status_line(pane_text: str) -> str | None:
     if chrome_idx is None:
         return _parse_status_line_without_chrome(lines)
 
-    # Check lines just above the separator (skip blanks, up to 4 lines)
+    # Check lines just above the separator (skip blanks, up to 4 lines).
+    # A live status line is always spinner + "(esc to interrupt)" — without
+    # the latter, the line is a leftover footer like "✻ Brewed for 15s" that
+    # Claude prints in scrollback after a turn finishes.
     for i in range(chrome_idx - 1, max(chrome_idx - 5, -1), -1):
         line = lines[i].strip()
         if not line:
             continue
-        if line[0] in STATUS_SPINNERS:
+        if line[0] in STATUS_SPINNERS and _RE_ESC_TO_INTERRUPT.search(line):
             return line[1:].strip()
-        # First non-empty line above separator isn't a spinner → no status
+        # First non-empty line above separator isn't a live status → idle.
         return None
     return None
 

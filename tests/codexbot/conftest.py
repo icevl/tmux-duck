@@ -218,7 +218,10 @@ def chrome():
 
 @pytest.fixture
 def sample_pane_status_line():
-    return "Some output text here\nMore output\n✻ Reading file src/main.py\n" + _CHROME
+    return (
+        "Some output text here\nMore output\n"
+        "✻ Reading file src/main.py (esc to interrupt)\n" + _CHROME
+    )
 
 
 @pytest.fixture
