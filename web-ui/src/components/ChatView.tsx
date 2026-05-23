@@ -2110,8 +2110,8 @@ export function ChatView({
             {awaitingResponse && (
               <div className="messages-row waiting-duck-row">
                 <DuckLogo
-                  width={28}
-                  height={28}
+                  width={40}
+                  height={40}
                   className="duck-levitate waiting-duck"
                 />
               </div>
