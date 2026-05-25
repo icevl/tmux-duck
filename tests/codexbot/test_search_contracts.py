@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 from typing import Any
 
@@ -200,6 +201,68 @@ def test_status_response_supports_typed_not_ready_state() -> None:
     assert status.counters is None
     assert status.generation is None
     assert status.index is None
+
+
+def test_status_response_exposes_operations_without_raw_content() -> None:
+    """OPS-03/OPS-06: status carries compact health details and commands."""
+    from codexbot.search.contracts import (
+        SearchBackfillProgress,
+        SearchOperationalStatus,
+        SearchQueueHealth,
+        SearchRecoveryCommand,
+        SearchStatusResponse,
+        SearchWorkerHealth,
+    )
+
+    status = SearchStatusResponse(
+        state="degraded",
+        available=True,
+        reason="search queue has 1 failed item(s)",
+        operations=SearchOperationalStatus(
+            worker=SearchWorkerHealth(
+                status="running",
+                current_task="live_loop",
+                heartbeat_at="2026-05-25T10:00:00Z",
+                heartbeat_age_seconds=12.5,
+                stale=False,
+                stale_after_seconds=120,
+            ),
+            queue=SearchQueueHealth(
+                queued_items=2,
+                leased_items=1,
+                failed_items=1,
+                stale_sources=0,
+                lagging=True,
+                recent_error="[path] failed",
+            ),
+            progress=SearchBackfillProgress(
+                open_sessions=4,
+                indexed_sessions=3,
+                indexed_chunks=42,
+                queued_items=3,
+                failed_items=1,
+                generation_id="gen-live",
+                model_id="Qwen/Qwen3-Embedding-0.6B",
+                vector_dimension=1024,
+                table_name="chunks",
+            ),
+            recent_errors=["[path] failed"],
+            recovery_commands=[
+                SearchRecoveryCommand(
+                    label="Rebuild index",
+                    command="codexbot-search-worker rebuild",
+                )
+            ],
+        ),
+    )
+
+    dumped = status.model_dump(mode="json")
+
+    assert dumped["operations"]["worker"]["status"] == "running"
+    assert dumped["operations"]["queue"]["lagging"] is True
+    assert dumped["operations"]["progress"]["indexed_chunks"] == 42
+    assert dumped["operations"]["recent_errors"] == ["[path] failed"]
+    assert "raw transcript" not in json.dumps(dumped)
 
 
 def test_search_hit_exposes_highlights_and_rejects_invalid_spans() -> None:

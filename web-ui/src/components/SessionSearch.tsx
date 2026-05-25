@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Brain,
+  ChevronDown,
   Clock3,
   Filter,
   Loader2,
@@ -116,6 +117,14 @@ function formatRelative(ts: number | null): string {
   return `${Math.floor(sec / 86400)}d ago`;
 }
 
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null) return "unknown";
+  if (seconds < 60) return `${Math.floor(seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86400)}d`;
+}
+
 function recentSeconds(filter: RecentFilter): number | null {
   switch (filter) {
     case "1h":
@@ -216,6 +225,13 @@ function statusPanel(
       tone: "warn",
     };
   }
+  if (effective?.state === "stale") {
+    return {
+      title: "Stale",
+      body: "Search is behind the latest session activity.",
+      tone: "warn",
+    };
+  }
   if (response && response.results.length === 0) {
     return {
       title: "No matches",
@@ -242,6 +258,7 @@ export function SessionSearch({
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const requestSeq = useRef(0);
 
   const trimmedQuery = query.trim();
@@ -260,15 +277,20 @@ export function SessionSearch({
 
   useEffect(() => {
     let cancelled = false;
-    api.getSearchStatus()
-      .then((next) => {
-        if (!cancelled) setStatus(next);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      });
+    const load = () => {
+      api.getSearchStatus()
+        .then((next) => {
+          if (!cancelled) setStatus(next);
+        })
+        .catch((err: Error) => {
+          if (!cancelled) setError(err.message);
+        });
+    };
+    load();
+    const interval = window.setInterval(load, 10000);
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
     };
   }, []);
 
@@ -316,6 +338,10 @@ export function SessionSearch({
 
   const panel = statusPanel(active, loading, error, response, status);
   const effectiveStatus = response?.status ?? status;
+  const operations = effectiveStatus?.operations ?? null;
+  const searchDetailsId = "session-search-status-details";
+  const showLexicalNotice =
+    response?.status.state === "degraded" && response.results.length > 0;
 
   const openHit = (result: SearchSessionResult, hit: SearchHit) => {
     const target: SearchHitTarget = {
@@ -367,7 +393,122 @@ export function SessionSearch({
             {effectiveStatus.counters.open_sessions} indexed
           </span>
         )}
+        <button
+          type="button"
+          className="search-details-toggle"
+          aria-expanded={detailsOpen}
+          aria-controls={searchDetailsId}
+          onClick={() => setDetailsOpen((current) => !current)}
+        >
+          <ChevronDown
+            size={12}
+            className={detailsOpen ? "expanded" : ""}
+            aria-hidden="true"
+          />
+          {detailsOpen ? "Hide details" : "Show details"}
+        </button>
       </div>
+
+      {detailsOpen && (
+        <div
+          id={searchDetailsId}
+          className="search-status-details"
+          aria-label="Search status details"
+        >
+          {operations ? (
+            <>
+              <div className="search-detail-row">
+                <span>Worker heartbeat</span>
+                <strong>
+                  {operations.worker.status ?? "inactive"}
+                  {operations.worker.stale ? " stale" : ""}
+                </strong>
+                <small>
+                  {operations.worker.heartbeat_at
+                    ? `${formatDuration(
+                        operations.worker.heartbeat_age_seconds,
+                      )} ago`
+                    : "no heartbeat"}
+                </small>
+              </div>
+              <div className="search-detail-row">
+                <span>Queue lag</span>
+                <strong>
+                  {operations.queue.queued_items + operations.queue.leased_items}
+                  {" queued"}
+                </strong>
+                <small>
+                  {operations.queue.failed_items} failed
+                  {operations.queue.oldest_queued_age_seconds != null
+                    ? `, oldest ${formatDuration(
+                        operations.queue.oldest_queued_age_seconds,
+                      )}`
+                    : ""}
+                </small>
+              </div>
+              <div className="search-detail-row">
+                <span>Backfill</span>
+                <strong>
+                  {operations.progress.indexed_sessions}/
+                  {operations.progress.open_sessions} sessions
+                </strong>
+                <small>{operations.progress.indexed_chunks} chunks</small>
+              </div>
+              {(operations.progress.model_id || operations.progress.table_name) && (
+                <div className="search-detail-row">
+                  <span>Model/index</span>
+                  <strong>{operations.progress.model_id ?? "lexical"}</strong>
+                  <small>
+                    {operations.progress.vector_dimension
+                      ? `${operations.progress.vector_dimension} dims`
+                      : "no vector index"}
+                    {operations.progress.table_name
+                      ? `, ${operations.progress.table_name}`
+                      : ""}
+                  </small>
+                </div>
+              )}
+              {operations.benchmark && (
+                <div className="search-detail-row">
+                  <span>Benchmark</span>
+                  <strong>{operations.benchmark.passed ? "passed" : "failed"}</strong>
+                  <small>
+                    p95 {Math.round(operations.benchmark.query_p95_ms)}ms,
+                    {" "}
+                    {Math.round(operations.benchmark.peak_memory_mb)}MB
+                  </small>
+                </div>
+              )}
+              {operations.recent_errors.length > 0 && (
+                <div className="search-detail-row vertical">
+                  <span>Recent errors</span>
+                  {operations.recent_errors.map((message) => (
+                    <small key={message}>{message}</small>
+                  ))}
+                </div>
+              )}
+              <div className="search-detail-row vertical">
+                <span>Local recovery</span>
+                <small>
+                  Run the suggested command in the Codi project shell. Web UI
+                  recovery controls are intentionally read-only in this phase.
+                </small>
+                {operations.recovery_commands.map((item) => (
+                  <code key={item.command}>{item.command}</code>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="search-detail-row vertical">
+              <span>Search status</span>
+              <small>
+                Start a search to see session matches. Indexing status is shown
+                here while Codi catches up.
+              </small>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="session-search-filters" aria-label="Search filters">
         <div className="search-filter-row">
@@ -435,67 +576,92 @@ export function SessionSearch({
               </div>
             </div>
           ) : (
-            response?.results.map((result) => {
-              const session = sessionById.get(result.routing.window_id);
-              const title =
-                result.routing.name ||
-                session?.name ||
-                result.routing.window_id;
-              return (
-                <div className="search-result-group" key={result.routing.window_id}>
-                  <button
-                    type="button"
-                    className="search-result-session"
-                    onClick={() => onOpenResult(result.routing.window_id)}
-                  >
-                    <div className="search-result-title">
-                      {result.routing.pinned && <Pin size={12} />}
-                      <span>{title}</span>
+            <>
+              {showLexicalNotice && (
+                <div className="search-state-panel warn compact">
+                  <AlertTriangle size={ICON} />
+                  <div>
+                    <div className="search-state-title">Degraded</div>
+                    <div className="search-state-body">
+                      Semantic search is not ready. Showing lexical results.
                     </div>
-                    <div className="search-result-meta">
-                      <Brain
-                        size={12}
-                        className={`runtime-icon runtime-icon-${result.routing.runtime}`}
-                      />
-                      <span>{result.routing.runtime}</span>
-                      <span>{cwdBase(result.routing.cwd)}</span>
-                      <span>{result.hit_count} hits</span>
-                      {session?.last_activity && (
-                        <span>
-                          <Clock3 size={11} />
-                          {formatRelative(session.last_activity)}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                  <div className="search-result-hits">
-                    {result.hits.map((hit) => (
-                      <button
-                        type="button"
-                        key={`${hit.source_order}:${hit.identity.chunk_index}`}
-                        className="search-result-hit"
-                        onClick={() => openHit(result, hit)}
-                      >
-                        <div className="search-hit-meta">
-                          <span>{hitLabel(hit)}</span>
-                          {hit.timestamp && <span>{hit.timestamp}</span>}
-                        </div>
-                        <div className="search-hit-snippet">
-                          {renderSnippet(hit.snippet, hit.highlights)}
-                        </div>
-                        {hit.match_labels.length > 0 && (
-                          <div className="search-hit-labels">
-                            {hit.match_labels.map((label) => (
-                              <span key={label}>{label}</span>
-                            ))}
-                          </div>
-                        )}
-                      </button>
-                    ))}
                   </div>
                 </div>
-              );
-            })
+              )}
+              {response?.results.map((result) => {
+                const session = sessionById.get(result.routing.window_id);
+                const title =
+                  result.routing.name ||
+                  session?.name ||
+                  result.routing.window_id;
+                return (
+                  <div
+                    className="search-result-group"
+                    key={result.routing.window_id}
+                  >
+                    <button
+                      type="button"
+                      className="search-result-session"
+                      onClick={() => onOpenResult(result.routing.window_id)}
+                    >
+                      <div className="search-result-title">
+                        {result.routing.pinned && <Pin size={12} />}
+                        <span>{title}</span>
+                      </div>
+                      <div className="search-result-meta">
+                        <Brain
+                          size={12}
+                          className={`runtime-icon runtime-icon-${result.routing.runtime}`}
+                        />
+                        <span>{result.routing.runtime}</span>
+                        <span>{cwdBase(result.routing.cwd)}</span>
+                        <span>{result.hit_count} hits</span>
+                        {session?.last_activity && (
+                          <span>
+                            <Clock3 size={11} />
+                            {formatRelative(session.last_activity)}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                    <div className="search-result-hits">
+                      {result.hits.map((hit) => {
+                        const labels =
+                          showLexicalNotice &&
+                          !hit.match_labels.some((label) =>
+                            label.toLowerCase().startsWith("lexical"),
+                          )
+                            ? ["Lexical", ...hit.match_labels]
+                            : hit.match_labels;
+                        return (
+                          <button
+                            type="button"
+                            key={`${hit.source_order}:${hit.identity.chunk_index}`}
+                            className="search-result-hit"
+                            onClick={() => openHit(result, hit)}
+                          >
+                            <div className="search-hit-meta">
+                              <span>{hitLabel(hit)}</span>
+                              {hit.timestamp && <span>{hit.timestamp}</span>}
+                            </div>
+                            <div className="search-hit-snippet">
+                              {renderSnippet(hit.snippet, hit.highlights)}
+                            </div>
+                            {labels.length > 0 && (
+                              <div className="search-hit-labels">
+                                {labels.map((label) => (
+                                  <span key={label}>{label}</span>
+                                ))}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
           )}
         </div>
       )}

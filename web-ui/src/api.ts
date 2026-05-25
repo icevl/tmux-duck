@@ -128,6 +128,76 @@ export interface SearchIndexMetadata {
   recent_error: string | null;
 }
 
+export interface SearchWorkerHealth {
+  status: "idle" | "running" | "completed" | "failed" | null;
+  current_task: string | null;
+  heartbeat_at: string | null;
+  heartbeat_age_seconds: number | null;
+  stale: boolean;
+  stale_after_seconds: number;
+  recent_error: string | null;
+}
+
+export interface SearchQueueHealth {
+  queued_items: number;
+  leased_items: number;
+  failed_items: number;
+  stale_sources: number;
+  oldest_queued_at: string | null;
+  oldest_queued_age_seconds: number | null;
+  lagging: boolean;
+  recent_error: string | null;
+}
+
+export interface SearchBackfillProgress {
+  open_sessions: number;
+  indexed_sessions: number;
+  indexed_chunks: number;
+  queued_items: number;
+  failed_items: number;
+  generation_id: string | null;
+  model_id: string | null;
+  vector_dimension: number | null;
+  table_name: string | null;
+}
+
+export interface SearchRecoveryCommand {
+  label: string;
+  command: string;
+  description: string | null;
+}
+
+export interface SearchBenchmarkSummary {
+  schema_version: number;
+  created_at: string;
+  provider: "fake" | "local";
+  model_id: string;
+  vector_dimension: number;
+  batch_size: number;
+  chunk_max_chars: number;
+  chunk_overlap_chars: number;
+  document_count: number;
+  query_count: number;
+  index_elapsed_ms: number;
+  query_p50_ms: number;
+  query_p95_ms: number;
+  peak_memory_mb: number;
+  exact_top3_recall: number;
+  semantic_top5_recall: number;
+  passed: boolean;
+  failures: string[];
+  thresholds: Record<string, number>;
+}
+
+export interface SearchOperationalStatus {
+  worker: SearchWorkerHealth;
+  queue: SearchQueueHealth;
+  progress: SearchBackfillProgress;
+  recent_errors: string[];
+  recovery_commands: SearchRecoveryCommand[];
+  benchmark: SearchBenchmarkSummary | null;
+}
+
 export interface SearchStatusResponse {
   state: SearchIndexState;
   available: boolean;
@@ -136,6 +206,7 @@ export interface SearchStatusResponse {
   counters: SearchCounters | null;
   generation: SearchGenerationMetadata | null;
   index: SearchIndexMetadata | null;
+  operations: SearchOperationalStatus | null;
 }
 
 export interface SearchRoutingMetadata {

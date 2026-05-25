@@ -110,7 +110,7 @@ during startup, backfill, and ongoing indexing.
   hot path.
 - [x] **OPS-02**: Codi exposes authenticated search and search-status API
   surfaces without importing embedding models in request handlers.
-- [ ] **OPS-03**: Codi reports worker heartbeat, queue lag, indexed/open session
+- [x] **OPS-03**: Codi reports worker heartbeat, queue lag, indexed/open session
   counts, backfill progress, and recent indexing errors to the Web UI.
 - [ ] **OPS-04**: Search worker failures degrade search only and do not block
   session list updates, chat delivery, Telegram delivery, terminal panels, or
@@ -118,7 +118,7 @@ during startup, backfill, and ongoing indexing.
 - [ ] **OPS-05**: Codi includes a local benchmark or verification path for
   Mac-mini-appropriate embedding throughput, memory use, batch size, chunk size,
   and query latency.
-- [ ] **OPS-06**: Codi has a documented fallback/degraded mode that preserves
+- [x] **OPS-06**: Codi has a documented fallback/degraded mode that preserves
   lexical search or clear unavailable status when semantic embedding is not
   ready.
 
@@ -206,10 +206,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WEB-07 | Phase 5 | Complete |
 | OPS-01 | Phase 4 | Complete |
 | OPS-02 | Phase 1 | Complete |
-| OPS-03 | Phase 6 | Pending |
+| OPS-03 | Phase 6 | Complete |
 | OPS-04 | Phase 6 | Pending |
 | OPS-05 | Phase 6 | Pending |
-| OPS-06 | Phase 6 | Pending |
+| OPS-06 | Phase 6 | Complete |
 
 **Coverage:**
 - v1 requirements: 41 total

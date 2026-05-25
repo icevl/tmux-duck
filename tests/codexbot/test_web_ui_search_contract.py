@@ -36,6 +36,7 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
     assert "const DEFAULT_LIMIT = 10" in search_source
     assert "const DEFAULT_HITS_PER_SESSION = 3" in search_source
     assert "window.setTimeout" in search_source
+    assert "window.setInterval(load, 10000)" in search_source
     assert "setDebouncedQuery(trimmedQuery)" in search_source
     assert "api.getSearchStatus()" in search_source
     assert ".searchSessions({" in search_source
@@ -52,6 +53,15 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
         "Indexing",
         "Results may be incomplete.",
         "Degraded",
+        "Semantic search is not ready. Showing lexical results.",
+        "Show details",
+        "Hide details",
+        "Search status details",
+        "Worker heartbeat",
+        "Queue lag",
+        "Backfill",
+        "Recent errors",
+        "Local recovery",
         "Search unavailable",
         "Keep working and try again after indexing recovers.",
     ]:
@@ -150,6 +160,9 @@ def test_search_mobile_styles_and_highlight_contract() -> None:
 
     for selector in [
         ".session-search",
+        ".search-details-toggle",
+        ".search-status-details",
+        ".search-detail-row",
         ".search-result-hit",
         ".messages-row.search-hit",
         ".search-hit-label",
@@ -163,6 +176,8 @@ def test_search_mobile_styles_and_highlight_contract() -> None:
     assert ".session-search" in mobile
     assert ".session-search-input-wrap input" in mobile
     assert "font-size: 16px" in mobile
+    assert ".search-details-toggle" in mobile
+    assert ".search-status-details" in mobile
     assert ".search-filter-row" in mobile
     assert ".search-results" in mobile
     assert "max-height: calc(100dvh - 270px)" in mobile

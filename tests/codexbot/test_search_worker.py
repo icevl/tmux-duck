@@ -154,6 +154,7 @@ def test_running_worker_status_makes_search_status_building(
     from codexbot.search.state import write_worker_status
 
     monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEXBOT_SEARCH_WORKER_STALE_SECONDS", "999999999")
     write_worker_status(
         SearchWorkerStatus(
             status="running",
@@ -180,6 +181,34 @@ def test_running_worker_status_makes_search_status_building(
         "queued_items": 0,
         "failed_items": 0,
     }
+    assert body["operations"]["worker"]["stale"] is False
+    assert body["operations"]["progress"]["indexed_chunks"] == 11
+
+
+def test_stale_running_worker_without_generation_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OPS-04: stale workers stop advertising active indexing readiness."""
+    from codexbot.search.client import get_status
+    from codexbot.search.contracts import SearchWorkerStatus
+    from codexbot.search.state import write_worker_status
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEXBOT_SEARCH_WORKER_STALE_SECONDS", "1")
+    write_worker_status(
+        SearchWorkerStatus(
+            status="running",
+            current_task="initial_backfill",
+            heartbeat_at="2026-05-21T21:01:00Z",
+        )
+    )
+
+    body = get_status(open_session_count=2).model_dump(mode="json")
+
+    assert body["state"] == "unavailable"
+    assert body["available"] is False
+    assert "heartbeat is stale" in (body["reason"] or "")
+    assert body["operations"]["worker"]["stale"] is True
 
 
 def test_failed_worker_status_is_sanitized(
