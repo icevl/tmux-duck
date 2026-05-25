@@ -90,6 +90,142 @@ export interface ResumeSession {
   message_count: number;
 }
 
+export type SearchIndexState =
+  | "missing"
+  | "building"
+  | "partial"
+  | "ready"
+  | "stale"
+  | "degraded"
+  | "unavailable";
+
+export type SearchResponseOutcome = "ok" | "not_ready" | "unavailable";
+export type SearchOutcome = "lexical" | "semantic" | "metadata" | "hybrid";
+
+export interface SearchCounters {
+  open_sessions: number;
+  indexed_sessions: number;
+  indexed_chunks: number;
+  queued_items: number;
+  failed_items: number;
+}
+
+export interface SearchGenerationMetadata {
+  schema_version: number;
+  generation_id: string;
+  created_at: string;
+  active: boolean;
+}
+
+export interface SearchIndexMetadata {
+  schema_version: number;
+  generation_id: string;
+  model_id: string;
+  vector_dimension: number;
+  table_name: string;
+  created_at: string;
+  completed: boolean;
+  recent_error: string | null;
+}
+
+export interface SearchStatusResponse {
+  state: SearchIndexState;
+  available: boolean;
+  scope: "open_sessions";
+  reason: string | null;
+  counters: SearchCounters | null;
+  generation: SearchGenerationMetadata | null;
+  index: SearchIndexMetadata | null;
+}
+
+export interface SearchRoutingMetadata {
+  window_id: string;
+  name: string | null;
+  cwd: string;
+  runtime: string;
+  session_id: string | null;
+  status: string | null;
+  pinned: boolean;
+  sort_order: number | null;
+}
+
+export interface SearchRowIdentity {
+  runtime: string;
+  transcript_source: string;
+  transcript_offset: number | null;
+  transcript_index: number | null;
+  role: string;
+  content_type: string;
+  tool_use_id: string | null;
+  chunk_index: number;
+}
+
+export interface TranscriptProvenance {
+  runtime: string;
+  session_id: string | null;
+  transcript_source: string;
+  transcript_offset: number | null;
+  transcript_index: number | null;
+  role: string;
+  content_type: string;
+  tool_name: string | null;
+  tool_use_id: string | null;
+  source_event_kind: string;
+  timestamp: string | null;
+}
+
+export interface SearchHighlight {
+  start: number;
+  end: number;
+  label: string;
+}
+
+export interface SearchHit {
+  identity: SearchRowIdentity;
+  provenance: TranscriptProvenance;
+  snippet: string;
+  score: number;
+  outcomes: SearchOutcome[];
+  source_order: number;
+  timestamp: string | null;
+  highlights: SearchHighlight[];
+  match_labels: string[];
+}
+
+export interface SearchSessionResult {
+  routing: SearchRoutingMetadata;
+  hits: SearchHit[];
+  hit_count: number;
+  score: number | null;
+}
+
+export interface SearchRequest {
+  query: string;
+  limit?: number;
+  hits_per_session?: number;
+  runtime?: string | null;
+  cwd?: string | null;
+  role?: string | null;
+  content_type?: string | null;
+  status?: string | null;
+  window_id?: string | null;
+  session_id?: string | null;
+  pinned?: boolean | null;
+  recent_after?: string | null;
+  recent_seconds?: number | null;
+}
+
+export interface SearchResponse {
+  status: SearchStatusResponse;
+  query: string;
+  results: SearchSessionResult[];
+  total_results: number;
+  total_sessions: number;
+  limit: number;
+  hits_per_session: number;
+  outcome: SearchResponseOutcome;
+}
+
 async function request<T>(
   path: string,
   init: RequestInit & { json?: unknown } = {},
@@ -149,6 +285,12 @@ export const api = {
 
   listSessions: () =>
     request<{ sessions: SessionSummary[] }>("/api/sessions"),
+  getSearchStatus: () => request<SearchStatusResponse>("/api/search/status"),
+  searchSessions: (searchRequest: SearchRequest) =>
+    request<SearchResponse>("/api/search", {
+      method: "POST",
+      json: searchRequest,
+    }),
   createSession: (body: {
     cwd: string;
     runtime: string;
