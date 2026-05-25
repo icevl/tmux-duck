@@ -20,6 +20,7 @@ import { Login } from "./components/Login";
 import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
 import { DiffPanel } from "./components/DiffPanel";
+import { FilesPanel } from "./components/FilesPanel";
 import { OfficePanel } from "./components/OfficePanel";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { NewSessionDialog } from "./components/NewSessionDialog";
@@ -50,7 +51,7 @@ type BrowserNotificationPermission = NotificationPermission | "unsupported";
 
 type PanelOpenMap = Record<
   string,
-  Partial<Record<"diff" | "office" | "term", boolean>>
+  Partial<Record<"diff" | "office" | "term" | "files", boolean>>
 >;
 
 function loadPanelOpenMap(): PanelOpenMap {
@@ -122,7 +123,7 @@ function eventWindowId(event: WsEvent): string | null {
 
 function setFromMap(
   map: PanelOpenMap,
-  kind: "diff" | "office" | "term",
+  kind: "diff" | "office" | "term" | "files",
 ): Set<string> {
   const s = new Set<string>();
   for (const [wid, flags] of Object.entries(map)) {
@@ -272,20 +273,27 @@ export function App() {
   const [termOpenIds, setTermOpenIds] = useState<Set<string>>(() =>
     setFromMap(loadPanelOpenMap(), "term"),
   );
+  const [filesOpenIds, setFilesOpenIds] = useState<Set<string>>(() =>
+    setFromMap(loadPanelOpenMap(), "files"),
+  );
 
   // Persist whenever the open-state changes. Rebuilds the sparse map so
   // sessions with no open panels are dropped entirely.
   useEffect(() => {
     const map: PanelOpenMap = {};
-    const remember = (wid: string, kind: "diff" | "office" | "term") => {
+    const remember = (
+      wid: string,
+      kind: "diff" | "office" | "term" | "files",
+    ) => {
       if (!map[wid]) map[wid] = {};
       map[wid][kind] = true;
     };
     for (const wid of diffOpenIds) remember(wid, "diff");
     for (const wid of officeOpenIds) remember(wid, "office");
     for (const wid of termOpenIds) remember(wid, "term");
+    for (const wid of filesOpenIds) remember(wid, "files");
     savePanelOpenMap(map);
-  }, [diffOpenIds, officeOpenIds, termOpenIds]);
+  }, [diffOpenIds, officeOpenIds, termOpenIds, filesOpenIds]);
   const [toast, setToast] = useState<{ kind: "info" | "error"; text: string } | null>(
     null,
   );
@@ -556,11 +564,13 @@ export function App() {
     setDiffOpenIds((prev) => prune(prev));
     setOfficeOpenIds((prev) => prune(prev));
     setTermOpenIds((prev) => prune(prev));
+    setFilesOpenIds((prev) => prune(prev));
   }, [sessions, sessionsLoaded]);
 
   const diffOpen = !!activeId && diffOpenIds.has(activeId);
   const officeOpen = !!activeId && officeOpenIds.has(activeId);
   const termOpen = !!activeId && termOpenIds.has(activeId);
+  const filesOpen = !!activeId && filesOpenIds.has(activeId);
 
   // Panel ids currently inside the PanelGroup. The layout hook keys
   // persisted sizes by this list, so different open-combinations remember
@@ -570,8 +580,9 @@ export function App() {
     if (diffOpen) ids.push("diff");
     if (officeOpen) ids.push("office");
     if (termOpen) ids.push("term");
+    if (filesOpen) ids.push("files");
     return ids;
-  }, [diffOpen, officeOpen, termOpen]);
+  }, [diffOpen, officeOpen, termOpen, filesOpen]);
 
   // Per-topic layout id so each session remembers the exact widths the
   // user dragged for its own combination of panels. Falls back to a
@@ -767,6 +778,8 @@ export function App() {
       officeOpen={officeOpen}
       onToggleTerm={() => togglePanel(setTermOpenIds)}
       termOpen={termOpen}
+      onToggleFiles={() => togglePanel(setFilesOpenIds)}
+      filesOpen={filesOpen}
       onRename={async (name) => {
         try {
           await api.renameSession(activeSession.window_id, name);
@@ -809,13 +822,21 @@ export function App() {
     />
   ) : null;
 
+  const filesNode = activeSession ? (
+    <FilesPanel
+      windowId={activeSession.window_id}
+      open={filesOpen}
+      onClose={() => closePanel(setFilesOpenIds)}
+    />
+  ) : null;
+
   return (
     <div
       className={`app-shell${sidebarOpen ? " sidebar-open" : ""}${
         isNarrow && diffOpen && activeSession ? " diff-open" : ""
       }${isNarrow && officeOpen && activeSession ? " office-open" : ""}${
         isNarrow && termOpen && activeSession ? " term-open" : ""
-      }`}
+      }${isNarrow && filesOpen && activeSession ? " files-open" : ""}`}
     >
       <Sidebar
         sessions={sessions}
@@ -853,6 +874,7 @@ export function App() {
             {diffNode}
             {officeNode}
             {termNode}
+            {filesNode}
           </>
         ) : (
           // Desktop: chat + open side panels share a horizontal
@@ -908,6 +930,19 @@ export function App() {
                   style={PANEL_COLUMN_STYLE}
                 >
                   {termNode}
+                </Panel>
+              </>
+            )}
+            {filesOpen && (
+              <>
+                <PanelResizeHandle className="panel-resize-handle" />
+                <Panel
+                  id="files"
+                  minSize={14}
+                  defaultSize={24}
+                  style={PANEL_COLUMN_STYLE}
+                >
+                  {filesNode}
                 </Panel>
               </>
             )}

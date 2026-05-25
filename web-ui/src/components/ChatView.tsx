@@ -15,6 +15,7 @@ import {
   Camera,
   ChevronDown,
   Eraser,
+  FolderTree,
   GitCommit,
   Keyboard,
   Menu,
@@ -57,6 +58,8 @@ interface Props {
   officeOpen: boolean;
   onToggleTerm: () => void;
   termOpen: boolean;
+  onToggleFiles: () => void;
+  filesOpen: boolean;
   onRename: (name: string) => Promise<void>;
   showToast: (text: string, kind?: "info" | "error") => void;
 }
@@ -673,6 +676,8 @@ export function ChatView({
   officeOpen,
   onToggleTerm,
   termOpen,
+  onToggleFiles,
+  filesOpen,
   onRename,
   showToast,
 }: Props) {
@@ -1299,7 +1304,7 @@ export function ChatView({
   useEffect(() => {
     const timer = window.setTimeout(snapChatToBottomAfterResize, 1000);
     return () => window.clearTimeout(timer);
-  }, [diffOpen, officeOpen, termOpen]);
+  }, [diffOpen, officeOpen, termOpen, filesOpen]);
 
   function snapChatToBottomAfterResize() {
     const s = scrollerRef.current;
@@ -1992,6 +1997,17 @@ export function ChatView({
               >
                 <TerminalIcon size={ICON} />
                 <span>Terminal</span>
+              </button>
+              <button
+                type="button"
+                className={filesOpen ? "active" : ""}
+                onClick={() => {
+                  setChatMenuOpen(false);
+                  onToggleFiles();
+                }}
+              >
+                <FolderTree size={ICON} />
+                <span>Files</span>
               </button>
               <button
                 type="button"
