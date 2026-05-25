@@ -2,7 +2,7 @@
 phase: 02-worker-skeleton-backfill-and-rebuild-path
 status: passed
 verified_at: 2026-05-21T22:17:00Z
-score: 16/16
+score: 18/18
 human_verification: []
 ---
 
@@ -31,6 +31,8 @@ Verify that Phase 02 provides a safe asynchronous worker skeleton, parser-backed
 
 - PASS: `INDX-01` search-owned storage and metadata live under `CODEXBOT_DIR/search`.
 - PASS: `INDX-02` worker startup is asynchronous and nonblocking.
+- PASS: `CORP-01` backfill reads normalized Codex and Claude transcript records through existing runtime transcript parsers rather than Web UI history DTOs or terminal scrollback.
+- PASS: `CORP-02` user, assistant, and useful tool/output text-bearing parser entries are converted into indexable chunk documents.
 - PASS: `INDX-03` open-session backfill is parser-backed for current Codex and Claude sessions.
 - PASS: `INDX-08` rebuild/recovery semantics are local, rerunnable, and activation-safe.
 
@@ -44,4 +46,3 @@ Verify that Phase 02 provides a safe asynchronous worker skeleton, parser-backed
 ## Notes
 
 The documented `/tmp/codexbot-venv/bin/pytest` binary is absent on this host, so the equivalent working repo test lane `uv run pytest -q` was used for the full suite.
-
