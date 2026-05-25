@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Live Queue and Convergence** - Durably capture new transcript items and keep the derived index aligned with live open sessions. (completed 2026-05-22)
 - [x] **Phase 4: LanceDB Hybrid Retrieval and Ranking** - Deliver local lexical plus semantic search with ranked session groups and matching snippets. (completed 2026-05-22)
 - [x] **Phase 5: Web UI Search Experience and Navigation** - Add the browser search workflow, status states, filters, snippets, and result navigation. (completed 2026-05-25)
-- [ ] **Phase 6: Operational Hardening and Model Tuning** - Validate local performance, worker failure behavior, metrics, and degraded search modes.
+- [x] **Phase 6: Operational Hardening and Model Tuning** - Validate local performance, worker failure behavior, metrics, and degraded search modes. (completed 2026-05-25)
 
 ## Phase Details
 
@@ -177,7 +177,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06-03-PLAN.md - Add the opt-in local benchmark and model/default validation path.
+- [x] 06-03-PLAN.md - Add the opt-in local benchmark and model/default validation path.
 **UI hint**: yes
 
 ## Progress
@@ -192,4 +192,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Live Queue and Convergence | 3/3 | Complete   | 2026-05-22 |
 | 4. LanceDB Hybrid Retrieval and Ranking | 3/3 | Complete   | 2026-05-22 |
 | 5. Web UI Search Experience and Navigation | 3/3 | Complete   | 2026-05-25 |
-| 6. Operational Hardening and Model Tuning | 2/3 | In Progress|  |
+| 6. Operational Hardening and Model Tuning | 3/3 | Complete   | 2026-05-25 |

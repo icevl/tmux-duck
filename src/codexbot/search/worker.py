@@ -250,9 +250,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             "live-loop",
             "live-drain-once",
             "smoke-search-index",
+            "benchmark",
         ),
     )
-    args = parser.parse_args(argv)
+    args, remaining = parser.parse_known_args(argv)
 
     if args.command == "initial-backfill":
         try:
@@ -282,6 +283,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "smoke-search-index":
         return run_smoke_search_index()
+    if args.command == "benchmark":
+        from .benchmark import main as benchmark_main
+
+        return benchmark_main(remaining)
     return 2
 
 

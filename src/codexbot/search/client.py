@@ -22,6 +22,7 @@ from .contracts import (
     SearchWorkerStatus,
 )
 from .state import (
+    read_benchmark_summary,
     read_generation_manifest,
     read_generation_metadata,
     read_index_metadata,
@@ -270,7 +271,7 @@ def _operations(
             manifest_errors,
         ),
         recovery_commands=_recovery_commands(),
-        benchmark=None,
+        benchmark=read_benchmark_summary(),
     )
 
 

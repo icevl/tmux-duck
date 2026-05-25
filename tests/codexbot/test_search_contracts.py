@@ -265,6 +265,45 @@ def test_status_response_exposes_operations_without_raw_content() -> None:
     assert "raw transcript" not in json.dumps(dumped)
 
 
+def test_benchmark_summary_contract_excludes_raw_documents() -> None:
+    """OPS-05: benchmark summaries persist metrics/config, not fixture text."""
+    from codexbot.search.contracts import SearchBenchmarkSummary
+
+    summary = SearchBenchmarkSummary(
+        created_at="2026-05-25T11:45:00Z",
+        ok=True,
+        provider="fake",
+        model_id="fake/codi-search-benchmark",
+        vector_dimension=16,
+        batch_size=4,
+        chunk_max_chars=400,
+        chunk_overlap_chars=40,
+        document_count=8,
+        query_count=6,
+        index_elapsed_ms=10.0,
+        query_p50_ms=1.0,
+        query_p95_ms=2.0,
+        peak_memory_mb=8.0,
+        embedding_docs_per_second=100.0,
+        exact_top3=1.0,
+        semantic_top5=1.0,
+        fallback_ok=True,
+        package_versions={"lancedb": "test"},
+        exact_top3_recall=1.0,
+        semantic_top5_recall=1.0,
+        passed=True,
+        thresholds={"query_p95_ms": 1000.0},
+    )
+
+    dumped = summary.model_dump(mode="json")
+
+    assert dumped["ok"] is True
+    assert dumped["fallback_ok"] is True
+    assert dumped["thresholds"]["query_p95_ms"] == 1000.0
+    assert "text" not in dumped
+    assert "documents" not in dumped
+
+
 def test_search_hit_exposes_highlights_and_rejects_invalid_spans() -> None:
     """D-06/D-08: hits expose normalized scores and exact spans only."""
     from codexbot.search.contracts import (

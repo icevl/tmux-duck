@@ -115,7 +115,7 @@ during startup, backfill, and ongoing indexing.
 - [x] **OPS-04**: Search worker failures degrade search only and do not block
   session list updates, chat delivery, Telegram delivery, terminal panels, or
   existing WebSocket events.
-- [ ] **OPS-05**: Codi includes a local benchmark or verification path for
+- [x] **OPS-05**: Codi includes a local benchmark or verification path for
   Mac-mini-appropriate embedding throughput, memory use, batch size, chunk size,
   and query latency.
 - [x] **OPS-06**: Codi has a documented fallback/degraded mode that preserves
@@ -208,7 +208,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OPS-02 | Phase 1 | Complete |
 | OPS-03 | Phase 6 | Complete |
 | OPS-04 | Phase 6 | Complete |
-| OPS-05 | Phase 6 | Pending |
+| OPS-05 | Phase 6 | Complete |
 | OPS-06 | Phase 6 | Complete |
 
 **Coverage:**

@@ -11,6 +11,7 @@ from codexbot.utils import atomic_write_json, codexbot_dir
 
 from .contracts import (
     SearchBackfillManifest,
+    SearchBenchmarkSummary,
     SearchGenerationMetadata,
     SearchIndexMetadata,
     SearchWorkerStatus,
@@ -27,6 +28,7 @@ GENERATION_LANCEDB_DIRNAME = "lancedb"
 GENERATION_INDEX_METADATA_FILENAME = "index.json"
 WORKER_STATUS_FILENAME = "worker_status.json"
 QUEUE_DB_FILENAME = "queue.sqlite"
+BENCHMARK_SUMMARY_FILENAME = "benchmark_summary.json"
 
 
 def search_dir() -> Path:
@@ -88,6 +90,11 @@ def worker_status_path() -> Path:
 def queue_db_path() -> Path:
     """Return the search-owned SQLite queue database path."""
     return search_dir() / QUEUE_DB_FILENAME
+
+
+def benchmark_summary_path() -> Path:
+    """Return the latest benchmark summary path."""
+    return search_dir() / BENCHMARK_SUMMARY_FILENAME
 
 
 def read_generation_metadata() -> SearchGenerationMetadata | None:
@@ -226,8 +233,37 @@ def write_worker_status(status: SearchWorkerStatus) -> None:
     atomic_write_json(worker_status_path(), status.model_dump(mode="json"))
 
 
+def read_benchmark_summary() -> SearchBenchmarkSummary | None:
+    """Read the latest opt-in benchmark summary, ignoring invalid data."""
+    path = benchmark_summary_path()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(raw, dict):
+        return None
+
+    try:
+        summary = SearchBenchmarkSummary(**raw)
+    except ValidationError:
+        return None
+
+    if summary.schema_version != SEARCH_SCHEMA_VERSION:
+        return None
+    return summary
+
+
+def write_benchmark_summary(summary: SearchBenchmarkSummary) -> None:
+    """Atomically persist latest benchmark metrics without fixture text."""
+    if summary.schema_version != SEARCH_SCHEMA_VERSION:
+        raise ValueError("benchmark summary schema is unsupported")
+    atomic_write_json(benchmark_summary_path(), summary.model_dump(mode="json"))
+
+
 __all__ = [
     "ACTIVE_GENERATION_METADATA_FILENAME",
+    "BENCHMARK_SUMMARY_FILENAME",
     "GENERATION_DOCUMENTS_FILENAME",
     "GENERATION_INDEX_METADATA_FILENAME",
     "GENERATION_LANCEDB_DIRNAME",
@@ -238,6 +274,7 @@ __all__ = [
     "SEARCH_SCHEMA_VERSION",
     "WORKER_STATUS_FILENAME",
     "active_generation_metadata_path",
+    "benchmark_summary_path",
     "generation_dir",
     "generation_documents_path",
     "generation_index_metadata_path",
@@ -249,11 +286,13 @@ __all__ = [
     "queue_db_path",
     "read_generation_manifest",
     "read_generation_metadata",
+    "read_benchmark_summary",
     "read_index_metadata",
     "read_worker_status",
     "search_dir",
     "worker_status_path",
     "write_generation_manifest",
+    "write_benchmark_summary",
     "write_index_metadata",
     "write_worker_status",
 ]

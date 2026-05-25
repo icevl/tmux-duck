@@ -1,0 +1,125 @@
+{
+  "documents": [
+    {
+      "window_id": "@bench-1",
+      "name": "shell-persistence",
+      "cwd": "/repo/codi",
+      "runtime": "codex",
+      "session_id": "bench-shell",
+      "role": "assistant",
+      "content_type": "text",
+      "text": "Persistent shell survives attach mode, terminal pane reloads, and browser tab close without losing console context.",
+      "timestamp": "2026-05-24T10:00:00Z"
+    },
+    {
+      "window_id": "@bench-2",
+      "name": "api-route",
+      "cwd": "/repo/codi",
+      "runtime": "codex",
+      "session_id": "bench-api",
+      "role": "assistant",
+      "content_type": "text",
+      "text": "Inspect src/codexbot/web/api.py for the authenticated search status route and request validation.",
+      "timestamp": "2026-05-24T10:01:00Z"
+    },
+    {
+      "window_id": "@bench-3",
+      "name": "queue-worker",
+      "cwd": "/repo/codi",
+      "runtime": "codex",
+      "session_id": "bench-queue",
+      "role": "assistant",
+      "content_type": "text",
+      "text": "Live queue worker retries failed indexing rows, moves repeated failures to dead-letter state, and keeps later rows drainable.",
+      "timestamp": "2026-05-24T10:02:00Z"
+    },
+    {
+      "window_id": "@bench-4",
+      "name": "mobile-controls",
+      "cwd": "/repo/codi/web-ui",
+      "runtime": "claude",
+      "session_id": "bench-mobile",
+      "role": "assistant",
+      "content_type": "text",
+      "text": "Mobile terminal overlay exposes touch controls for Ctrl, Enter, arrow navigation, and hideable shortcut rows.",
+      "timestamp": "2026-05-24T10:03:00Z"
+    },
+    {
+      "window_id": "@bench-5",
+      "name": "notifications",
+      "cwd": "/repo/codi/web-ui",
+      "runtime": "codex",
+      "session_id": "bench-notify",
+      "role": "assistant",
+      "content_type": "text",
+      "text": "Browser notifications alert when an agent turn completes or when user input is required.",
+      "timestamp": "2026-05-24T10:04:00Z"
+    },
+    {
+      "window_id": "@bench-6",
+      "name": "session-order",
+      "cwd": "/repo/codi",
+      "runtime": "codex",
+      "session_id": "bench-order",
+      "role": "assistant",
+      "content_type": "text",
+      "text": "Pinned sessions remain at the top while drag and drop reorders unpinned windows by sort_order.",
+      "timestamp": "2026-05-24T10:05:00Z"
+    },
+    {
+      "window_id": "@bench-7",
+      "name": "plan-choice",
+      "cwd": "/repo/codi",
+      "runtime": "claude",
+      "session_id": "bench-choice",
+      "role": "assistant",
+      "content_type": "text",
+      "text": "Plan mode and GSD user input render paged multiple choice controls and preserve selected choices in history.",
+      "timestamp": "2026-05-24T10:06:00Z"
+    },
+    {
+      "window_id": "@bench-8",
+      "name": "search-model",
+      "cwd": "/repo/codi",
+      "runtime": "codex",
+      "session_id": "bench-model",
+      "role": "assistant",
+      "content_type": "text",
+      "text": "Qwen embedding benchmark records latency, memory, batch size, vector dimension, and lexical degraded fallback status.",
+      "timestamp": "2026-05-24T10:07:00Z"
+    }
+  ],
+  "queries": [
+    {
+      "query": "src/codexbot/web/api.py",
+      "expected_window_id": "@bench-2",
+      "kind": "exact"
+    },
+    {
+      "query": "uv run pytest search worker",
+      "expected_window_id": "@bench-3",
+      "kind": "exact"
+    },
+    {
+      "query": "keep console alive after attach",
+      "expected_window_id": "@bench-1",
+      "kind": "semantic"
+    },
+    {
+      "query": "phone buttons for arrows and enter",
+      "expected_window_id": "@bench-4",
+      "kind": "semantic"
+    },
+    {
+      "query": "agent waiting for user input choices",
+      "expected_window_id": "@bench-7",
+      "kind": "semantic"
+    },
+    {
+      "query": "lexical degraded fallback",
+      "expected_window_id": "@bench-8",
+      "kind": "exact",
+      "fallback": true
+    }
+  ]
+}
