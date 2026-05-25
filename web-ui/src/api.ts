@@ -170,6 +170,7 @@ export interface SearchRecoveryCommand {
 export interface SearchBenchmarkSummary {
   schema_version: number;
   created_at: string;
+  ok: boolean;
   provider: "fake" | "local";
   model_id: string;
   vector_dimension: number;
@@ -182,6 +183,11 @@ export interface SearchBenchmarkSummary {
   query_p50_ms: number;
   query_p95_ms: number;
   peak_memory_mb: number;
+  embedding_docs_per_second: number;
+  exact_top3: number;
+  semantic_top5: number;
+  fallback_ok: boolean;
+  package_versions: Record<string, string>;
   exact_top3_recall: number;
   semantic_top5_recall: number;
   passed: boolean;

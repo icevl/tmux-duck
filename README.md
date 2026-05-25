@@ -73,6 +73,19 @@ Sessions are global to the running Codi instance: a window created in the web UI
 - Persistent state for thread bindings, window display names, read offsets, pinned sessions
 - macOS launchd installer and a Docker Compose setup, both for set-and-forget operation
 
+### Search operations
+
+- Open-session search uses local derived state under `CODEXBOT_DIR/search`; chat, terminal, Telegram, WebSocket delivery, and session listing continue to work when search is degraded.
+- Default semantic model: `Qwen/Qwen3-Embedding-0.6B`, vector dimension `1024`, batch size `16`.
+- Overrides: `CODEXBOT_SEARCH_MODEL_ID`, `CODEXBOT_SEARCH_VECTOR_DIM`, `CODEXBOT_SEARCH_BATCH_SIZE`, `CODEXBOT_SEARCH_LOCAL_FILES_ONLY`, and `CODEXBOT_SEARCH_WORKER_STALE_SECONDS`.
+- Degraded behavior is explicit: no completed generation means no results while indexing/backfill status is shown; a completed generation without a semantic index means lexical degraded search; semantic/model/LanceDB failure falls back to lexical degraded search when generation documents exist.
+- Recovery/validation commands are local and read-only from the browser:
+  - `codexbot-search-worker smoke-search-index`
+  - `codexbot-search-worker live-drain-once`
+  - `codexbot-search-worker rebuild`
+  - `codexbot-search-benchmark --fixtures tests/fixtures/search/benchmark_cases.json --provider fake`
+- Real-model validation is opt-in on the target host: `codexbot-search-benchmark --fixtures tests/fixtures/search/benchmark_cases.json --provider local --model Qwen/Qwen3-Embedding-0.6B`.
+
 ---
 
 ## Architecture

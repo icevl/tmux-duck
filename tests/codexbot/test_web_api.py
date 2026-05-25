@@ -203,6 +203,47 @@ def test_search_status_reports_building_backfill(
     assert body["operations"]["progress"]["indexed_chunks"] == 3
 
 
+def test_search_status_includes_latest_benchmark_summary(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from codexbot.search.contracts import SearchBenchmarkSummary
+    from codexbot.search.state import write_benchmark_summary
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    write_benchmark_summary(
+        SearchBenchmarkSummary(
+            created_at="2026-05-25T11:45:00Z",
+            ok=True,
+            provider="fake",
+            model_id="fake/codi-search-benchmark",
+            vector_dimension=16,
+            batch_size=4,
+            chunk_max_chars=400,
+            chunk_overlap_chars=40,
+            document_count=8,
+            query_count=6,
+            index_elapsed_ms=10.0,
+            query_p50_ms=1.0,
+            query_p95_ms=2.0,
+            peak_memory_mb=8.0,
+            embedding_docs_per_second=100.0,
+            exact_top3=1.0,
+            semantic_top5=1.0,
+            fallback_ok=True,
+            exact_top3_recall=1.0,
+            semantic_top5_recall=1.0,
+            passed=True,
+        )
+    )
+
+    r = authed_client.get("/api/search/status")
+
+    assert r.status_code == 200, r.text
+    benchmark = r.json()["operations"]["benchmark"]
+    assert benchmark["ok"] is True
+    assert benchmark["model_id"] == "fake/codi-search-benchmark"
+
+
 def test_search_stub_returns_typed_not_ready(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

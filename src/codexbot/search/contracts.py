@@ -201,6 +201,7 @@ class SearchBenchmarkSummary(BaseModel):
 
     schema_version: int = Field(default=1, ge=1)
     created_at: str = Field(min_length=1, max_length=128)
+    ok: bool
     provider: Literal["fake", "local"]
     model_id: str = Field(min_length=1, max_length=255)
     vector_dimension: int = Field(ge=1, le=4096)
@@ -213,6 +214,11 @@ class SearchBenchmarkSummary(BaseModel):
     query_p50_ms: float = Field(ge=0)
     query_p95_ms: float = Field(ge=0)
     peak_memory_mb: float = Field(ge=0)
+    embedding_docs_per_second: float = Field(ge=0)
+    exact_top3: float = Field(ge=0, le=1)
+    semantic_top5: float = Field(ge=0, le=1)
+    fallback_ok: bool
+    package_versions: dict[str, str] = Field(default_factory=dict)
     exact_top3_recall: float = Field(ge=0, le=1)
     semantic_top5_recall: float = Field(ge=0, le=1)
     passed: bool
