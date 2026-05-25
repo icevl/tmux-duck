@@ -607,18 +607,6 @@ button.burger {
   white-space: nowrap;
 }
 
-.session-item .session-meta {
-  font-size: 12px;
-  color: var(--text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-item .session-time {
-  color: var(--text-1);
-}
-
 .runtime-icon {
   display: inline-block;
   vertical-align: -2px;
