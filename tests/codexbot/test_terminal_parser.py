@@ -17,17 +17,47 @@ class TestParseStatusLine:
     @pytest.mark.parametrize(
         ("spinner", "rest", "expected"),
         [
-            ("·", "Working on task", "Working on task"),
-            ("✻", "  Reading file  ", "Reading file"),
-            ("✽", "Thinking deeply", "Thinking deeply"),
-            ("✶", "Analyzing code", "Analyzing code"),
-            ("✳", "Processing input", "Processing input"),
-            ("✢", "Building project", "Building project"),
+            (
+                "·",
+                "Working on task (esc to interrupt)",
+                "Working on task (esc to interrupt)",
+            ),
+            (
+                "✻",
+                "  Reading file (esc to interrupt)  ",
+                "Reading file (esc to interrupt)",
+            ),
+            (
+                "✽",
+                "Thinking deeply (esc to interrupt)",
+                "Thinking deeply (esc to interrupt)",
+            ),
+            (
+                "✶",
+                "Analyzing code (esc to interrupt)",
+                "Analyzing code (esc to interrupt)",
+            ),
+            (
+                "✳",
+                "Processing input (esc to interrupt)",
+                "Processing input (esc to interrupt)",
+            ),
+            (
+                "✢",
+                "Building project (esc to interrupt)",
+                "Building project (esc to interrupt)",
+            ),
         ],
     )
     def test_spinner_chars(self, spinner: str, rest: str, expected: str, chrome: str):
         pane = f"some output\n{spinner}{rest}\n{chrome}"
         assert parse_status_line(pane) == expected
+
+    def test_spinner_without_esc_to_interrupt_is_history(self, chrome: str):
+        """Past-tense footer like '✻ Brewed for 15s' must NOT match — it's
+        scrollback left behind after a turn finished, not a live status."""
+        pane = f"output\n✻ Brewed for 15s\n{chrome}"
+        assert parse_status_line(pane) is None
 
     @pytest.mark.parametrize(
         "pane",
@@ -50,8 +80,8 @@ class TestParseStatusLine:
 
     def test_blank_line_between_status_and_chrome(self, chrome: str):
         """Status line with blank lines before separator."""
-        pane = f"output\n✻ Doing work\n\n{chrome}"
-        assert parse_status_line(pane) == "Doing work"
+        pane = f"output\n✻ Doing work (esc to interrupt)\n\n{chrome}"
+        assert parse_status_line(pane) == "Doing work (esc to interrupt)"
 
     def test_idle_no_status(self, chrome: str):
         """Idle pane (no status line above chrome) returns None."""
@@ -64,7 +94,10 @@ class TestParseStatusLine:
         assert parse_status_line(pane) is None
 
     def test_uses_fixture(self, sample_pane_status_line: str):
-        assert parse_status_line(sample_pane_status_line) == "Reading file src/main.py"
+        assert (
+            parse_status_line(sample_pane_status_line)
+            == "Reading file src/main.py (esc to interrupt)"
+        )
 
 
 # ── extract_interactive_content ──────────────────────────────────────────

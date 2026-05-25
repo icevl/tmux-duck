@@ -1119,7 +1119,11 @@ async def test_ensure_persistent_shell_reuses_existing_session(
     session_name = await web_api._ensure_persistent_shell_session("@5", str(tmp_path))
 
     assert session_name == "codexbot-shell-5"
-    assert run_calls == []
+    # Existing sessions get `mouse on` re-applied so older sessions
+    # created before the option was wired up still pick it up.
+    assert run_calls == [
+        ["set-option", "-t", "codexbot-shell-5", "mouse", "on"],
+    ]
 
 
 @pytest.mark.asyncio
@@ -1155,7 +1159,11 @@ async def test_ensure_persistent_shell_creates_session_in_window_cwd(
                 str(tmp_path),
             ],
             5.0,
-        )
+        ),
+        (
+            ["set-option", "-t", "codexbot-shell-5", "mouse", "on"],
+            2.0,
+        ),
     ]
 
 

@@ -2,7 +2,7 @@
 
 Every `POLL_INTERVAL_SEC` the checker compares `git rev-parse HEAD` of the
 local repository against the latest commit SHA on
-`https://github.com/icevl/codi/commits/main`. When the SHAs diverge and
+`https://github.com/icevl/tmux-duck/commits/main`. When the SHAs diverge and
 the working tree is clean it publishes an `update_available` event on the
 shared `EventBus`. The web UI listens for that event, prompts the user,
 and on confirmation POSTs to `/api/update/run` which executes
@@ -28,7 +28,7 @@ from .events import EventBus
 
 logger = logging.getLogger(__name__)
 
-REPO = "icevl/codi"
+REPO = "icevl/tmux-duck"
 BRANCH = "main"
 POLL_INTERVAL_SEC = 600  # 10 minutes — well under the 60/hr unauth GitHub quota.
 GITHUB_API = f"https://api.github.com/repos/{REPO}/commits/{BRANCH}"
@@ -77,6 +77,19 @@ def _git(args: list[str]) -> str | None:
         return None
 
 
+def _git_returncode(args: list[str], *, timeout: float = 5.0) -> int | None:
+    """Run git, return exit code without raising on non-zero. None if launch failed."""
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(repo_root()),
+            capture_output=True,
+            timeout=timeout,
+        ).returncode
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
 def get_local_sha() -> str | None:
     return _git(["rev-parse", "HEAD"])
 
@@ -84,6 +97,24 @@ def get_local_sha() -> str | None:
 def is_dirty() -> bool:
     out = _git(["status", "--porcelain"])
     return bool(out)
+
+
+def _remote_is_ahead(current: str, latest: str) -> bool:
+    """True iff `latest` is a strict descendant of `current` — i.e. a clean
+    `git pull --ff-only` target. False when local is ahead, equal, or diverged.
+
+    Needs `latest` in the local object store, so we do a cheap `git fetch`
+    of the branch tip first. Fetch is a no-op when already up to date.
+    """
+    if current == latest:
+        return False
+    # Make sure we have `latest` locally. `_git` returns None on non-zero
+    # exit (e.g. no network) — be conservative and skip the banner in that
+    # case rather than guessing.
+    if _git(["fetch", "--quiet", "origin", BRANCH]) is None:
+        return False
+    rc = _git_returncode(["merge-base", "--is-ancestor", current, latest])
+    return rc == 0
 
 
 def _fetch_remote_sync() -> tuple[str, str] | None:
@@ -125,7 +156,11 @@ async def tick(bus: EventBus) -> None:
         # Network blip — leave previous state alone; the next tick retries.
         return
     latest, subject = remote
-    has_update = bool(current and latest != current and not dirty)
+    has_update = bool(
+        current
+        and not dirty
+        and await asyncio.to_thread(_remote_is_ahead, current, latest)
+    )
     prev = _state["has_update"]
     _state["current_sha"] = current
     _state["latest_sha"] = latest

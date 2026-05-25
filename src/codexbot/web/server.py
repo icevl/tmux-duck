@@ -28,6 +28,7 @@ from ..skill_hints import skill_hint_registry
 from ..slash_commands import slash_command_registry
 from .api import create_app
 from .events import EventBus, session_monitor_listener
+from .interactive_monitor import InteractivePromptMonitor
 from .streaming import stream_pane_loop
 from .update_checker import poll_loop as update_poll_loop
 
@@ -65,6 +66,7 @@ class WebServerHandle:
         search_replay_task: asyncio.Task[int] | None = None,
         search_live_task: asyncio.Task[None] | None = None,
         search_producer: LiveQueueProducer | None = None,
+        interactive_monitor: InteractivePromptMonitor | None = None,
     ) -> None:
         self.server = server
         self.task = task
@@ -75,6 +77,7 @@ class WebServerHandle:
         self.search_replay_task = search_replay_task
         self.search_live_task = search_live_task
         self.search_producer = search_producer
+        self.interactive_monitor = interactive_monitor
         self.listener: Listener | None = None
         self.search_listener: Listener | None = None
 
@@ -178,6 +181,9 @@ async def start_web_server(
     else:
         logger.info("Auto-update checker disabled via CODEXBOT_AUTO_UPDATE")
 
+    interactive_monitor = InteractivePromptMonitor(bus)
+    await interactive_monitor.start()
+
     logger.info(
         "Web UI listening on http://%s:%d", config.web_ui_host, config.web_ui_port
     )
@@ -192,6 +198,7 @@ async def start_web_server(
         search_replay_task=search_replay_task,
         search_live_task=search_live_task,
         search_producer=search_producer,
+        interactive_monitor=interactive_monitor,
     )
     handle.listener = listener_ref
     handle.search_listener = search_listener_ref
@@ -249,6 +256,11 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
             pass
     if handle.search_producer is not None:
         await handle.search_producer.stop()
+    if handle.interactive_monitor is not None:
+        try:
+            await handle.interactive_monitor.stop()
+        except Exception:  # noqa: BLE001
+            pass
     handle.server.should_exit = True
     try:
         await asyncio.wait_for(handle.task, timeout=WEB_SHUTDOWN_TIMEOUT_SECONDS)

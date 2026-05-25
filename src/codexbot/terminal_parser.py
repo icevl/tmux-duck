@@ -307,6 +307,64 @@ def is_interactive_ui(pane_text: str, runtime: str | None = None) -> bool:
     return extract_interactive_content(pane_text, runtime=runtime) is not None
 
 
+# ── Option-list parsing ─────────────────────────────────────────────────
+
+# Cursor marker placed before the currently-selected option in Claude TUIs.
+_OPTION_CURSOR = "❯"
+# Numbered option: "  1. Yes, proceed" / "❯ 2. No, keep planning".
+_RE_NUM_OPTION = re.compile(r"^\s*(❯)?\s*(\d+)\.\s+(.+?)\s*$")
+# Radio option: "  ◯ Option A" / "❯ ◉ Option B".
+_RE_RADIO_OPTION = re.compile(r"^\s*(❯)?\s*[◯◉○●⦿]\s+(.+?)\s*$")
+
+
+@dataclass
+class ParsedOption:
+    label: str
+
+
+@dataclass
+class ParsedPrompt:
+    options: list[ParsedOption]
+    current_index: int
+
+
+def parse_options(content: str) -> ParsedPrompt | None:
+    """Parse an interactive UI's content into a structured option list.
+
+    Tries numbered options (``1. Yes``) first, then radio options
+    (``◯ Option``). Returns None when neither shape is found.
+    """
+    if not content:
+        return None
+    lines = content.split("\n")
+
+    numbered: list[ParsedOption] = []
+    current = -1
+    for line in lines:
+        m = _RE_NUM_OPTION.match(line)
+        if not m:
+            continue
+        if m.group(1) == _OPTION_CURSOR:
+            current = len(numbered)
+        numbered.append(ParsedOption(label=m.group(3).strip()))
+    if numbered:
+        return ParsedPrompt(options=numbered, current_index=max(current, 0))
+
+    radio: list[ParsedOption] = []
+    current = -1
+    for line in lines:
+        m = _RE_RADIO_OPTION.match(line)
+        if not m:
+            continue
+        if m.group(1) == _OPTION_CURSOR:
+            current = len(radio)
+        radio.append(ParsedOption(label=m.group(2).strip()))
+    if radio:
+        return ParsedPrompt(options=radio, current_index=max(current, 0))
+
+    return None
+
+
 # ── Status line parsing ─────────────────────────────────────────────────
 
 # Spinner characters Codex uses in its status line
@@ -357,14 +415,17 @@ def parse_status_line(pane_text: str) -> str | None:
     if chrome_idx is None:
         return _parse_status_line_without_chrome(lines)
 
-    # Check lines just above the separator (skip blanks, up to 4 lines)
+    # Check lines just above the separator (skip blanks, up to 4 lines).
+    # A live status line is always spinner + "(esc to interrupt)" — without
+    # the latter, the line is a leftover footer like "✻ Brewed for 15s" that
+    # Claude prints in scrollback after a turn finishes.
     for i in range(chrome_idx - 1, max(chrome_idx - 5, -1), -1):
         line = lines[i].strip()
         if not line:
             continue
-        if line[0] in STATUS_SPINNERS:
+        if line[0] in STATUS_SPINNERS and _RE_ESC_TO_INTERRUPT.search(line):
             return line[1:].strip()
-        # First non-empty line above separator isn't a spinner → no status
+        # First non-empty line above separator isn't a live status → idle.
         return None
     return None
 

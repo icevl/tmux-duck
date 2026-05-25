@@ -14,6 +14,9 @@
   --accent: #a78bfa;
   --accent-soft: rgba(167, 139, 250, 0.14);
   --accent-strong: #c4a8ff;
+  --duck-yellow: #f6b904;
+  --duck-yellow-strong: #ffd23f;
+  --duck-yellow-soft: rgba(246, 185, 4, 0.12);
   --accent-pink: #ec4899;
   --accent-gradient: linear-gradient(135deg, #a78bfa 0%, #ec4899 100%);
   --accent-gradient-soft: linear-gradient(
@@ -101,9 +104,9 @@ button:disabled {
 }
 
 button.primary {
-  background: var(--accent-gradient);
+  background: #f6b904;
   border-color: transparent;
-  color: white;
+  color: #1a1c20;
   font-weight: 600;
   border-radius: 6px;
   padding: 7px 16px;
@@ -111,11 +114,12 @@ button.primary {
 }
 
 button.primary:hover:not(:disabled) {
-  filter: brightness(1.05);
+  background: #e0a800;
 }
 
 button.primary:disabled {
-  filter: grayscale(0.4);
+  filter: grayscale(0.5);
+  opacity: 0.55;
 }
 
 button.danger {
@@ -203,6 +207,17 @@ a {
   margin: 0 0 6px;
   font-size: 22px;
   font-weight: 600;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 20px;
+}
+
+.login-brand h1 {
+  margin: 0;
 }
 
 .login-card p.subtitle {
@@ -314,7 +329,10 @@ a {
 .sidebar-header {
   padding: 14px 16px;
   min-height: 60px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -340,8 +358,12 @@ a {
 }
 
 .notification-toggle.active {
-  color: var(--accent);
   background: var(--bg-3);
+  border-color: var(--border-strong);
+}
+
+.notification-toggle.active:hover:not(:disabled) {
+  background: #33353d;
   border-color: var(--border-strong);
 }
 
@@ -977,18 +999,6 @@ button.burger {
   white-space: nowrap;
 }
 
-.session-item .session-meta {
-  font-size: 12px;
-  color: var(--text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-item .session-time {
-  color: var(--text-1);
-}
-
 .runtime-icon {
   display: inline-block;
   vertical-align: -2px;
@@ -1026,12 +1036,14 @@ button.burger {
   flex: 0 0 60px;
   height: 60px;
   padding: 8px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: var(--bg-0);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
 .chat-title {
@@ -1290,6 +1302,39 @@ button.burger {
   border-width: 2px;
 }
 
+.duck-loader {
+  flex: 1;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  gap: 8px;
+}
+
+.duck-levitate {
+  animation: duck-levitate 2.4s ease-in-out infinite;
+}
+
+.waiting-duck-row {
+  display: flex;
+  align-items: center;
+  padding-top: 24px;
+  padding-bottom: 20px;
+  /* Override .messages-row's `contain: paint` so the levitating duck
+     isn't clipped at the row's top edge. Sit in our own stacking context
+     so the duck always paints above the previous bubble row. */
+  contain: layout;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes duck-levitate {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-10px); }
+}
+
 .session-list-loading {
   display: flex;
   align-items: center;
@@ -1330,8 +1375,8 @@ button.burger {
 
 
 .bubble.user {
-  background: rgba(96, 165, 250, 0.1);
-  border-color: rgba(96, 165, 250, 0.3);
+  background: rgba(246, 185, 4, 0.1);
+  border-color: rgba(246, 185, 4, 0.32);
   color: var(--text-0);
 }
 
@@ -1357,22 +1402,6 @@ button.burger {
 
 .bubble.pending {
   opacity: 0.6;
-}
-
-.bubble.streaming {
-  border-style: dashed;
-  border-color: var(--border-strong);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.bubble.streaming .stream-body {
-  margin: 0;
-  white-space: pre-wrap;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
 }
 
 .bubble .meta {
@@ -1647,16 +1676,82 @@ button.burger {
 }
 
 .md a {
-  color: var(--accent);
+  color: var(--duck-yellow);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .md a:hover {
-  color: var(--accent-strong);
+  color: var(--duck-yellow-strong);
 }
 
 /* Composer */
+.interactive-prompt {
+  margin: 0 18px 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-1);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.interactive-prompt-header {
+  font-size: 12px;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.interactive-prompt-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.interactive-prompt-option {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-0);
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.interactive-prompt-option:hover:not(:disabled) {
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+}
+
+.interactive-prompt-option:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.interactive-prompt-option.current {
+  border-color: var(--accent);
+}
+
+.interactive-prompt-option-num {
+  flex: 0 0 auto;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  min-width: 22px;
+}
+
+.interactive-prompt-option-label {
+  flex: 1;
+  min-width: 0;
+}
+
 .composer {
   /* Floating card: lives inside the chat column padding instead of
      spanning panel edge-to-edge. Matches modern chat UIs (ChatGPT /
@@ -1924,6 +2019,15 @@ button.burger {
   align-items: center;
 }
 
+button.primary.send-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .composer:focus-within {
   border-color: rgba(255, 255, 255, 0.22);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5),
@@ -1931,9 +2035,9 @@ button.burger {
 }
 
 .composer.drag-over {
-  outline: 2px dashed var(--accent);
+  outline: 2px dashed var(--duck-yellow);
   outline-offset: -4px;
-  background: rgba(167, 139, 250, 0.08);
+  background: var(--duck-yellow-soft);
 }
 
 .attachments-row {
@@ -2458,6 +2562,301 @@ button.burger {
   display: none;
 }
 
+/* Files panel — lazy file tree of the session cwd + read-only preview. */
+.files-panel {
+  height: 100%;
+  width: 100%;
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.files-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 60px;
+  height: 60px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-panel-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.files-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  margin: 8px 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-0);
+  color: var(--text-2);
+}
+
+.files-filter input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-0);
+  font-size: 13px;
+  padding: 0;
+}
+
+.files-filter input::placeholder {
+  color: var(--text-2);
+}
+
+.files-filter-clear {
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  padding: 2px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.files-filter-clear:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+
+.files-search-note {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 4px;
+}
+
+.files-search-row {
+  padding: 6px 10px;
+  align-items: flex-start;
+}
+
+.files-search-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+
+.files-search-name {
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-search-path {
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-match-hit {
+  background: var(--accent-soft, rgba(246, 185, 4, 0.22));
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+.files-tree {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 0 12px;
+}
+
+.files-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-0);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.files-row:hover {
+  background: var(--bg-2);
+}
+
+.files-row.selected {
+  background: var(--accent-soft, rgba(246, 185, 4, 0.12));
+}
+
+.files-row-chevron {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+
+.files-row-chevron-spacer {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+}
+
+.files-row-icon {
+  flex: 0 0 16px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-2);
+}
+
+.files-row-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-row-spinner {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.files-error {
+  margin: 10px;
+  padding: 10px;
+  border: 1px solid var(--danger, #ff6b6b);
+  color: var(--danger, #ff6b6b);
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+.files-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.files-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.files-viewer-back {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-0);
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.files-viewer-back:hover {
+  background: var(--bg-2);
+}
+
+.files-viewer-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+}
+
+.files-viewer-size {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+}
+
+.files-viewer-mode {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.files-viewer-mode button {
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.files-viewer-mode button:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+
+.files-viewer-mode button.active {
+  background: var(--accent-soft, rgba(246, 185, 4, 0.12));
+  color: var(--text-0);
+}
+
+.files-viewer-markdown {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text-0);
+  line-height: 1.55;
+}
+
+.files-viewer-markdown .md {
+  /* Markdown helper styling is shared with chat bubbles; let it inherit. */
+}
+
+.files-viewer-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.files-viewer-empty {
+  padding: 16px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.files-viewer-content {
+  margin: 0;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre;
+  color: var(--text-0);
+  background: var(--bg-0);
+}
+
 /* Office panel — sprite-based agent visualization, mirrors diff-panel layout. */
 .office-panel {
   height: 100%;
@@ -2538,7 +2937,18 @@ button.burger {
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-0);
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.tunio-player .codi-sidebar-play svg {
+  width: 16px !important;
+  height: 16px !important;
 }
 
 .tunio-player .codi-sidebar-play:hover {
@@ -2953,17 +3363,15 @@ button.burger {
   .app-shell.diff-open,
   .app-shell.office-open,
   .app-shell.term-open,
-  .app-shell.diff-open.office-open,
-  .app-shell.diff-open.term-open,
-  .app-shell.office-open.term-open,
-  .app-shell.diff-open.office-open.term-open {
+  .app-shell.files-open {
     /* Mobile: panels are fixed overlays, no grid column. */
     grid-template-columns: 1fr;
   }
 
   .diff-panel,
   .office-panel,
-  .term-panel {
+  .term-panel,
+  .files-panel {
     position: fixed;
     inset: 0;
     width: 100vw;
@@ -2976,7 +3384,8 @@ button.burger {
 
   .app-shell.diff-open .diff-panel,
   .app-shell.office-open .office-panel,
-  .app-shell.term-open .term-panel {
+  .app-shell.term-open .term-panel,
+  .app-shell.files-open .files-panel {
     transform: translateX(0);
   }
 
@@ -3170,6 +3579,14 @@ button.burger {
      desktop-sized avatar/tail space. */
   .messages-row {
     padding: 0 12px;
+  }
+
+  /* Mobile composer sits close to the chat edge — give the waiting
+     duck more breathing room so it doesn't kiss the bubble above
+     or the composer below. */
+  .waiting-duck-row {
+    padding-top: 30px;
+    padding-bottom: 26px;
   }
 
   .bubble {
