@@ -173,7 +173,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06-02-PLAN.md - Harden stale, failed, and degraded search behavior so failures remain search-only.
+- [x] 06-02-PLAN.md - Harden stale, failed, and degraded search behavior so failures remain search-only.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -192,4 +192,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Live Queue and Convergence | 3/3 | Complete   | 2026-05-22 |
 | 4. LanceDB Hybrid Retrieval and Ranking | 3/3 | Complete   | 2026-05-22 |
 | 5. Web UI Search Experience and Navigation | 3/3 | Complete   | 2026-05-25 |
-| 6. Operational Hardening and Model Tuning | 1/3 | In Progress|  |
+| 6. Operational Hardening and Model Tuning | 2/3 | In Progress|  |

@@ -211,6 +211,36 @@ def test_stale_running_worker_without_generation_is_unavailable(
     assert body["operations"]["worker"]["stale"] is True
 
 
+def test_stale_running_worker_with_generation_stays_degraded_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """OPS-04/OPS-06: stale worker does not hide usable lexical generation data."""
+    from codexbot.search.client import get_status
+    from codexbot.search.contracts import SearchWorkerStatus
+    from codexbot.search.state import activate_generation, write_worker_status
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEXBOT_SEARCH_WORKER_STALE_SECONDS", "1")
+    manifest = _manifest("gen-stale", indexed_chunks=3)
+    _write_generation_files("gen-stale", manifest)
+    activate_generation(manifest)
+    write_worker_status(
+        SearchWorkerStatus(
+            status="running",
+            current_task="live_loop",
+            heartbeat_at="2026-05-21T21:01:00Z",
+        )
+    )
+
+    body = get_status(open_session_count=3).model_dump(mode="json")
+
+    assert body["state"] == "degraded"
+    assert body["available"] is True
+    assert body["generation"]["generation_id"] == "gen-stale"
+    assert "heartbeat is stale" in (body["reason"] or "")
+    assert body["operations"]["worker"]["stale"] is True
+
+
 def test_failed_worker_status_is_sanitized(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -534,6 +564,39 @@ def test_live_drain_retries_then_dead_letters_and_explicitly_requeues(
     assert requeued.attempts == 0
 
 
+def test_failed_queue_rows_do_not_block_later_live_drain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search import worker
+    from codexbot.search.queue import (
+        enqueue_documents,
+        fail_items,
+        get_queue_snapshot,
+        lease_ready_items,
+        read_queue_item,
+    )
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    _activate_empty_generation(tmp_path)
+    [failed_id] = enqueue_documents([_document(1, text="failed")])
+    lease_ready_items(limit=1)
+    fail_items([failed_id], RuntimeError("dead letter"), max_attempts=1)
+    [later_id] = enqueue_documents([_document(2, text="later")])
+    upsert_index = Mock()
+    monkeypatch.setattr(worker, "upsert_index_documents", upsert_index)
+
+    assert worker.drain_live_queue_once(force=True) == 1
+
+    failed = read_queue_item(failed_id)
+    later = read_queue_item(later_id)
+    assert failed is not None
+    assert later is not None
+    assert failed.status == "failed"
+    assert later.status == "done"
+    assert get_queue_snapshot().failed_items == 1
+    upsert_index.assert_called_once()
+
+
 @pytest.mark.asyncio
 async def test_supervisor_live_queue_loop_runs_drain_without_blocking(
     monkeypatch: pytest.MonkeyPatch,
@@ -559,3 +622,53 @@ async def test_supervisor_live_queue_loop_runs_drain_without_blocking(
         await supervisor.live_queue_loop()
 
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_supervisor_start_worker_ignores_subprocess_launch_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search import supervisor
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+
+    async def fake_create_subprocess_exec(*_args: object, **_kwargs: object) -> object:
+        raise OSError("worker executable missing")
+
+    monkeypatch.setattr(
+        supervisor.asyncio,
+        "create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+
+    await supervisor.start_worker_if_needed()
+
+
+@pytest.mark.asyncio
+async def test_supervisor_live_queue_loop_continues_after_ordinary_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from codexbot.search import supervisor
+
+    calls = 0
+    sleeps = 0
+
+    def fake_drain() -> int:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("index write failed")
+        raise asyncio.CancelledError
+
+    async def fake_sleep(_seconds: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+
+    monkeypatch.setattr(supervisor, "drain_live_queue_once", fake_drain)
+    monkeypatch.setattr(supervisor.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await supervisor.live_queue_loop()
+
+    assert calls == 2
+    assert sleeps == 1

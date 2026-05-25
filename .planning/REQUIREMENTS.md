@@ -112,7 +112,7 @@ during startup, backfill, and ongoing indexing.
   surfaces without importing embedding models in request handlers.
 - [x] **OPS-03**: Codi reports worker heartbeat, queue lag, indexed/open session
   counts, backfill progress, and recent indexing errors to the Web UI.
-- [ ] **OPS-04**: Search worker failures degrade search only and do not block
+- [x] **OPS-04**: Search worker failures degrade search only and do not block
   session list updates, chat delivery, Telegram delivery, terminal panels, or
   existing WebSocket events.
 - [ ] **OPS-05**: Codi includes a local benchmark or verification path for
@@ -207,7 +207,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OPS-01 | Phase 4 | Complete |
 | OPS-02 | Phase 1 | Complete |
 | OPS-03 | Phase 6 | Complete |
-| OPS-04 | Phase 6 | Pending |
+| OPS-04 | Phase 6 | Complete |
 | OPS-05 | Phase 6 | Pending |
 | OPS-06 | Phase 6 | Complete |
 

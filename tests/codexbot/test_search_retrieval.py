@@ -358,6 +358,40 @@ def test_hybrid_hit_label_when_lexical_and_semantic_match(
     assert "hybrid" in hit["match_labels"]
 
 
+def test_semantic_exception_returns_sanitized_lexical_degraded_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import search
+
+    target = _doc(
+        text="callback failure handled by lexical fallback",
+        window_id="@80",
+    )
+    _activate_generation(tmp_path, monkeypatch, [target])
+    _write_ready_index(monkeypatch)
+
+    def fail_semantic(*_args: object, **_kwargs: object) -> dict[str, float]:
+        raise RuntimeError("WEB_UI_PASSWORD=secret /tmp/private/session.jsonl")
+
+    monkeypatch.setattr(
+        "codexbot.search.retrieval.semantic_scores_for_query",
+        fail_semantic,
+    )
+
+    body = search(SearchRequest(query="callback failure")).model_dump(mode="json")
+    serialized = json.dumps(body)
+
+    assert body["status"]["state"] == "degraded"
+    assert body["status"]["available"] is True
+    assert body["results"][0]["routing"]["window_id"] == "@80"
+    assert "lexical" in body["results"][0]["hits"][0]["outcomes"]
+    assert "semantic retrieval degraded" in (body["status"]["reason"] or "")
+    assert body["status"]["operations"] is not None
+    assert "WEB_UI_PASSWORD" not in serialized
+    assert "secret" not in serialized
+    assert "/tmp/private" not in serialized
+
+
 def test_semantic_failure_returns_safe_lexical_degraded_results(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
