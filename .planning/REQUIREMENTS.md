@@ -93,10 +93,10 @@ during startup, backfill, and ongoing indexing.
   building" and "search is unavailable" states.
 - [x] **WEB-03**: User can open a result session by selecting its result header,
   with routing performed by current tmux `window_id`.
-- [ ] **WEB-04**: User can select a result hit and have the Web UI open the
+- [x] **WEB-04**: User can select a result hit and have the Web UI open the
   session and scroll to or highlight the matching transcript message when that
   position can be loaded.
-- [ ] **WEB-05**: User receives a safe fallback when hit-level navigation cannot
+- [x] **WEB-05**: User receives a safe fallback when hit-level navigation cannot
   load the exact transcript position, while still opening the owning session.
 - [x] **WEB-06**: User can search without the browser loading or indexing full
   transcripts locally.
@@ -200,8 +200,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WEB-01 | Phase 5 | Complete |
 | WEB-02 | Phase 5 | Complete |
 | WEB-03 | Phase 5 | Complete |
-| WEB-04 | Phase 5 | Pending |
-| WEB-05 | Phase 5 | Pending |
+| WEB-04 | Phase 5 | Complete |
+| WEB-05 | Phase 5 | Complete |
 | WEB-06 | Phase 5 | Complete |
 | WEB-07 | Phase 5 | Complete |
 | OPS-01 | Phase 4 | Complete |
