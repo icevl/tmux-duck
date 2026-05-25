@@ -10,11 +10,11 @@ during startup, backfill, and ongoing indexing.
 
 ### Search Scope
 
-- [ ] **SRCH-01**: User can start a session search from the existing Web UI
+- [x] **SRCH-01**: User can start a session search from the existing Web UI
   session workflow without losing the currently selected session or draft input.
 - [x] **SRCH-02**: User can search across currently open tmux-backed Codex and
   Claude sessions only.
-- [ ] **SRCH-03**: User can see that v1 search scope is limited to open sessions
+- [x] **SRCH-03**: User can see that v1 search scope is limited to open sessions
   when index status or result context is displayed.
 - [x] **SRCH-04**: User can receive results grouped as ranked sessions with
   nested matching message snippets.
@@ -87,20 +87,20 @@ during startup, backfill, and ongoing indexing.
 
 ### Web UI Experience
 
-- [ ] **WEB-01**: User can see search index status such as missing, building,
+- [x] **WEB-01**: User can see search index status such as missing, building,
   partial, ready, stale, degraded, or unavailable.
-- [ ] **WEB-02**: User can distinguish "no matches" from "index is still
+- [x] **WEB-02**: User can distinguish "no matches" from "index is still
   building" and "search is unavailable" states.
-- [ ] **WEB-03**: User can open a result session by selecting its result header,
+- [x] **WEB-03**: User can open a result session by selecting its result header,
   with routing performed by current tmux `window_id`.
 - [ ] **WEB-04**: User can select a result hit and have the Web UI open the
   session and scroll to or highlight the matching transcript message when that
   position can be loaded.
 - [ ] **WEB-05**: User receives a safe fallback when hit-level navigation cannot
   load the exact transcript position, while still opening the owning session.
-- [ ] **WEB-06**: User can search without the browser loading or indexing full
+- [x] **WEB-06**: User can search without the browser loading or indexing full
   transcripts locally.
-- [ ] **WEB-07**: User search interactions are debounced and result payloads are
+- [x] **WEB-07**: User search interactions are debounced and result payloads are
   capped so the Web UI stays responsive with long session histories.
 
 ### Operations
@@ -169,9 +169,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRCH-01 | Phase 5 | Pending |
+| SRCH-01 | Phase 5 | Complete |
 | SRCH-02 | Phase 4 | Complete |
-| SRCH-03 | Phase 5 | Pending |
+| SRCH-03 | Phase 5 | Complete |
 | SRCH-04 | Phase 4 | Complete |
 | SRCH-05 | Phase 4 | Complete |
 | SRCH-06 | Phase 4 | Complete |
@@ -197,13 +197,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RETR-06 | Phase 4 | Complete |
 | RETR-07 | Phase 4 | Complete |
 | RETR-08 | Phase 4 | Complete |
-| WEB-01 | Phase 5 | Pending |
-| WEB-02 | Phase 5 | Pending |
-| WEB-03 | Phase 5 | Pending |
+| WEB-01 | Phase 5 | Complete |
+| WEB-02 | Phase 5 | Complete |
+| WEB-03 | Phase 5 | Complete |
 | WEB-04 | Phase 5 | Pending |
 | WEB-05 | Phase 5 | Pending |
-| WEB-06 | Phase 5 | Pending |
-| WEB-07 | Phase 5 | Pending |
+| WEB-06 | Phase 5 | Complete |
+| WEB-07 | Phase 5 | Complete |
 | OPS-01 | Phase 4 | Complete |
 | OPS-02 | Phase 1 | Complete |
 | OPS-03 | Phase 6 | Pending |
