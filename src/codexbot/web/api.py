@@ -246,6 +246,11 @@ async def _tmux_session_exists(session_name: str) -> bool:
 async def _ensure_persistent_shell_session(window_id: str, cwd: str | None) -> str:
     session_name = _persistent_shell_session_name(window_id)
     if await _tmux_session_exists(session_name):
+        # Re-apply mouse mode on every attach — cheap, and survives the
+        # case where the session was created before this option existed.
+        await _run_tmux_command(
+            ["set-option", "-t", session_name, "mouse", "on"], timeout=2.0
+        )
         return session_name
 
     start_dir = cwd if cwd and os.path.isdir(cwd) else os.path.expanduser("~")
@@ -255,6 +260,13 @@ async def _ensure_persistent_shell_session(window_id: str, cwd: str | None) -> s
     )
     if rc != 0:
         raise RuntimeError(f"failed to create persistent shell tmux session: {rc}")
+    # Enable mouse so trackpad scroll enters tmux copy-mode and scrolls the
+    # pane's scrollback. Without this xterm.js converts wheel events into
+    # arrow up/down (because tmux uses the alt screen with no xterm-local
+    # scrollback), which makes scroll navigate shell command history instead.
+    await _run_tmux_command(
+        ["set-option", "-t", session_name, "mouse", "on"], timeout=2.0
+    )
     return session_name
 
 
