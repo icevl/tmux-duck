@@ -165,7 +165,19 @@ Plans:
   4. Codi records the chosen embedding defaults or fallback model decision after validating Qwen3-Embedding-0.6B against real Codi transcript fixtures.
   5. User receives clear unavailable status or lexical-only degraded behavior when semantic embedding is not ready.
 
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+**Wave 1**
+
+- [ ] 06-01-PLAN.md - Add the operational search status contract and expandable Web UI status details.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06-02-PLAN.md - Harden stale, failed, and degraded search behavior so failures remain search-only.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 06-03-PLAN.md - Add the opt-in local benchmark and model/default validation path.
 **UI hint**: yes
 
 ## Progress
@@ -180,4 +192,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Live Queue and Convergence | 3/3 | Complete   | 2026-05-22 |
 | 4. LanceDB Hybrid Retrieval and Ranking | 3/3 | Complete   | 2026-05-22 |
 | 5. Web UI Search Experience and Navigation | 3/3 | Complete   | 2026-05-25 |
-| 6. Operational Hardening and Model Tuning | 0/TBD | Not started | - |
+| 6. Operational Hardening and Model Tuning | 0/3 | Planned | - |
