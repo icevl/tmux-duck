@@ -136,7 +136,19 @@ Plans:
   4. User can use debounced search interactions, capped result payloads, grouped session results, nested snippets, match labels, and filters without the browser loading or indexing full transcripts locally.
   5. User can open a result by current tmux `window_id`, select a hit to scroll or highlight the matching transcript message when loadable, and receive a safe fallback that still opens the owning session when hit-level navigation is unavailable.
 
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+**Wave 1**
+
+- [ ] 05-01-PLAN.md - Build the browser search entry point and bounded result browsing surface in the existing sidebar.
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-02-PLAN.md - Implement exact search-hit navigation from grouped results into the chat transcript.
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 05-03-PLAN.md - Harden the search experience across mobile, state-copy, prompt placement, and final validation.
 **UI hint**: yes
 
 ### Phase 6: Operational Hardening and Model Tuning
