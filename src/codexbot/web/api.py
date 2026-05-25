@@ -811,9 +811,7 @@ def create_app(
 
         if around_offset is not None:
             target_order = (around_offset, around_index or 0)
-            ordered_messages = [
-                m for m in all_messages if _order_value(m) is not None
-            ]
+            ordered_messages = [m for m in all_messages if _order_value(m) is not None]
             target_pos = len(ordered_messages)
             for idx, message in enumerate(ordered_messages):
                 order = _order_value(message)
@@ -832,8 +830,7 @@ def create_app(
                 all_messages = [
                     m
                     for m in all_messages
-                    if (order := _order_value(m)) is not None
-                    and order < cutoff_before
+                    if (order := _order_value(m)) is not None and order < cutoff_before
                 ]
             elif before is not None:
                 all_messages = [
