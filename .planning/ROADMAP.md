@@ -144,7 +144,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-02-PLAN.md - Implement exact search-hit navigation from grouped results into the chat transcript.
+- [x] 05-02-PLAN.md - Implement exact search-hit navigation from grouped results into the chat transcript.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -179,5 +179,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 2. Worker Skeleton, Backfill, and Rebuild Path | 3/3 | Complete   | 2026-05-21 |
 | 3. Live Queue and Convergence | 3/3 | Complete   | 2026-05-22 |
 | 4. LanceDB Hybrid Retrieval and Ranking | 3/3 | Complete   | 2026-05-22 |
-| 5. Web UI Search Experience and Navigation | 1/3 | In Progress|  |
+| 5. Web UI Search Experience and Navigation | 2/3 | In Progress|  |
 | 6. Operational Hardening and Model Tuning | 0/TBD | Not started | - |
