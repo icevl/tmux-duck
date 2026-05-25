@@ -1,195 +1,55 @@
 # Roadmap: Codi Session Search
 
-## Overview
+## Milestones
 
-Codi session search will move from a stable local contract to a working open-session search experience in vertical MVP slices. The roadmap first makes search status, provenance, and API boundaries explicit; then proves asynchronous open-session backfill and live queue convergence; then adds local LanceDB hybrid retrieval; then ships the Web UI search and navigation workflow; and finally tunes the worker, model, and degraded modes for reliable local Mac mini operation.
+- [x] **v1.0 Session Search** — open-session hybrid search for the Web UI
+  shipped 2026-05-25.
 
 ## Phases
 
-**Phase Numbering:**
+<details>
+<summary>v1.0 Session Search — shipped 2026-05-25</summary>
 
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+- [x] **Phase 1: Search Contract and Status Surface** — 3/3 plans completed
+  2026-05-21.
+- [x] **Phase 2: Worker Skeleton, Backfill, and Rebuild Path** — 3/3 plans
+  completed 2026-05-21.
+- [x] **Phase 3: Live Queue and Convergence** — 3/3 plans completed
+  2026-05-22.
+- [x] **Phase 4: LanceDB Hybrid Retrieval and Ranking** — 3/3 plans completed
+  2026-05-22.
+- [x] **Phase 5: Web UI Search Experience and Navigation** — 3/3 plans
+  completed 2026-05-25.
+- [x] **Phase 6: Operational Hardening and Model Tuning** — 3/3 plans
+  completed 2026-05-25.
 
-Decimal phases appear between their surrounding integers in numeric order.
+Archived details:
 
-- [x] **Phase 1: Search Contract and Status Surface** - Establish the local search API, status semantics, provenance, and derived-index boundary. (completed 2026-05-21)
-- [x] **Phase 2: Worker Skeleton, Backfill, and Rebuild Path** - Create asynchronous open-session indexing that can build or rebuild search storage without blocking Codi. (completed 2026-05-21)
-- [x] **Phase 3: Live Queue and Convergence** - Durably capture new transcript items and keep the derived index aligned with live open sessions. (completed 2026-05-22)
-- [x] **Phase 4: LanceDB Hybrid Retrieval and Ranking** - Deliver local lexical plus semantic search with ranked session groups and matching snippets. (completed 2026-05-22)
-- [x] **Phase 5: Web UI Search Experience and Navigation** - Add the browser search workflow, status states, filters, snippets, and result navigation. (completed 2026-05-25)
-- [x] **Phase 6: Operational Hardening and Model Tuning** - Validate local performance, worker failure behavior, metrics, and degraded search modes. (completed 2026-05-25)
+- `.planning/milestones/v1.0-ROADMAP.md`
+- `.planning/milestones/v1.0-REQUIREMENTS.md`
+- `.planning/milestones/v1.0-MILESTONE-AUDIT.md`
+- `.planning/milestones/v1.0-phases/`
 
-## Phase Details
+</details>
 
-### Phase 1: Search Contract and Status Surface
+## Backlog
 
-**Goal:** As a Codi Web UI user, I want to call search-facing backend surfaces with stable provenance and honest readiness semantics, so that later indexing can become searchable without misleading or blocking existing open-session workflows.
-**Mode:** mvp
-**Depends on**: Nothing (first phase)
-**Requirements**: CORP-03, CORP-04, CORP-06, OPS-02
-**Success Criteria** (what must be TRUE):
+Deferred from v1.0:
 
-  1. User can call authenticated search/status surfaces that return structured missing or unavailable responses without importing embedding models in FastAPI handlers.
-  2. Every planned indexed item has stable provenance for runtime, session ID when known, transcript source, transcript offset or index, role/content type, and optional tool identifier.
-  3. Current tmux `window_id` is represented only as mutable routing metadata, while transcript provenance is the row identity for indexed content.
-  4. Codi treats search state as a derived cache that can be rebuilt from transcript/session state and does not write search progress into `monitor_state.json`.
+- Closed or resumable historical Codex and Claude session search.
+- Advanced boolean, regex, and query-qualifier syntax.
+- Current-session-only transcript find mode.
+- More hit expansion within grouped session results.
+- Commands, skills, GSD choices, and settings as separate non-transcript result
+  sections.
+- Admin/status controls to rebuild, compact, diagnose, or tune search indexes.
+- Telegram topic-safe search commands.
+- Decision, blocker, and task extraction from search results after retrieval
+  quality is proven.
+- Multi-user or shared-host authorization semantics if Codi moves beyond local
+  admin deployment.
 
-**Plans**: 3 plans
-Plans:
-**Wave 1**
+## Next Milestone
 
-- [x] 01-01-PLAN.md — Define runtime-neutral search provenance, identity, request, and status contracts.
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 01-02-PLAN.md — Reserve search-owned derived state and typed missing-index provider behavior.
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 01-03-PLAN.md — Wire authenticated search/status API routes and import-boundary verification.
-
-### Phase 2: Worker Skeleton, Backfill, and Rebuild Path
-
-**Goal:** Codi can create or rebuild a search index for open Codex and Claude sessions asynchronously while existing frontends keep working.
-**Mode:** mvp
-**Depends on**: Phase 1
-**Requirements**: CORP-01, CORP-02, INDX-01, INDX-02, INDX-03, INDX-08
-**Success Criteria** (what must be TRUE):
-
-  1. User can start Codi with no search database and continue using Web UI, Telegram, terminal, WebSocket delivery, and session monitoring while initial indexing starts in the background.
-  2. Search storage is created under the configured Codi state directory and can be rebuilt from transcript/session state without manual state clearing.
-  3. Initial backfill covers every currently open tmux-backed Codex and Claude session.
-  4. Backfill reads normalized Codex and Claude transcript records through the existing runtime transcript parsers and includes useful user, assistant, and tool/output text.
-
-**Plans**: 3 plans
-Plans:
-**Wave 1**
-
-- [x] 02-01-PLAN.md — Start the local search worker skeleton and expose truthful building status without blocking Codi.
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 02-02-PLAN.md — Backfill current open Codex and Claude sessions through parser-level transcript entries into chunk documents.
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 02-03-PLAN.md — Add explicit rebuild, atomic generation activation, recovery, and built-but-unqueryable status.
-
-### Phase 3: Live Queue and Convergence
-
-**Goal:** New transcript activity stays durable and eventually converges into the derived index while users continue working.
-**Mode:** mvp
-**Depends on**: Phase 2
-**Requirements**: CORP-05, INDX-04, INDX-05, INDX-06, INDX-07
-**Success Criteria** (what must be TRUE):
-
-  1. New user, assistant, and useful tool/output transcript items are durably queued while initial backfill is still running.
-  2. Live indexing work flushes in batches when 32 queued items are ready or 60 seconds have passed since the previous flush.
-  3. Duplicate backfill and live events do not create duplicate search documents because queue items and index writes are idempotent.
-  4. Queue leases, retries, failed items, backfill watermarks, and worker status persist outside `monitor_state.json` and recover after process restart.
-  5. Results for sessions that are no longer open are hidden, removed, or marked stale instead of routing to a dead tmux window.
-
-**Plans**: 3 plans
-Plans:
-**Wave 1**
-
-- [x] 03-01-PLAN.md — Create the durable search live-queue state layer that can persist queue rows, leases, retries, failures, and transcript watermarks.
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 03-02-PLAN.md — Connect live transcript activity to the durable queue by reusing parser/backfill document logic and search-owned watermarks.
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 03-03-PLAN.md — Complete live queue convergence with batching, idempotent generation upsert, retries, and stale-source filtering.
-
-### Phase 4: LanceDB Hybrid Retrieval and Ranking
-
-**Goal:** Users can retrieve the right open sessions through local hybrid search with ranked session groups and explainable hits.
-**Mode:** mvp
-**Depends on**: Phase 3
-**Requirements**: SRCH-02, SRCH-04, SRCH-05, SRCH-06, RETR-01, RETR-02, RETR-03, RETR-04, RETR-05, RETR-06, RETR-07, RETR-08, OPS-01
-**Success Criteria** (what must be TRUE):
-
-  1. User can search only currently open tmux-backed Codex and Claude sessions and receive ranked session groups with bounded nested hits.
-  2. Exact technical terms such as paths, commands, stack traces, symbols, ticket IDs, and quoted phrases are found through lexical search.
-  3. Meaning-based queries retrieve relevant sessions through local semantic search, and Codi combines lexical and semantic matches into one hybrid ranked result list.
-  4. Results can match and narrow by metadata such as runtime, cwd/project path, role/content type, status, recent activity, tmux window ID, session ID when known, and pinned state.
-  5. User can inspect concise snippets with role/tool labels, timestamps or transcript positions when available, exact-match highlights where applicable, hit counts, relevance ordering, and match labels.
-  6. Embedding, indexing, LanceDB writes, search queries, and maintenance run outside the main FastAPI, WebSocket, Telegram, terminal, and monitor hot paths, and transcript text is never sent to cloud embedding or hosted search services.
-  7. Ranking fixtures cover exact terms, semantic paraphrases, repeated text, Codex records, Claude records, and session metadata matches.
-
-**Plans**: TBD
-
-### Phase 5: Web UI Search Experience and Navigation
-
-**Goal:** Users can search from the browser session workflow, understand index state, inspect snippets, and navigate safely to matching open sessions.
-**Mode:** mvp
-**Depends on**: Phase 4
-**Requirements**: SRCH-01, SRCH-03, WEB-01, WEB-02, WEB-03, WEB-04, WEB-05, WEB-06, WEB-07
-**Success Criteria** (what must be TRUE):
-
-  1. User can start a session search from the existing Web UI workflow without losing the currently selected session or draft input.
-  2. User can see search index states such as missing, building, partial, ready, stale, degraded, or unavailable, and can distinguish no matches from building or unavailable search.
-  3. User can see that v1 search is limited to open sessions when index status or result context is displayed.
-  4. User can use debounced search interactions, capped result payloads, grouped session results, nested snippets, match labels, and filters without the browser loading or indexing full transcripts locally.
-  5. User can open a result by current tmux `window_id`, select a hit to scroll or highlight the matching transcript message when loadable, and receive a safe fallback that still opens the owning session when hit-level navigation is unavailable.
-
-**Plans**: 3 plans
-Plans:
-**Wave 1**
-
-- [x] 05-01-PLAN.md - Build the browser search entry point and bounded result browsing surface in the existing sidebar.
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 05-02-PLAN.md - Implement exact search-hit navigation from grouped results into the chat transcript.
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 05-03-PLAN.md - Harden the search experience across mobile, state-copy, prompt placement, and final validation.
-**UI hint**: yes
-
-### Phase 6: Operational Hardening and Model Tuning
-
-**Goal:** Search remains locally reliable under worker failures, resource limits, model validation, and degraded semantic availability.
-**Mode:** mvp
-**Depends on**: Phase 5
-**Requirements**: OPS-03, OPS-04, OPS-05, OPS-06
-**Success Criteria** (what must be TRUE):
-
-  1. User can see worker heartbeat, queue lag, indexed/open session counts, backfill progress, and recent indexing errors through the Web UI or authenticated status surface.
-  2. Search worker failures degrade search only and do not block session list updates, chat delivery, Telegram delivery, terminal panels, or existing WebSocket events.
-  3. Codi has a local benchmark or verification path for Mac-mini-appropriate embedding throughput, memory use, batch size, chunk size, and query latency.
-  4. Codi records the chosen embedding defaults or fallback model decision after validating Qwen3-Embedding-0.6B against real Codi transcript fixtures.
-  5. User receives clear unavailable status or lexical-only degraded behavior when semantic embedding is not ready.
-
-**Plans**: 3 plans
-Plans:
-**Wave 1**
-
-- [x] 06-01-PLAN.md - Add the operational search status contract and expandable Web UI status details.
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 06-02-PLAN.md - Harden stale, failed, and degraded search behavior so failures remain search-only.
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 06-03-PLAN.md - Add the opt-in local benchmark and model/default validation path.
-**UI hint**: yes
-
-## Progress
-
-**Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Search Contract and Status Surface | 3/3 | Complete   | 2026-05-21 |
-| 2. Worker Skeleton, Backfill, and Rebuild Path | 3/3 | Complete   | 2026-05-21 |
-| 3. Live Queue and Convergence | 3/3 | Complete   | 2026-05-22 |
-| 4. LanceDB Hybrid Retrieval and Ranking | 3/3 | Complete   | 2026-05-22 |
-| 5. Web UI Search Experience and Navigation | 3/3 | Complete   | 2026-05-25 |
-| 6. Operational Hardening and Model Tuning | 3/3 | Complete   | 2026-05-25 |
+Start the next milestone with `$gsd-new-milestone` so new requirements and a new
+roadmap are created from the current shipped baseline.
