@@ -792,6 +792,8 @@ def create_app(
         before_index: int | None = Query(None, ge=0),
         after_offset: int | None = Query(None, ge=0),
         after_index: int | None = Query(None, ge=0),
+        around_offset: int | None = Query(None, ge=0),
+        around_index: int | None = Query(None, ge=0),
         _user: str = Depends(require_auth),
     ) -> dict[str, Any]:
         history = await session_manager.get_history_snapshot(window_id)
@@ -807,32 +809,51 @@ def create_app(
                 index = 0
             return offset, index
 
-        # ISO timestamps compare lexicographically.
-        if before_offset is not None:
-            cutoff_before = (before_offset, before_index or 0)
-            all_messages = [
-                m
-                for m in all_messages
-                if (order := _order_value(m)) is not None and order < cutoff_before
+        if around_offset is not None:
+            target_order = (around_offset, around_index or 0)
+            ordered_messages = [
+                m for m in all_messages if _order_value(m) is not None
             ]
-        elif before is not None:
-            all_messages = [
-                m for m in all_messages if (m.get("timestamp") or "") < before
-            ]
-        if after_offset is not None:
-            cutoff_after = (after_offset, after_index or 0)
-            all_messages = [
-                m
-                for m in all_messages
-                if (order := _order_value(m)) is not None and order > cutoff_after
-            ]
-        elif after is not None:
-            all_messages = [
-                m for m in all_messages if (m.get("timestamp") or "") > after
-            ]
+            target_pos = len(ordered_messages)
+            for idx, message in enumerate(ordered_messages):
+                order = _order_value(message)
+                if order is not None and order >= target_order:
+                    target_pos = idx
+                    break
+            start = max(0, target_pos - (limit // 2))
+            end = min(len(ordered_messages), start + limit)
+            start = max(0, end - limit)
+            messages = ordered_messages[start:end]
+            has_more = start > 0 or end < len(ordered_messages)
+        else:
+            # ISO timestamps compare lexicographically.
+            if before_offset is not None:
+                cutoff_before = (before_offset, before_index or 0)
+                all_messages = [
+                    m
+                    for m in all_messages
+                    if (order := _order_value(m)) is not None
+                    and order < cutoff_before
+                ]
+            elif before is not None:
+                all_messages = [
+                    m for m in all_messages if (m.get("timestamp") or "") < before
+                ]
 
-        has_more = len(all_messages) > limit
-        messages = all_messages[-limit:]
+            if after_offset is not None:
+                cutoff_after = (after_offset, after_index or 0)
+                all_messages = [
+                    m
+                    for m in all_messages
+                    if (order := _order_value(m)) is not None and order > cutoff_after
+                ]
+            elif after is not None:
+                all_messages = [
+                    m for m in all_messages if (m.get("timestamp") or "") > after
+                ]
+
+            has_more = len(all_messages) > limit
+            messages = all_messages[-limit:]
 
         return {
             "messages": messages,
