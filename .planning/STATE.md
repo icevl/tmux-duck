@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: completed
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-05-25T11:51:49.737Z"
-last_activity: 2026-05-25 -- Phase 06 marked complete
+milestone_name: Session Search
+status: Awaiting next milestone
+stopped_at: Milestone v1.0 completed and archived
+last_updated: "2026-05-25T15:30:00Z"
+last_activity: 2026-05-25 — Milestone v1.0 Session Search completed and archived
 progress:
   total_phases: 6
   completed_phases: 6
@@ -18,92 +18,79 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-21)
+See: `.planning/PROJECT.md` (updated 2026-05-25)
 
-**Core value:** Users can quickly locate active sessions by meaning and exact terms while Codi stays responsive during startup, backfill, and ongoing indexing.
-**Current focus:** Phase 06 — operational-hardening-and-model-tuning
+**Core value:** Users can quickly locate active sessions by meaning and exact
+terms while Codi stays responsive during startup, backfill, and ongoing
+indexing.
+**Current focus:** Planning next milestone.
 
 ## Current Position
 
-Phase: 06 — COMPLETE
-Plan: 3 of 3
-Status: Phase 06 complete
-Last activity: 2026-05-25 -- Phase 06 marked complete
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-05-25 — Milestone v1.0 Session Search completed and archived
 
-Progress: [██████████] 100%
+## Archived Milestone
+
+- Summary: `.planning/MILESTONES.md`
+- Roadmap archive: `.planning/milestones/v1.0-ROADMAP.md`
+- Requirements archive: `.planning/milestones/v1.0-REQUIREMENTS.md`
+- Audit archive: `.planning/milestones/v1.0-MILESTONE-AUDIT.md`
+- Phase archive: `.planning/milestones/v1.0-phases/`
+- Audit result: passed, 41/41 requirements, 6/6 phases, 6/6 integration flows,
+  6/6 E2E flows, Nyquist compliant.
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 15
+- Total phases completed: 6
+- Total plans completed: 18
+- Total tasks recorded by archive: 47
 - Average duration: n/a
-- Total execution time: 0.0 hours
+- Total execution time: n/a
 
 **By Phase:**
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01 | 3 | - | - |
-| 02 | 3 | - | - |
-| 03 | 3 | - | - |
-| 04 | 3 | - | - |
-| 05 | 3 | - | - |
-
-**Recent Trend:**
-
-- Last 5 plans: none
-- Trend: n/a
-
-*Updated after each plan completion*
-| Phase 01 P01 | 6min | 2 tasks | 3 files |
-| Phase 01 P02 | 6min | 2 tasks | 5 files |
-| Phase 01 P03 | 4min | 2 tasks | 2 files |
-| Phase 02 P01 | 24 min | 2 tasks | 12 files |
-| Phase 02 P02 | 10 min | 2 tasks | 8 files |
-| Phase 02 P03 | 7 min | 2 tasks | 8 files |
-| Phase 04 P01 | 11min | 2 tasks | 9 files |
-| Phase 04 P02 | 26min | 2 tasks | 8 files |
-| Phase 04 P03 | 21min | 2 tasks | 11 files |
-| Phase 05 P01 | 8min | 4 tasks | 4 files |
-| Phase 05 P02 | 18min | 4 tasks | 6 files |
-| Phase 05 P03 | 8min | 3 tasks | 0 files |
-| Phase 06 P01 | 16min | 4 tasks | 10 files |
-| Phase 06 P02 | 3min | 4 tasks | 4 files |
-| Phase 06 P03 | 8min | 4 tasks | 13 files |
+| Phase | Plans | Status |
+|-------|-------|--------|
+| 01 | 3/3 | Complete |
+| 02 | 3/3 | Complete |
+| 03 | 3/3 | Complete |
+| 04 | 3/3 | Complete |
+| 05 | 3/3 | Complete |
+| 06 | 3/3 | Complete |
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+Decisions are summarized in `PROJECT.md`; detailed execution history is archived
+under `.planning/milestones/v1.0-phases/`.
 
-- [Milestone]: v1 scope is currently open tmux-backed Codex and Claude sessions only.
-- [Milestone]: Search index is derived and rebuildable from transcript/session state.
-- [Milestone]: Search worker owns embedding, indexing, LanceDB writes, backfill, search, and maintenance outside the main Codi hot path.
-- [Milestone]: LanceDB hybrid retrieval and Qwen3-Embedding-0.6B are the starting choices, pending implementation validation.
-- [Milestone]: Live indexing batches flush at 32 queued items or 60 seconds.
-- [Phase 01]: SearchRowIdentity derives from transcript provenance and chunk index while routing/display metadata lives in SearchRoutingMetadata.
-- [Phase 01]: Search contracts stay import-light and avoid worker, retrieval, index, embedding, and model dependencies on request-path modules.
-- [Phase 01]: Search-owned runtime state resolves only under codexbot_dir() / 'search' and never writes monitor_state.json. — Keeps derived search metadata isolated from Codi authoritative session and monitor state.
-- [Phase 01]: Missing-index status/search responses are typed normal responses with outcome not_ready and no transcript, secret, or local path leakage. — Lets Web/API callers distinguish not-ready search from transport failures or empty matching results.
-- [Phase 01]: SearchResponse echoes total_results, limit, hits_per_session, and outcome for provider/API consumers. — Aligns the committed contract with the approved plan 01-02 and plan 01-03 response shape.
-- [Phase 01]: Search API routes use existing Web UI auth and return typed 200 missing/not-ready responses for first-run search state. — Keeps search status as a normal authenticated API contract while indexing is absent.
-- [Phase 01]: Search status derives open-session counters from current tmux windows at request time and omits counters if tmux listing fails. — Keeps routing/status tied to live tmux state without exposing local tmux errors.
-- [Phase 01]: FastAPI search handlers import only lightweight search contracts/provider stubs, keeping model and index dependencies outside request handling. — Preserves OPS-02 hot-path isolation for future worker and retrieval phases.
+- v1 search scope is currently open tmux-backed Codex and Claude sessions only.
+- Search index state is derived and rebuildable from transcript/session state.
+- Search worker owns embedding, indexing, LanceDB writes, backfill, search, and
+  maintenance outside the main Codi hot path.
+- Qwen3-Embedding-0.6B remains the default candidate, with opt-in benchmark
+  validation and lexical-only degraded search available.
+- Live indexing batches flush at 32 queued items or 60 seconds.
+- Search result routing uses current tmux `window_id`; transcript provenance is
+  the stable indexed row identity.
 
 ### Pending Todos
 
-None yet.
+None for v1.0.
 
 ### Blockers/Concerns
 
-- Phase 4 and Phase 6 need implementation validation for LanceDB APIs, Qwen3 performance, chunk sizing, vector dimensions, and degraded fallback selection.
+None blocking milestone completion.
 
 ## Deferred Items
 
-Items acknowledged and carried forward from previous milestone close:
+Items carried forward from v1.0:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
@@ -111,9 +98,14 @@ Items acknowledged and carried forward from previous milestone close:
 | v2 | Telegram search parity | Deferred | Project initialization |
 | v2 | Advanced boolean, regex, and query-qualifier syntax | Deferred | Project initialization |
 | v2 | Web UI backend/model tuning controls | Deferred | Project initialization |
+| v2 | Search result decision/blocker/task extraction | Deferred | Milestone close |
 
 ## Session Continuity
 
 Last session: 2026-05-25T11:49:54.380Z
-Stopped at: Completed 06-03-PLAN.md
+Stopped at: Milestone v1.0 completed and archived
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with `$gsd-new-milestone`.
