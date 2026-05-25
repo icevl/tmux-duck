@@ -151,6 +151,13 @@ def test_search_status_returns_typed_missing(
     assert body["operations"]["worker"]["status"] is None
     assert body["operations"]["queue"]["queued_items"] == 0
     assert body["operations"]["progress"]["open_sessions"] == 2
+    commands = [item["command"] for item in body["operations"]["recovery_commands"]]
+    assert "codexbot-search-worker live-drain-once" in commands
+    assert "codexbot-search-worker rebuild" in commands
+    assert (
+        "python -m codexbot.search.benchmark "
+        "--fixtures tests/fixtures/search/benchmark_cases.json --provider fake"
+    ) in commands
 
 
 def test_search_status_reports_building_backfill(

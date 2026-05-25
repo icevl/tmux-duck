@@ -236,13 +236,22 @@ def _recent_errors(
 def _recovery_commands() -> list[SearchRecoveryCommand]:
     return [
         SearchRecoveryCommand(
+            label="Drain live queue",
+            command="codexbot-search-worker live-drain-once",
+            description="Flush currently queued live search updates once.",
+        ),
+        SearchRecoveryCommand(
             label="Rebuild index",
             command="codexbot-search-worker rebuild",
             description="Rebuild the local open-session search index.",
         ),
         SearchRecoveryCommand(
             label="Run benchmark",
-            command="codexbot-search-benchmark --provider fake",
+            command=(
+                "python -m codexbot.search.benchmark "
+                "--fixtures tests/fixtures/search/benchmark_cases.json "
+                "--provider fake"
+            ),
             description="Validate local search scoring without loading the model.",
         ),
     ]
