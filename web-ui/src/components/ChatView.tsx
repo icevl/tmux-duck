@@ -41,6 +41,7 @@ import {
 import { SkillsModal } from "./SkillsModal";
 import { Markdown } from "./Markdown";
 import { RuntimeIcon } from "./Sidebar";
+import type { SearchHitTarget } from "./SessionSearch";
 
 const ICON = 16;
 
@@ -58,6 +59,8 @@ interface Props {
   termOpen: boolean;
   onRename: (name: string) => Promise<void>;
   showToast: (text: string, kind?: "info" | "error") => void;
+  searchTarget: SearchHitTarget | null;
+  onSearchTargetFallback: () => void;
 }
 
 // Commands the Telegram bot intercepts (does NOT forward to the agent pane).
@@ -213,6 +216,28 @@ function messageTranscriptPosition(
       ? rawIndex
       : 0;
   return { offset, index };
+}
+
+function transcriptPositionKey(position: TranscriptPosition): string {
+  return `${position.offset}:${position.index}`;
+}
+
+function messageSearchKey(m: SessionMessage): string | null {
+  const position = messageTranscriptPosition(m);
+  return position ? transcriptPositionKey(position) : null;
+}
+
+function searchTargetCoordinateKey(target: SearchHitTarget): string | null {
+  const offset = target.transcript_offset;
+  if (typeof offset !== "number" || !Number.isFinite(offset) || offset < 0) {
+    return null;
+  }
+  const rawIndex = target.transcript_index;
+  const index =
+    typeof rawIndex === "number" && Number.isFinite(rawIndex) && rawIndex >= 0
+      ? rawIndex
+      : 0;
+  return transcriptPositionKey({ offset, index });
 }
 
 function compareTranscriptPositions(
@@ -933,6 +958,8 @@ export function ChatView({
   termOpen,
   onRename,
   showToast,
+  searchTarget,
+  onSearchTargetFallback,
 }: Props) {
   const [showSkills, setShowSkills] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -942,6 +969,7 @@ export function ChatView({
   // currently selected session. Without this we'd render "No messages
   // yet" briefly between selecting a session and the history landing.
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoadRevision, setHistoryLoadRevision] = useState(0);
   const [text, setText] = useState("");
   const [slashRange, setSlashRange] = useState<SlashTokenRange | null>(null);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
@@ -967,6 +995,7 @@ export function ChatView({
   const [branchList, setBranchList] = useState<string[] | null>(null);
   const [branchLoadError, setBranchLoadError] = useState<string | null>(null);
   const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
+  const [searchHighlightKey, setSearchHighlightKey] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const messagesListRef = useRef<HTMLDivElement | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -1007,6 +1036,30 @@ export function ChatView({
     scheduleBottomSnap("smooth");
   }, [scheduleBottomSnap]);
 
+  const showSearchHighlight = useCallback((key: string) => {
+    if (searchHighlightTimerRef.current !== null) {
+      window.clearTimeout(searchHighlightTimerRef.current);
+    }
+    setSearchHighlightKey(key);
+    stickToBottomRef.current = false;
+    setAtBottom(false);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = scrollerRef.current;
+        if (!el) return;
+        const rows = el.querySelectorAll<HTMLElement>("[data-search-target-key]");
+        const row = Array.from(rows).find(
+          (candidate) => candidate.dataset.searchTargetKey === key,
+        );
+        row?.scrollIntoView({ block: "center", behavior: "smooth" });
+      });
+    });
+    searchHighlightTimerRef.current = window.setTimeout(() => {
+      setSearchHighlightKey((current) => (current === key ? null : current));
+      searchHighlightTimerRef.current = null;
+    }, 4200);
+  }, []);
+
   // First bubble whose top is at-or-below the scroller's top edge.
   const captureAnchor = useCallback(() => {
     const el = scrollerRef.current;
@@ -1030,9 +1083,12 @@ export function ChatView({
   const keysMenuRef = useRef<HTMLDivElement | null>(null);
   const chatMenuRef = useRef<HTMLDivElement | null>(null);
   const branchMenuRef = useRef<HTMLDivElement | null>(null);
+  const handledSearchTargetRef = useRef<string | null>(null);
+  const searchHighlightTimerRef = useRef<number | null>(null);
   const sessionIdRef = useRef<string | null>(session.session_id);
   const windowIdRef = useRef(session.window_id);
   const historyCacheRef = useRef<Map<string, HistoryCacheEntry>>(new Map());
+  const historyLoadedWindowRef = useRef<string | null>(null);
   // Per-session draft cache. Switching sessions stashes the current
   // composer text under the previous window_id and restores any draft for
   // the new one, so each topic keeps its own pending message.
@@ -1280,6 +1336,84 @@ export function ChatView({
   );
 
   useEffect(() => {
+    if (!searchTarget || searchTarget.window_id !== session.window_id) return;
+    if (!historyLoaded || historyLoadedWindowRef.current !== session.window_id) {
+      return;
+    }
+    if (handledSearchTargetRef.current === searchTarget.target_id) return;
+    handledSearchTargetRef.current = searchTarget.target_id;
+
+    const key = searchTargetCoordinateKey(searchTarget);
+    if (!key) {
+      onSearchTargetFallback();
+      return;
+    }
+    if (messagesRef.current.some((message) => messageSearchKey(message) === key)) {
+      showSearchHighlight(key);
+      return;
+    }
+
+    const offset = searchTarget.transcript_offset;
+    if (typeof offset !== "number" || !Number.isFinite(offset) || offset < 0) {
+      onSearchTargetFallback();
+      return;
+    }
+
+    const targetId = searchTarget.target_id;
+    api
+      .getMessages(session.window_id, {
+        around_offset: offset,
+        around_index: searchTarget.transcript_index ?? 0,
+        limit: 120,
+      })
+      .then((response) => {
+        if (
+          windowIdRef.current !== session.window_id ||
+          handledSearchTargetRef.current !== targetId
+        ) {
+          return;
+        }
+        const fetchedTarget = response.messages.some(
+          (message) => messageSearchKey(message) === key,
+        );
+        if (response.messages.length > 0) {
+          const nextHasMore = hasMoreRef.current || response.has_more;
+          hasMoreRef.current = nextHasMore;
+          setHasMore(nextHasMore);
+          sessionIdRef.current = response.session_id;
+          setMessages((prev) => {
+            const next = mergeAppendMessages(prev, response.messages);
+            storeHistoryCache(session.window_id, {
+              messages: next,
+              hasMore: nextHasMore,
+              sessionId: response.session_id,
+              oldestTimestamp: response.oldest_timestamp ?? null,
+              newestTimestamp: responseNewestTimestamp(response, next),
+              historyVersion: response.history_version ?? null,
+            });
+            return next;
+          });
+        }
+        if (fetchedTarget) {
+          showSearchHighlight(key);
+        } else {
+          onSearchTargetFallback();
+        }
+      })
+      .catch(() => {
+        if (handledSearchTargetRef.current === targetId) onSearchTargetFallback();
+      });
+  }, [
+    onSearchTargetFallback,
+    historyLoaded,
+    historyLoadRevision,
+    searchTarget,
+    session.window_id,
+    showSearchHighlight,
+    storeHistoryCache,
+  ]);
+
+  useEffect(() => {
     const previousWid = windowIdRef.current;
     const isRealSwitch = previousWid && previousWid !== session.window_id;
     if (isRealSwitch) {
@@ -1293,6 +1427,7 @@ export function ChatView({
     setEditingName(false);
     setStreaming(null);
     setChoiceSendingKey(null);
+    setSearchHighlightKey(null);
     closeSlashHints();
     setAttachments((prev) => {
       for (const a of prev) URL.revokeObjectURL(a.previewUrl);
@@ -1318,6 +1453,14 @@ export function ChatView({
         for (const a of prev) URL.revokeObjectURL(a.previewUrl);
         return [];
       });
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (searchHighlightTimerRef.current !== null) {
+        window.clearTimeout(searchHighlightTimerRef.current);
+      }
     };
   }, []);
 
@@ -1359,6 +1502,7 @@ export function ChatView({
     stickToBottomRef.current = true;
     setAtBottom(true);
     pendingAnchorRef.current = null;
+    historyLoadedWindowRef.current = null;
 
     if (cached && cachedMatches) {
       historyCacheRef.current.delete(windowId);
@@ -1367,7 +1511,9 @@ export function ChatView({
       setHasMore(cached.hasMore);
       hasMoreRef.current = cached.hasMore;
       sessionIdRef.current = cached.sessionId ?? expectedSessionId;
+      historyLoadedWindowRef.current = windowId;
       setHistoryLoaded(true);
+      setHistoryLoadRevision((revision) => revision + 1);
       scheduleBottomSnap();
     } else {
       if (cached) historyCacheRef.current.delete(windowId);
@@ -1450,6 +1596,7 @@ export function ChatView({
           scheduleBottomSnap();
         }
         sessionIdRef.current = r.session_id;
+        historyLoadedWindowRef.current = windowId;
       })
       .catch((err: Error) => {
         if (cancelled) return;
@@ -1457,7 +1604,9 @@ export function ChatView({
       })
       .finally(() => {
         if (cancelled) return;
+        historyLoadedWindowRef.current = windowId;
         setHistoryLoaded(true);
+        setHistoryLoadRevision((revision) => revision + 1);
       });
     return () => {
       cancelled = true;
@@ -2418,16 +2567,24 @@ export function ChatView({
                 choicePrompt && choiceKey
                   ? choicePromptPage(choicePrompt, choicePageByKey[choiceKey])
                   : undefined;
+              const searchKey = messageSearchKey(m);
+              const isSearchHit =
+                searchKey !== null && searchKey === searchHighlightKey;
               const cls =
                 "messages-row" +
                 (isFirst ? " messages-row-first" : "") +
-                (isLast ? " messages-row-last" : "");
+                (isLast ? " messages-row-last" : "") +
+                (isSearchHit ? " search-hit" : "");
               return (
                 <div
                   key={m._clientId}
                   data-msg-key={m._clientId}
+                  data-search-target-key={searchKey ?? undefined}
                   className={cls}
                 >
+                  {isSearchHit && (
+                    <div className="search-hit-label">Search hit</div>
+                  )}
                   <MessageBubble
                     m={m}
                     displayText={selectionTextByMessageId.get(m._clientId)}
@@ -2463,7 +2620,16 @@ export function ChatView({
               <div
                 key={activeChoiceMessage._clientId}
                 data-msg-key={activeChoiceMessage._clientId}
-                className="messages-row messages-row-last"
+                data-search-target-key={
+                  messageSearchKey(activeChoiceMessage) ?? undefined
+                }
+                className={
+                  "messages-row messages-row-last" +
+                  (messageSearchKey(activeChoiceMessage) !== null &&
+                  messageSearchKey(activeChoiceMessage) === searchHighlightKey
+                    ? " search-hit"
+                    : "")
+                }
               >
                 {(() => {
                   const choicePrompt =
@@ -2472,36 +2638,45 @@ export function ChatView({
                   const choicePage = choicePrompt
                     ? choicePromptPage(choicePrompt, choicePageByKey[choiceKey])
                     : undefined;
+                  const activeSearchKey = messageSearchKey(activeChoiceMessage);
+                  const isSearchHit =
+                    activeSearchKey !== null &&
+                    activeSearchKey === searchHighlightKey;
                   return (
-                    <MessageBubble
-                      m={activeChoiceMessage}
-                      displayText={selectionTextByMessageId.get(
-                        activeChoiceMessage._clientId,
+                    <>
+                      {isSearchHit && (
+                        <div className="search-hit-label">Search hit</div>
                       )}
-                      choicePrompt={choicePrompt}
-                      choicePage={choicePage}
-                      choicePending={choiceKey === choiceSendingKey}
-                      choiceDisabled={false}
-                      onChoicePageChange={(page) => {
-                        if (choicePage) {
-                          handleChoicePageChange(
-                            activeChoiceMessage,
-                            choicePage,
-                            page,
-                          );
-                        }
-                      }}
-                      onSelectChoice={(option) => {
-                        if (choicePrompt && choicePage) {
-                          handleChoiceSelect(
-                            activeChoiceMessage,
-                            choicePrompt,
-                            choicePage,
-                            option,
-                          );
-                        }
-                      }}
-                    />
+                      <MessageBubble
+                        m={activeChoiceMessage}
+                        displayText={selectionTextByMessageId.get(
+                          activeChoiceMessage._clientId,
+                        )}
+                        choicePrompt={choicePrompt}
+                        choicePage={choicePage}
+                        choicePending={choiceKey === choiceSendingKey}
+                        choiceDisabled={false}
+                        onChoicePageChange={(page) => {
+                          if (choicePage) {
+                            handleChoicePageChange(
+                              activeChoiceMessage,
+                              choicePage,
+                              page,
+                            );
+                          }
+                        }}
+                        onSelectChoice={(option) => {
+                          if (choicePrompt && choicePage) {
+                            handleChoiceSelect(
+                              activeChoiceMessage,
+                              choicePrompt,
+                              choicePage,
+                              option,
+                            );
+                          }
+                        }}
+                      />
+                    </>
                   );
                 })()}
               </div>

@@ -28,6 +28,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog";
 import { RenameDialog } from "./components/RenameDialog";
 import { Toast } from "./components/Toast";
 import { UpdateBanner } from "./components/UpdateBanner";
+import type { SearchHitTarget } from "./components/SessionSearch";
 
 type AuthState = "loading" | "anon" | "authed";
 
@@ -257,6 +258,7 @@ export function App() {
   const [killTarget, setKillTarget] = useState<SessionSummary | null>(null);
   const [renameTarget, setRenameTarget] = useState<SessionSummary | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchTarget, setSearchTarget] = useState<SearchHitTarget | null>(null);
   // Panel open-state is per-topic so the Diff / Office / Terminal panel
   // a user has open on session A stays open when they switch to it
   // after browsing session B (where they may have had nothing open).
@@ -659,6 +661,14 @@ export function App() {
     setActiveId(id);
     setSidebarOpen(false);
   }, []);
+  const handleOpenSearchHit = useCallback((target: SearchHitTarget) => {
+    setActiveId(target.window_id);
+    setSearchTarget(target);
+    setSidebarOpen(false);
+  }, []);
+  const handleSearchTargetFallback = useCallback(() => {
+    showToast("Opened session. Exact hit is unavailable.", "info");
+  }, [showToast]);
 
   const renameSession = useCallback(
     async (windowId: string, name: string) => {
@@ -773,6 +783,8 @@ export function App() {
         }
       }}
       showToast={showToast}
+      searchTarget={searchTarget}
+      onSearchTargetFallback={handleSearchTargetFallback}
     />
   ) : null;
 
@@ -830,6 +842,7 @@ export function App() {
         onPin={handleSidebarPin}
         onDelete={setKillTarget}
         onReorder={handleSidebarReorder}
+        onOpenSearchHit={handleOpenSearchHit}
         notificationsSupported={browserNotificationsSupported()}
         notificationsEnabled={notificationsEnabled}
         notificationPermission={notificationPermission}
