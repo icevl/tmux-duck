@@ -62,16 +62,6 @@ interface Props {
   onToggleNotifications: () => void;
 }
 
-function formatRelative(ts: number | null): string {
-  if (!ts) return "";
-  const sec = Math.floor(Date.now() / 1000 - ts);
-  if (sec < 5) return "just now";
-  if (sec < 60) return `${sec}s ago`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return `${Math.floor(sec / 86400)}d ago`;
-}
-
 function sessionSortValue(session: SessionSummary): number | null {
   const order = session.sort_order;
   return typeof order === "number" && Number.isInteger(order) && order >= 0
@@ -319,14 +309,6 @@ export function Sidebar({
                         />
                       ) : null}
                       {s.name}
-                    </div>
-                    <div className="session-meta">
-                      <RuntimeIcon runtime={s.runtime} />
-                      <span className="session-time">
-                        {formatRelative(s.last_activity)}
-                      </span>
-                      {s.last_activity ? " · " : ""}
-                      <span>{s.cwd || "—"}</span>
                     </div>
                   </div>
                   <div
