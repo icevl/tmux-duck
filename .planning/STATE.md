@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-05-25T08:40:50.303Z"
+status: ready_to_plan
+stopped_at: Phase 05 complete (3/3) — ready to discuss Phase 6
+last_updated: 2026-05-25T08:41:43.647Z
 last_activity: 2026-05-25
 progress:
   total_phases: 6
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-21)
 
 **Core value:** Users can quickly locate active sessions by meaning and exact terms while Codi stays responsive during startup, backfill, and ongoing indexing.
-**Current focus:** Phase 05 — web-ui-search-experience-and-navigation
+**Current focus:** Phase 6 — operational hardening and model tuning
 
 ## Current Position
 
-Phase: 05 (web-ui-search-experience-and-navigation) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
+Phase: 6
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-05-25
 
 Progress: [██████████] 100%
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 12
+- Total plans completed: 15
 - Average duration: n/a
 - Total execution time: 0.0 hours
 
@@ -48,6 +48,7 @@ Progress: [██████████] 100%
 | 02 | 3 | - | - |
 | 03 | 3 | - | - |
 | 04 | 3 | - | - |
+| 05 | 3 | - | - |
 
 **Recent Trend:**
 
