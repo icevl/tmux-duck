@@ -2110,6 +2110,301 @@ button.primary.send-button {
   display: none;
 }
 
+/* Files panel — lazy file tree of the session cwd + read-only preview. */
+.files-panel {
+  height: 100%;
+  width: 100%;
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.files-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 60px;
+  height: 60px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.files-panel-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.files-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  margin: 8px 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-0);
+  color: var(--text-2);
+}
+
+.files-filter input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-0);
+  font-size: 13px;
+  padding: 0;
+}
+
+.files-filter input::placeholder {
+  color: var(--text-2);
+}
+
+.files-filter-clear {
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  padding: 2px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+}
+
+.files-filter-clear:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+
+.files-search-note {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 4px;
+}
+
+.files-search-row {
+  padding: 6px 10px;
+  align-items: flex-start;
+}
+
+.files-search-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+
+.files-search-name {
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-search-path {
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-match-hit {
+  background: var(--accent-soft, rgba(246, 185, 4, 0.22));
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+.files-tree {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 0 12px;
+}
+
+.files-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-0);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.files-row:hover {
+  background: var(--bg-2);
+}
+
+.files-row.selected {
+  background: var(--accent-soft, rgba(246, 185, 4, 0.12));
+}
+
+.files-row-chevron {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+
+.files-row-chevron-spacer {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+}
+
+.files-row-icon {
+  flex: 0 0 16px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-2);
+}
+
+.files-row-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-row-spinner {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.files-error {
+  margin: 10px;
+  padding: 10px;
+  border: 1px solid var(--danger, #ff6b6b);
+  color: var(--danger, #ff6b6b);
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+.files-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.files-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.files-viewer-back {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-0);
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.files-viewer-back:hover {
+  background: var(--bg-2);
+}
+
+.files-viewer-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+}
+
+.files-viewer-size {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+}
+
+.files-viewer-mode {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.files-viewer-mode button {
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.files-viewer-mode button:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+
+.files-viewer-mode button.active {
+  background: var(--accent-soft, rgba(246, 185, 4, 0.12));
+  color: var(--text-0);
+}
+
+.files-viewer-markdown {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text-0);
+  line-height: 1.55;
+}
+
+.files-viewer-markdown .md {
+  /* Markdown helper styling is shared with chat bubbles; let it inherit. */
+}
+
+.files-viewer-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.files-viewer-empty {
+  padding: 16px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.files-viewer-content {
+  margin: 0;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre;
+  color: var(--text-0);
+  background: var(--bg-0);
+}
+
 /* Office panel — sprite-based agent visualization, mirrors diff-panel layout. */
 .office-panel {
   height: 100%;
@@ -2616,17 +2911,15 @@ button.primary.send-button {
   .app-shell.diff-open,
   .app-shell.office-open,
   .app-shell.term-open,
-  .app-shell.diff-open.office-open,
-  .app-shell.diff-open.term-open,
-  .app-shell.office-open.term-open,
-  .app-shell.diff-open.office-open.term-open {
+  .app-shell.files-open {
     /* Mobile: panels are fixed overlays, no grid column. */
     grid-template-columns: 1fr;
   }
 
   .diff-panel,
   .office-panel,
-  .term-panel {
+  .term-panel,
+  .files-panel {
     position: fixed;
     inset: 0;
     width: 100vw;
@@ -2639,7 +2932,8 @@ button.primary.send-button {
 
   .app-shell.diff-open .diff-panel,
   .app-shell.office-open .office-panel,
-  .app-shell.term-open .term-panel {
+  .app-shell.term-open .term-panel,
+  .app-shell.files-open .files-panel {
     transform: translateX(0);
   }
 
