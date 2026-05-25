@@ -325,6 +325,8 @@ export const api = {
       before_index?: number;
       after_offset?: number;
       after_index?: number;
+      around_offset?: number;
+      around_index?: number;
       limit?: number;
     },
   ) => {
@@ -343,6 +345,12 @@ export const api = {
     }
     if (opts?.after_index !== undefined) {
       params.set("after_index", String(opts.after_index));
+    }
+    if (opts?.around_offset !== undefined) {
+      params.set("around_offset", String(opts.around_offset));
+    }
+    if (opts?.around_index !== undefined) {
+      params.set("around_index", String(opts.around_index));
     }
     return request<SessionMessagesResponse>(
       `/api/sessions/${encodeURIComponent(windowId)}/messages?${params.toString()}`,
