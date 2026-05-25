@@ -596,6 +596,45 @@ export const api = {
 
   runUpdate: () =>
     request<{ started: boolean }>("/api/update/run", { method: "POST" }),
+
+  chooseOption: (windowId: string, optionIndex: number, total: number) =>
+    request<{ ok: boolean }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/choose`,
+      { method: "POST", json: { option_index: optionIndex, total } },
+    ),
+
+  listSessionFiles: (windowId: string, path = "") =>
+    request<{
+      path: string;
+      entries: { name: string; type: "file" | "dir"; path: string }[];
+    }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/files?path=${encodeURIComponent(
+        path,
+      )}`,
+    ),
+
+  getSessionFileContent: (windowId: string, path: string) =>
+    request<{
+      path: string;
+      size: number;
+      truncated: boolean;
+      binary: boolean;
+      content: string;
+    }>(
+      `/api/sessions/${encodeURIComponent(
+        windowId,
+      )}/files/content?path=${encodeURIComponent(path)}`,
+    ),
+
+  searchSessionFiles: (windowId: string, q: string) =>
+    request<{
+      matches: { name: string; type: "file" | "dir"; path: string }[];
+      truncated: boolean;
+    }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/files/search?q=${encodeURIComponent(
+        q,
+      )}`,
+    ),
 };
 
 export type WsEvent =
@@ -668,6 +707,23 @@ export type WsEvent =
       current_sha: string;
       latest_sha: string;
       subject: string;
+      ts: number;
+      seq?: number;
+    }
+  | {
+      type: "interactive_prompt";
+      window_id: string;
+      runtime: string;
+      ui_name: string;
+      options: Array<{ label: string }>;
+      current_index: number;
+      content: string;
+      ts: number;
+      seq?: number;
+    }
+  | {
+      type: "interactive_prompt_cleared";
+      window_id: string;
       ts: number;
       seq?: number;
     };

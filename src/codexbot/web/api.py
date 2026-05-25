@@ -134,6 +134,11 @@ class SwitchBranchRequest(BaseModel):
     branch: str = Field(min_length=1, max_length=255)
 
 
+class ChooseOptionRequest(BaseModel):
+    option_index: int = Field(ge=0, le=99)
+    total: int = Field(ge=1, le=100)
+
+
 # Cap for the image-upload endpoint. Telegram bot accepts up to 20 MB photos,
 # matching that here keeps the two transports consistent.
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -243,6 +248,11 @@ async def _tmux_session_exists(session_name: str) -> bool:
 async def _ensure_persistent_shell_session(window_id: str, cwd: str | None) -> str:
     session_name = _persistent_shell_session_name(window_id)
     if await _tmux_session_exists(session_name):
+        # Re-apply mouse mode on every attach — cheap, and survives the
+        # case where the session was created before this option existed.
+        await _run_tmux_command(
+            ["set-option", "-t", session_name, "mouse", "on"], timeout=2.0
+        )
         return session_name
 
     start_dir = cwd if cwd and os.path.isdir(cwd) else os.path.expanduser("~")
@@ -252,6 +262,13 @@ async def _ensure_persistent_shell_session(window_id: str, cwd: str | None) -> s
     )
     if rc != 0:
         raise RuntimeError(f"failed to create persistent shell tmux session: {rc}")
+    # Enable mouse so trackpad scroll enters tmux copy-mode and scrolls the
+    # pane's scrollback. Without this xterm.js converts wheel events into
+    # arrow up/down (because tmux uses the alt screen with no xterm-local
+    # scrollback), which makes scroll navigate shell command history instead.
+    await _run_tmux_command(
+        ["set-option", "-t", session_name, "mouse", "on"], timeout=2.0
+    )
     return session_name
 
 
@@ -1084,6 +1101,202 @@ def create_app(
         }
 
     # -------------------------------------------------------------------
+    # Files browser — lazy directory listing + per-file content read,
+    # both rooted at the session's cwd. Paths from the client are kept
+    # relative; we resolve to absolute and verify the result stays inside
+    # the cwd so a `?path=../../etc/passwd` can't escape.
+    # -------------------------------------------------------------------
+
+    # Big enough to inline most source files; bigger files render an
+    # explicit "file too large" notice rather than blowing up the panel.
+    _FILE_PREVIEW_MAX_BYTES = 1_000_000
+
+    # Recursive search bounds. Cap match count and dir-walk depth so a
+    # typo'd query doesn't drag the panel through a 100k-file repo.
+    _FILE_SEARCH_MAX_MATCHES = 500
+    _FILE_SEARCH_MAX_ENTRIES = 100_000
+
+    # Heavy/noise dirs that should never appear in either listings or
+    # search. They produce thousands of entries but nothing the user
+    # browses for in this panel.
+    _FILE_SEARCH_SKIP_DIRS = frozenset(
+        {
+            ".git",
+            ".hg",
+            ".svn",
+            "node_modules",
+            "__pycache__",
+            ".venv",
+            "venv",
+            ".tox",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".next",
+            ".nuxt",
+            ".cache",
+            ".turbo",
+            "dist",
+            "build",
+            "target",
+            "coverage",
+            ".idea",
+            ".vscode",
+        }
+    )
+
+    def _resolve_files_path(cwd: str, rel: str) -> Path:
+        root = Path(cwd).resolve()
+        candidate = (root / rel).resolve() if rel else root
+        # Path.is_relative_to was added in 3.9; codebase already requires 3.10+.
+        if candidate != root and not candidate.is_relative_to(root):
+            raise HTTPException(400, detail="path escapes session cwd")
+        return candidate
+
+    @app.get("/api/sessions/{window_id}/files")
+    async def list_files(
+        window_id: str,
+        path: str = "",
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        cwd = await _resolve_window_cwd(window_id)
+        if not cwd:
+            return {"path": "", "entries": []}
+        target = _resolve_files_path(cwd, path)
+        if not target.is_dir():
+            raise HTTPException(404, detail="not a directory")
+        entries: list[dict[str, Any]] = []
+        try:
+            iterator = await asyncio.to_thread(lambda: list(target.iterdir()))
+        except PermissionError:
+            raise HTTPException(403, detail="permission denied")
+        for child in iterator:
+            try:
+                is_dir = child.is_dir()
+            except OSError:
+                continue
+            rel_path = str(child.relative_to(Path(cwd).resolve()))
+            entries.append(
+                {
+                    "name": child.name,
+                    "type": "dir" if is_dir else "file",
+                    "path": rel_path,
+                }
+            )
+        # Dirs first, then files; both alphabetical (case-insensitive).
+        entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
+        return {"path": path, "entries": entries}
+
+    @app.get("/api/sessions/{window_id}/files/content")
+    async def read_file(
+        window_id: str,
+        path: str,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        if not path:
+            raise HTTPException(400, detail="path required")
+        cwd = await _resolve_window_cwd(window_id)
+        if not cwd:
+            raise HTTPException(404, detail="window not found")
+        target = _resolve_files_path(cwd, path)
+        if not target.is_file():
+            raise HTTPException(404, detail="not a file")
+        size = target.stat().st_size
+        if size > _FILE_PREVIEW_MAX_BYTES:
+            return {
+                "path": path,
+                "size": size,
+                "truncated": True,
+                "binary": False,
+                "content": "",
+            }
+        raw = await asyncio.to_thread(target.read_bytes)
+        # Quick binary sniff — NUL byte in the first 8KB is a reliable
+        # marker for binaries (PNG/JPEG/PDF/elf etc.) without pulling in
+        # python-magic. Text files don't contain NULs.
+        if b"\x00" in raw[:8192]:
+            return {
+                "path": path,
+                "size": size,
+                "truncated": False,
+                "binary": True,
+                "content": "",
+            }
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            content = raw.decode("utf-8", errors="replace")
+        return {
+            "path": path,
+            "size": size,
+            "truncated": False,
+            "binary": False,
+            "content": content,
+        }
+
+    def _walk_for_search(root: Path, needle: str) -> tuple[list[dict[str, Any]], bool]:
+        """Recursive name-substring search over `root`. Case-insensitive.
+
+        Returns (matches, truncated). `truncated` is True if we hit the
+        match cap or entry cap before exhausting the tree.
+        """
+        matches: list[dict[str, Any]] = []
+        entries_seen = 0
+        needle_lower = needle.lower()
+        # Iterative walk so we control depth/skip-dirs and can bail early.
+        stack: list[Path] = [root]
+        while stack:
+            current = stack.pop()
+            try:
+                children = list(current.iterdir())
+            except (PermissionError, OSError):
+                continue
+            for child in children:
+                entries_seen += 1
+                if entries_seen > _FILE_SEARCH_MAX_ENTRIES:
+                    return matches, True
+                name = child.name
+                try:
+                    is_dir = child.is_dir()
+                except OSError:
+                    continue
+                if is_dir and name in _FILE_SEARCH_SKIP_DIRS:
+                    continue
+                rel_path = str(child.relative_to(root))
+                if needle_lower in rel_path.lower():
+                    matches.append(
+                        {
+                            "name": name,
+                            "type": "dir" if is_dir else "file",
+                            "path": rel_path,
+                        }
+                    )
+                    if len(matches) >= _FILE_SEARCH_MAX_MATCHES:
+                        return matches, True
+                if is_dir:
+                    stack.append(child)
+        return matches, False
+
+    @app.get("/api/sessions/{window_id}/files/search")
+    async def search_files(
+        window_id: str,
+        q: str,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        query = q.strip()
+        if not query:
+            return {"matches": [], "truncated": False}
+        cwd = await _resolve_window_cwd(window_id)
+        if not cwd:
+            return {"matches": [], "truncated": False}
+        root = Path(cwd).resolve()
+        matches, truncated = await asyncio.to_thread(_walk_for_search, root, query)
+        # Sort: dirs before files, then alphabetical by path. Stable and
+        # predictable; the client can re-sort if needed.
+        matches.sort(key=lambda m: (m["type"] != "dir", m["path"].lower()))
+        return {"matches": matches, "truncated": truncated}
+
+    # -------------------------------------------------------------------
     # Input — text, keys, slash commands
     # -------------------------------------------------------------------
 
@@ -1118,6 +1331,21 @@ def create_app(
         ok = await tmux_manager.send_keys(window_id, key, enter=False, literal=False)
         if not ok:
             raise HTTPException(400, detail="send_keys failed")
+        return {"ok": True}
+
+    @app.post("/api/sessions/{window_id}/choose")
+    async def choose_option(
+        window_id: str,
+        req: ChooseOptionRequest,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        from .interactive_monitor import navigate_and_choose
+
+        if req.option_index >= req.total:
+            raise HTTPException(400, detail="option_index out of range")
+        ok = await navigate_and_choose(window_id, req.option_index, req.total)
+        if not ok:
+            raise HTTPException(400, detail="navigate failed")
         return {"ok": True}
 
     @app.post("/api/sessions/{window_id}/command")

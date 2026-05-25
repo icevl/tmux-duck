@@ -111,7 +111,7 @@ def test_session_search_routes_by_window_id_and_preserves_local_query() -> None:
 def test_sidebar_search_keeps_session_ordering_and_pinned_list() -> None:
     sidebar_source = _read("web-ui/src/components/Sidebar.tsx")
 
-    assert 'import { SearchHitTarget, SessionSearch } from "./SessionSearch";' in (
+    assert 'import { SessionSearch, type SearchHitTarget } from "./SessionSearch";' in (
         sidebar_source
     )
     assert "<SessionSearch" in sidebar_source
@@ -158,7 +158,8 @@ def test_app_and_chatview_search_hit_navigation_contract() -> None:
     assert "messages.filter((m) => m._clientId !== activeChoiceMessage._clientId)" in (
         chat_source
     )
-    assert "{streaming && (" in chat_source
+    assert "{awaitingResponse && (" in chat_source
+    assert "waiting-duck-row" in chat_source
     assert "{activeChoiceMessage && (" in chat_source
     assert "choiceDisabled={false}" in chat_source
 

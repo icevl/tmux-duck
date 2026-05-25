@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   BellOff,
-  Bot,
   Brain,
   GripVertical,
   Loader2,
@@ -18,7 +17,8 @@ import {
 import { TunioPlayer } from "tunio-player";
 import "tunio-player/styles.css";
 import { SessionSummary } from "../api";
-import { SearchHitTarget, SessionSearch } from "./SessionSearch";
+import { DuckLogo } from "./DuckLogo";
+import { SessionSearch, type SearchHitTarget } from "./SessionSearch";
 
 const ICON = 16;
 const OFFICE_STREAM_ID = "71824d03-660b-4722-843a-5e8fbe9ad4c2";
@@ -62,16 +62,6 @@ interface Props {
   notificationsEnabled: boolean;
   notificationPermission: NotificationPermission | "unsupported";
   onToggleNotifications: () => void;
-}
-
-function formatRelative(ts: number | null): string {
-  if (!ts) return "";
-  const sec = Math.floor(Date.now() / 1000 - ts);
-  if (sec < 5) return "just now";
-  if (sec < 60) return `${sec}s ago`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return `${Math.floor(sec / 86400)}d ago`;
 }
 
 function sessionSortValue(session: SessionSummary): number | null {
@@ -188,8 +178,8 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="brand">
-          <Bot size={16} className="brand-icon" />
-          Codi
+          <DuckLogo width={28} height={28} className="brand-icon" />
+          TmuxDuck
         </div>
         <div className="sidebar-header-actions">
           <button
@@ -333,14 +323,6 @@ export function Sidebar({
                         />
                       ) : null}
                       {s.name}
-                    </div>
-                    <div className="session-meta">
-                      <RuntimeIcon runtime={s.runtime} />
-                      <span className="session-time">
-                        {formatRelative(s.last_activity)}
-                      </span>
-                      {s.last_activity ? " · " : ""}
-                      <span>{s.cwd || "—"}</span>
                     </div>
                   </div>
                   <div

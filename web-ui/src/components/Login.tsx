@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { api } from "../api";
+import { DuckLogo } from "./DuckLogo";
 
 interface Props {
   enabled: boolean;
@@ -32,7 +33,10 @@ export function Login({ enabled, totpRequired, onSuccess }: Props) {
   return (
     <div className="login-shell">
       <form className="login-card" onSubmit={submit}>
-        <h1>Codi</h1>
+        <div className="login-brand">
+          <DuckLogo width={64} height={64} />
+          <h1>TmuxDuck</h1>
+        </div>
         <p className="subtitle">
           {enabled
             ? totpRequired

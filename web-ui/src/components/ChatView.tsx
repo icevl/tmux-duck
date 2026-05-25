@@ -17,12 +17,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Eraser,
+  FolderTree,
   GitCommit,
   Keyboard,
   Menu,
   MoreVertical,
   Paperclip,
   Pencil,
+  SendHorizontal,
   Terminal as TerminalIcon,
   Trash2,
   User,
@@ -41,6 +43,8 @@ import {
 import { SkillsModal } from "./SkillsModal";
 import { Markdown } from "./Markdown";
 import { RuntimeIcon } from "./Sidebar";
+import { DuckLoader } from "./DuckLoader";
+import { DuckLogo } from "./DuckLogo";
 import type { SearchHitTarget } from "./SessionSearch";
 
 const ICON = 16;
@@ -57,6 +61,8 @@ interface Props {
   officeOpen: boolean;
   onToggleTerm: () => void;
   termOpen: boolean;
+  onToggleFiles: () => void;
+  filesOpen: boolean;
   onRename: (name: string) => Promise<void>;
   showToast: (text: string, kind?: "info" | "error") => void;
   searchTarget: SearchHitTarget | null;
@@ -906,26 +912,6 @@ const MessageBubble = memo(function MessageBubble({
   );
 });
 
-const StreamingBubble = memo(function StreamingBubble({
-  text,
-  status,
-}: {
-  text: string;
-  status: string;
-}) {
-  return (
-    <div className="message-line assistant">
-      <div className="message-avatar" aria-hidden="true">
-        <Bot size={16} />
-      </div>
-      <div className="bubble assistant streaming">
-        <div className="meta">assistant · {status}</div>
-        <pre className="stream-body">{text || "…"}</pre>
-      </div>
-    </div>
-  );
-});
-
 const KEY_BUTTONS: Array<{ label: string; key: string }> = [
   { label: "Esc", key: "Escape" },
   { label: "↑", key: "Up" },
@@ -956,6 +942,8 @@ export function ChatView({
   officeOpen,
   onToggleTerm,
   termOpen,
+  onToggleFiles,
+  filesOpen,
   onRename,
   showToast,
   searchTarget,
@@ -980,9 +968,13 @@ export function ChatView({
   const [sending, setSending] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(session.name);
-  const [streaming, setStreaming] = useState<{ text: string; status: string } | null>(
-    null,
-  );
+  const [awaitingResponse, setAwaitingResponse] = useState(false);
+  const [interactivePrompt, setInteractivePrompt] = useState<{
+    uiName: string;
+    options: Array<{ label: string }>;
+    currentIndex: number;
+  } | null>(null);
+  const [interactiveSending, setInteractiveSending] = useState(false);
   const [attachments, setAttachments] = useState<
     Array<{ id: string; file: File; previewUrl: string }>
   >([]);
@@ -1425,7 +1417,9 @@ export function ChatView({
     setText(restored);
     setNameDraft(session.name);
     setEditingName(false);
-    setStreaming(null);
+    setAwaitingResponse(false);
+    setInteractivePrompt(null);
+    setInteractiveSending(false);
     setChoiceSendingKey(null);
     setSearchHighlightKey(null);
     closeSlashHints();
@@ -1745,7 +1739,7 @@ export function ChatView({
   useEffect(() => {
     const timer = window.setTimeout(snapChatToBottomAfterResize, 1000);
     return () => window.clearTimeout(timer);
-  }, [diffOpen, officeOpen, termOpen]);
+  }, [diffOpen, officeOpen, termOpen, filesOpen]);
 
   function snapChatToBottomAfterResize() {
     const s = scrollerRef.current;
@@ -1867,22 +1861,28 @@ export function ChatView({
         }
         return;
       }
-      if (event.type === "stream") {
-        if (!isCurrentSession(event)) return;
-        setStreaming({ text: event.text, status: event.status });
+      if (event.type === "stream" || event.type === "stream_end") {
         return;
       }
-      if (event.type === "stream_end") {
-        if (!isCurrentSession(event)) return;
-        setStreaming(null);
+      if (event.type === "interactive_prompt") {
+        if (event.window_id !== windowIdRef.current) return;
+        setInteractivePrompt({
+          uiName: event.ui_name,
+          options: event.options,
+          currentIndex: event.current_index,
+        });
+        return;
+      }
+      if (event.type === "interactive_prompt_cleared") {
+        if (event.window_id !== windowIdRef.current) return;
+        setInteractivePrompt(null);
         return;
       }
       if (event.type !== "message") return;
       if (!isCurrentSession(event)) return;
       if (!event.is_complete) return;
 
-      // Completion of any message implies streaming preview is stale.
-      setStreaming(null);
+      if (event.role !== "user") setAwaitingResponse(false);
 
       setMessages((prev) => {
         const next = mergeAppendMessages(prev, [
@@ -2093,7 +2093,7 @@ export function ChatView({
           setShowSkills(true);
           return true;
         case "/start":
-          showToast("Codi — pick a session or create a new one");
+          showToast("TmuxDuck — pick a session or create a new one");
           return true;
         default:
           return false;
@@ -2208,6 +2208,7 @@ export function ChatView({
       stickToBottomRef.current = true;
       setAtBottom(true);
       scheduleBottomSnap();
+      setAwaitingResponse(true);
 
       // Clear composer immediately so sending feels instant. Restored on error.
       setText("");
@@ -2261,6 +2262,7 @@ export function ChatView({
         });
         setText((cur) => (cur ? cur : payload));
         setAttachments((cur) => [...pendingAttachments, ...cur]);
+        setAwaitingResponse(false);
         showToast((err as Error).message, "error");
       } finally {
         setSending(false);
@@ -2468,6 +2470,17 @@ export function ChatView({
               </button>
               <button
                 type="button"
+                className={filesOpen ? "active" : ""}
+                onClick={() => {
+                  setChatMenuOpen(false);
+                  onToggleFiles();
+                }}
+              >
+                <FolderTree size={ICON} />
+                <span>Files</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setChatMenuOpen(false);
                   onRequestScreenshot();
@@ -2496,7 +2509,6 @@ export function ChatView({
                   hasMoreRef.current = false;
                   sessionIdRef.current = null;
                   historyCacheRef.current.delete(session.window_id);
-                  setStreaming(null);
                   showToast("Cleared — /clear sent to agent");
                 }}
               >
@@ -2521,17 +2533,14 @@ export function ChatView({
 
       <div className="messages-wrapper">
         <div className="messages" ref={scrollerRef} onScroll={handleScroll}>
-        {messages.length === 0 && !streaming ? (
+        {messages.length === 0 ? (
           historyLoaded ? (
             <div className="empty-state">
               <h2>No messages yet</h2>
               <p>Send your first prompt below.</p>
             </div>
           ) : (
-            <div className="empty-state">
-              <div className="empty-state-spinner" />
-              <p>Loading messages…</p>
-            </div>
+            <DuckLoader />
           )
         ) : (
           <div className="messages-list" ref={messagesListRef}>
@@ -2558,7 +2567,6 @@ export function ChatView({
               const isFirst = !hasMore && index === 0;
               const isLast =
                 index === displayMessages.length - 1 &&
-                !streaming &&
                 !activeChoiceMessage;
               const choicePrompt = choicePromptForMessage(m) ?? undefined;
               const choiceKey = choicePrompt ? promptMessageKey(m) : null;
@@ -2606,14 +2614,13 @@ export function ChatView({
                 </div>
               );
             })}
-            {streaming && (
-              <div
-                className={
-                  "messages-row" +
-                  (!activeChoiceMessage ? " messages-row-last" : "")
-                }
-              >
-                <StreamingBubble text={streaming.text} status={streaming.status} />
+            {awaitingResponse && (
+              <div className="messages-row waiting-duck-row">
+                <DuckLogo
+                  width={40}
+                  height={40}
+                  className="duck-levitate waiting-duck"
+                />
               </div>
             )}
             {activeChoiceMessage && (
@@ -2696,6 +2703,44 @@ export function ChatView({
           </button>
         )}
       </div>
+
+      {interactivePrompt && (
+        <div className="interactive-prompt" role="dialog" aria-label="Agent is waiting">
+          <div className="interactive-prompt-header">
+            Agent is waiting for your choice
+          </div>
+          <div className="interactive-prompt-options">
+            {interactivePrompt.options.map((opt, idx) => (
+              <button
+                key={`${idx}-${opt.label}`}
+                type="button"
+                className={`interactive-prompt-option${
+                  idx === interactivePrompt.currentIndex ? " current" : ""
+                }`}
+                disabled={interactiveSending}
+                onClick={async () => {
+                  setInteractiveSending(true);
+                  try {
+                    await api.chooseOption(
+                      session.window_id,
+                      idx,
+                      interactivePrompt.options.length,
+                    );
+                    setInteractivePrompt(null);
+                  } catch (err) {
+                    showToast((err as Error).message, "error");
+                  } finally {
+                    setInteractiveSending(false);
+                  }
+                }}
+              >
+                <span className="interactive-prompt-option-num">{idx + 1}.</span>
+                <span className="interactive-prompt-option-label">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div
         className={`composer${dragOver ? " drag-over" : ""}`}
@@ -2932,11 +2977,13 @@ export function ChatView({
               <Paperclip size={ICON} />
             </button>
             <button
-              className="primary"
+              className="primary send-button"
               disabled={sending || (!text.trim() && attachments.length === 0)}
               onClick={() => send(text)}
+              title="Send"
+              aria-label="Send"
             >
-              {sending ? "Sending…" : "Send"}
+              <SendHorizontal size={ICON} />
             </button>
           </div>
         </div>

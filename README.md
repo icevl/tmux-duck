@@ -1,11 +1,11 @@
-# Codi
+# TmuxDuck
 
-[![Repo](https://img.shields.io/badge/github-icevl%2Fcodi-181717?logo=github)](https://github.com/icevl/codi)
+[![Repo](https://img.shields.io/badge/github-icevl%2Ftmux--duck-181717?logo=github)](https://github.com/icevl/tmux-duck)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > Self-hosted remote control for AI coding agents — Codex and Claude Code running in tmux, driven from a browser or Telegram, in sync.
 
-Codi is a thin control layer over **tmux** that lets you start, monitor, and steer terminal-based AI agents (Codex, Claude Code) from anywhere. Sessions live in tmux on your own machine — Codi just reads their output and sends keystrokes. Two front-ends ship out of the box and stay mirrored:
+TmuxDuck is a thin control layer over **tmux** that lets you start, monitor, and steer terminal-based AI agents (Codex, Claude Code) from anywhere. Sessions live in tmux on your own machine — TmuxDuck just reads their output and sends keystrokes. Two front-ends ship out of the box and stay mirrored:
 
 - a **web UI** (Vite + React) accessible from any browser, and
 - a **Telegram bot** with one-topic-per-session forum support.
@@ -18,14 +18,14 @@ Everything runs on your hardware. No cloud relay, no agent SDK wrapping, no sepa
 
 AI coding agents work for minutes to hours per turn. When the agent is running and you walk away from the desk, you lose visibility — but the agent doesn't stop. Existing Telegram/web wrappers around the Codex or Claude SDK spin up *separate* API sessions you can't resume locally; existing local-only tools require you to stay at the keyboard.
 
-Codi takes a different cut: the agent runs in a real tmux pane, and Codi is just a multiplexed remote for that pane. Consequences:
+TmuxDuck takes a different cut: the agent runs in a real tmux pane, and TmuxDuck is just a multiplexed remote for that pane. Consequences:
 
 - **Switch device mid-conversation.** Start a refactor at the desk in your terminal, monitor it from your phone on the train, take over in the browser at a coffee shop — same session throughout.
-- **Run parallel agents.** Each session is a tmux window. Codi orchestrates the list and routes input.
-- **No lock-in to the wrapper.** Kill Codi at any time; agents keep running in tmux. Re-attach with `tmux attach -t codi`.
+- **Run parallel agents.** Each session is a tmux window. TmuxDuck orchestrates the list and routes input.
+- **No lock-in to the wrapper.** Kill TmuxDuck at any time; agents keep running in tmux. Re-attach with `tmux attach -t codexbot`.
 - **Self-hosted by default.** All state lives under `~/.codexbot/` and `~/.codex/` / `~/.claude/`. No third party sees your transcripts.
 
-Codi was developed on itself — iterating from a phone over Telegram while the agent worked at the desk.
+TmuxDuck was developed on itself — iterating from a phone over Telegram while the agent worked at the desk.
 
 ---
 
@@ -50,6 +50,7 @@ Codi was developed on itself — iterating from a phone over Telegram while the 
   - **Diff** — live `git diff` view (uncommitted + untracked) for the session's cwd, with file/hunk styling and add/del stats in the header. Refreshes on chat activity (no polling) so edits made by the agent show up immediately
   - **Office** — sprite-based "agent at a desk" visualization keyed to the session's runtime state, plus a tile layout editor for customizing the scene
   - **Terminal** — full xterm.js terminal driven over WebSocket against a PTY on the host. Two modes via a header toggle: `Attach` (joins the topic's tmux window inside a per-client grouped session — see what the agent sees, type alongside it) and `Shell` (fresh `$SHELL -i` in the session cwd, isolated from the agent). Supports `mc`, `vim`, `htop`, mouse, true-color, resize; auto-reconnects with exponential backoff if the WS drops
+  - **Files** — lazy file tree of the session cwd with click-to-preview. Folders load one level at a time so deep repos don't pay an upfront walk. The search input does a project-wide case-insensitive substring scan on the backend (skips `.git`, `node_modules`, `__pycache__`, `.venv`, `dist`, `build`, etc.) and renders matches as a flat list with the matched substring highlighted in both name and path. File viewer shows raw text in a `<pre>`; Markdown files (`.md`, `.markdown`, `.mdx`, …) get a **Preview / Raw** toggle that renders the document with GFM (tables, task lists, code fences)
 - Password login + optional TOTP 2FA (QR enrolment on first start)
 - Self-update: polls GitHub `main` and offers a one-click `git pull --ff-only` + service reload when there's a new commit (toggleable via `CODEXBOT_AUTO_UPDATE`)
 - Dark theme
@@ -65,7 +66,7 @@ Codi was developed on itself — iterating from a phone over Telegram while the 
 
 ### Cross-channel mirroring
 
-Sessions are global to the running Codi instance: a window created in the web UI gets a matching Telegram topic, messages sent in Telegram appear in the web transcript, and either side can drive the same pane. Rename in one channel, see it in the other.
+Sessions are global to the running TmuxDuck instance: a window created in the web UI gets a matching Telegram topic, messages sent in Telegram appear in the web transcript, and either side can drive the same pane. Rename in one channel, see it in the other.
 
 ### Operations
 
@@ -99,7 +100,7 @@ Sessions are global to the running Codi instance: a window created in the web UI
                         |  HTTPS + WS             |  long-poll
                         |                         |
                 +-------v-------------------------v-------+
-                |       Codi backend (FastAPI + PTB)      |
+                |    TmuxDuck backend (FastAPI + PTB)     |
                 |  - auth (password + TOTP)               |
                 |  - session/window registry              |
                 |  - tmux I/O bridge                      |
@@ -135,11 +136,11 @@ The Python backend uses FastAPI for the web transport and `python-telegram-bot` 
 
 ```bash
 # Using uv (recommended)
-uv tool install git+https://github.com/icevl/codi.git
+uv tool install git+https://github.com/icevl/tmux-duck.git
 
 # Or from source
-git clone https://github.com/icevl/codi.git
-cd codi
+git clone https://github.com/icevl/tmux-duck.git
+cd tmux-duck
 uv sync
 ```
 
@@ -162,7 +163,7 @@ WEB_UI_TOTP_REQUIRED=true
 OPENAI_API_KEY=sk-...
 ```
 
-You need at least one of (a) Telegram credentials, (b) `WEB_UI_PASSWORD` — otherwise Codi has no surface.
+You need at least one of (a) Telegram credentials, (b) `WEB_UI_PASSWORD` — otherwise TmuxDuck has no surface.
 
 ### 3. Build the web UI (one-time)
 
@@ -230,7 +231,7 @@ Open the web UI at `http://127.0.0.1:8787` and/or message your Telegram bot.
 
 > **Note on auto-approval.** Codex is launched with sandbox + approval bypass by default for unattended operation. Set `CODEXBOT_AUTO_APPROVE_DANGEROUS=false` or override `CODEX_COMMAND` if you prefer to keep prompts.
 >
-> Codi enforces a single running instance per `CODEXBOT_DIR` using `codexbot.lock` to avoid duplicate event delivery.
+> TmuxDuck enforces a single running instance per `CODEXBOT_DIR` using `codexbot.lock` to avoid duplicate event delivery.
 
 ---
 
@@ -266,7 +267,7 @@ Anything else (`/clear`, `/compact`, `/cost`, `/review`, …) is forwarded to th
 
 ### Manual tmux
 
-You can also create a window the old-fashioned way; Codi will detect it on the next poll:
+You can also create a window the old-fashioned way; TmuxDuck will detect it on the next poll:
 
 ```bash
 tmux attach -t codexbot
