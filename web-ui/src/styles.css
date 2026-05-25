@@ -501,6 +501,97 @@ button.burger {
   color: var(--text-2);
 }
 
+.search-details-toggle {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.search-details-toggle:hover {
+  background: var(--bg-2);
+  color: var(--text-0);
+}
+
+.search-details-toggle svg {
+  transition: transform 0.12s ease;
+}
+
+.search-details-toggle svg.expanded {
+  transform: rotate(180deg);
+}
+
+.search-status-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--bg-1);
+  min-width: 0;
+  max-height: min(36vh, 360px);
+  overflow-y: auto;
+}
+
+.search-detail-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.7fr) minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: baseline;
+  min-width: 0;
+  color: var(--text-1);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.search-detail-row.vertical {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.search-detail-row span {
+  color: var(--text-2);
+}
+
+.search-detail-row strong {
+  color: var(--text-0);
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.search-detail-row small {
+  grid-column: 2;
+  color: var(--text-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.search-detail-row.vertical small,
+.search-detail-row.vertical code {
+  grid-column: 1;
+}
+
+.search-detail-row code {
+  display: block;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .session-search-filters {
   flex-direction: column;
   align-items: stretch;
@@ -565,6 +656,10 @@ button.burger {
 
 .search-state-panel.warn {
   border-color: rgba(255, 180, 84, 0.35);
+}
+
+.search-state-panel.compact {
+  padding: 8px 10px;
 }
 
 .search-state-title {
@@ -3002,6 +3097,22 @@ button.burger {
   .search-filter {
     min-height: 34px;
     padding: 5px 7px;
+  }
+
+  .search-details-toggle {
+    min-height: 34px;
+  }
+
+  .search-status-details {
+    max-height: calc(100dvh - 360px);
+  }
+
+  .search-detail-row {
+    grid-template-columns: 1fr;
+  }
+
+  .search-detail-row small {
+    grid-column: 1;
   }
 
   .search-results {

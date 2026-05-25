@@ -148,6 +148,9 @@ def test_search_status_returns_typed_missing(
     assert body["available"] is False
     assert body["scope"] == "open_sessions"
     assert body["counters"]["open_sessions"] == 2
+    assert body["operations"]["worker"]["status"] is None
+    assert body["operations"]["queue"]["queued_items"] == 0
+    assert body["operations"]["progress"]["open_sessions"] == 2
 
 
 def test_search_status_reports_building_backfill(
@@ -157,6 +160,7 @@ def test_search_status_reports_building_backfill(
     from codexbot.search.state import write_worker_status
 
     monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEXBOT_SEARCH_WORKER_STALE_SECONDS", "999999999")
     write_worker_status(
         SearchWorkerStatus(
             status="running",
@@ -195,6 +199,8 @@ def test_search_status_reports_building_backfill(
     assert body["counters"]["open_sessions"] == 1
     assert body["counters"]["indexed_sessions"] == 1
     assert body["counters"]["indexed_chunks"] == 3
+    assert body["operations"]["worker"]["status"] == "running"
+    assert body["operations"]["progress"]["indexed_chunks"] == 3
 
 
 def test_search_stub_returns_typed_not_ready(

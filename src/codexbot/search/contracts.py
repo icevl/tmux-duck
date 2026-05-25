@@ -149,6 +149,91 @@ class SearchWorkerStatus(BaseModel):
     counters: SearchCounters | None = None
 
 
+class SearchWorkerHealth(BaseModel):
+    """Request-safe worker health derived from the local status heartbeat."""
+
+    status: SearchWorkerStatusState | None = None
+    current_task: str | None = Field(default=None, min_length=1, max_length=128)
+    heartbeat_at: str | None = Field(default=None, max_length=128)
+    heartbeat_age_seconds: float | None = Field(default=None, ge=0)
+    stale: bool = False
+    stale_after_seconds: int = Field(default=120, ge=1)
+    recent_error: str | None = Field(default=None, max_length=500)
+
+
+class SearchQueueHealth(BaseModel):
+    """Request-safe queue lag and failure summary."""
+
+    queued_items: int = Field(default=0, ge=0)
+    leased_items: int = Field(default=0, ge=0)
+    failed_items: int = Field(default=0, ge=0)
+    stale_sources: int = Field(default=0, ge=0)
+    oldest_queued_at: str | None = Field(default=None, max_length=128)
+    oldest_queued_age_seconds: float | None = Field(default=None, ge=0)
+    lagging: bool = False
+    recent_error: str | None = Field(default=None, max_length=500)
+
+
+class SearchBackfillProgress(BaseModel):
+    """Compact open-session indexing progress for operational surfaces."""
+
+    open_sessions: int = Field(default=0, ge=0)
+    indexed_sessions: int = Field(default=0, ge=0)
+    indexed_chunks: int = Field(default=0, ge=0)
+    queued_items: int = Field(default=0, ge=0)
+    failed_items: int = Field(default=0, ge=0)
+    generation_id: str | None = Field(default=None, max_length=255)
+    model_id: str | None = Field(default=None, max_length=255)
+    vector_dimension: int | None = Field(default=None, ge=1, le=4096)
+    table_name: str | None = Field(default=None, max_length=255)
+
+
+class SearchRecoveryCommand(BaseModel):
+    """One local recovery command safe to show in the Web UI."""
+
+    label: str = Field(min_length=1, max_length=80)
+    command: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=255)
+
+
+class SearchBenchmarkSummary(BaseModel):
+    """Persisted benchmark metadata without raw transcript or fixture text."""
+
+    schema_version: int = Field(default=1, ge=1)
+    created_at: str = Field(min_length=1, max_length=128)
+    provider: Literal["fake", "local"]
+    model_id: str = Field(min_length=1, max_length=255)
+    vector_dimension: int = Field(ge=1, le=4096)
+    batch_size: int = Field(ge=1)
+    chunk_max_chars: int = Field(ge=1)
+    chunk_overlap_chars: int = Field(ge=0)
+    document_count: int = Field(ge=0)
+    query_count: int = Field(ge=0)
+    index_elapsed_ms: float = Field(ge=0)
+    query_p50_ms: float = Field(ge=0)
+    query_p95_ms: float = Field(ge=0)
+    peak_memory_mb: float = Field(ge=0)
+    exact_top3_recall: float = Field(ge=0, le=1)
+    semantic_top5_recall: float = Field(ge=0, le=1)
+    passed: bool
+    failures: list[str] = Field(default_factory=list, max_length=20)
+    thresholds: dict[str, float] = Field(default_factory=dict)
+
+
+class SearchOperationalStatus(BaseModel):
+    """Operational status details shown outside the critical request path."""
+
+    worker: SearchWorkerHealth
+    queue: SearchQueueHealth
+    progress: SearchBackfillProgress
+    recent_errors: list[str] = Field(default_factory=list, max_length=5)
+    recovery_commands: list[SearchRecoveryCommand] = Field(
+        default_factory=list,
+        max_length=5,
+    )
+    benchmark: SearchBenchmarkSummary | None = None
+
+
 class SearchBackfillDocument(BaseModel):
     """One parser-backed chunk document produced by open-session backfill."""
 
@@ -183,6 +268,7 @@ class SearchStatusResponse(BaseModel):
     counters: SearchCounters | None = None
     generation: SearchGenerationMetadata | None = None
     index: SearchIndexMetadata | None = None
+    operations: SearchOperationalStatus | None = None
 
 
 class SearchHighlight(BaseModel):

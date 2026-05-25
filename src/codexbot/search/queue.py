@@ -98,7 +98,11 @@ def sanitize_error(error: BaseException | str) -> str:
     if isinstance(error, BaseException):
         text = f"{type(error).__name__}: {str(error).splitlines()[0] if str(error) else 'search queue error'}"
     else:
-        text = str(error).splitlines()[0] if str(error) else "search queue error"
+        lines = [line.strip() for line in str(error).splitlines() if line.strip()]
+        if lines and lines[0].startswith("Traceback"):
+            text = "search error"
+        else:
+            text = lines[0] if lines else "search queue error"
     text = re.sub(
         r"(\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)[A-Z0-9_]*\b)\s*=\s*\S+",
         r"\1=[secret]",

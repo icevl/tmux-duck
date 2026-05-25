@@ -169,7 +169,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 06-01-PLAN.md - Add the operational search status contract and expandable Web UI status details.
+- [x] 06-01-PLAN.md - Add the operational search status contract and expandable Web UI status details.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -192,4 +192,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Live Queue and Convergence | 3/3 | Complete   | 2026-05-22 |
 | 4. LanceDB Hybrid Retrieval and Ranking | 3/3 | Complete   | 2026-05-22 |
 | 5. Web UI Search Experience and Navigation | 3/3 | Complete   | 2026-05-25 |
-| 6. Operational Hardening and Model Tuning | 0/3 | Planned | - |
+| 6. Operational Hardening and Model Tuning | 1/3 | In Progress|  |
