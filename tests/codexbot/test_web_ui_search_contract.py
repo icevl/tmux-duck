@@ -67,6 +67,14 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
     ]:
         assert copy in search_source
 
+    degraded_start = search_source.index("showLexicalNotice")
+    degraded_branch = search_source[
+        degraded_start : search_source.index("response?.results.map", degraded_start)
+    ]
+    assert 'className="search-state-panel warn compact"' in degraded_branch
+    assert "window.confirm" not in search_source
+    assert "acknowledge" not in search_source.lower()
+
 
 def test_session_search_routes_by_window_id_and_preserves_local_query() -> None:
     search_source = _read("web-ui/src/components/SessionSearch.tsx")

@@ -502,6 +502,49 @@ def test_list_sessions_returns_windows(
     assert "sort_order" in body["sessions"][0]
 
 
+def test_list_sessions_does_not_touch_search_runtime(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_windows = [
+        TmuxWindow(
+            window_id="@55",
+            window_name="normal-session",
+            cwd="/tmp",
+            pane_current_command="codex",
+        ),
+    ]
+
+    async def fake_list() -> list[TmuxWindow]:
+        return fake_windows
+
+    from codexbot.web import api as web_api
+
+    def fail_search_status(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("/api/sessions must not call search status")
+
+    def fail_search(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("/api/sessions must not call search")
+
+    monkeypatch.setattr(web_api.tmux_manager, "list_windows", fake_list)
+    monkeypatch.setattr(web_api.search_client, "get_status", fail_search_status)
+    monkeypatch.setattr(web_api.search_client, "search", fail_search)
+    monkeypatch.setattr(
+        web_api.session_manager,
+        "_refresh_sessions_index",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        web_api.session_manager,
+        "window_states",
+        {"@55": WindowState(session_id="s55")},
+    )
+
+    r = authed_client.get("/api/sessions")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["sessions"][0]["window_id"] == "@55"
+
+
 def test_list_sessions_uses_manual_order_and_keeps_pinned_first(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
