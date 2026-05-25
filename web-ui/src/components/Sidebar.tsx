@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   BellOff,
@@ -18,6 +18,7 @@ import {
 import { TunioPlayer } from "tunio-player";
 import "tunio-player/styles.css";
 import { SessionSummary } from "../api";
+import { SearchHitTarget, SessionSearch } from "./SessionSearch";
 
 const ICON = 16;
 const OFFICE_STREAM_ID = "71824d03-660b-4722-843a-5e8fbe9ad4c2";
@@ -56,6 +57,7 @@ interface Props {
   onPin: (session: SessionSummary, pinned: boolean) => void;
   onDelete: (session: SessionSummary) => void;
   onReorder: (windowIds: string[]) => void | Promise<void>;
+  onOpenSearchHit?: (target: SearchHitTarget) => void;
   notificationsSupported: boolean;
   notificationsEnabled: boolean;
   notificationPermission: NotificationPermission | "unsupported";
@@ -108,6 +110,7 @@ export function Sidebar({
   onPin,
   onDelete,
   onReorder,
+  onOpenSearchHit,
   notificationsSupported,
   notificationsEnabled,
   notificationPermission,
@@ -127,7 +130,12 @@ export function Sidebar({
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [searchActive, setSearchActive] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const handleSearchActiveChange = useCallback((active: boolean) => {
+    setSearchActive(active);
+  }, []);
 
   // Close the popover on outside click / Escape / scroll inside the list.
   useEffect(() => {
@@ -227,8 +235,14 @@ export function Sidebar({
           <span>New session</span>
         </button>
       </div>
+      <SessionSearch
+        sessions={sessions}
+        onOpenResult={onSelect}
+        onOpenHit={onOpenSearchHit}
+        onHasActiveQueryChange={handleSearchActiveChange}
+      />
       <div className="session-list">
-        {ordered.length === 0 ? (
+        {searchActive ? null : ordered.length === 0 ? (
           sessionsLoaded ? (
             <div className="session-list-empty">No sessions yet.</div>
           ) : (
