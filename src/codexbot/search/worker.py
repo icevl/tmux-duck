@@ -34,6 +34,7 @@ from .index import (
 )
 from .live import read_generation_documents, upsert_generation_documents
 from .queue import (
+    clear_queue_errors,
     complete_items,
     fail_items,
     lease_ready_items,
@@ -321,6 +322,31 @@ def _seconds_since_flush(now: datetime) -> float:
     return max(0.0, (now - _last_live_flush_at).total_seconds())
 
 
+_live_drain_count: int = 0
+# Compact the active LanceDB table every N successful drains. Each
+# merge_insert creates a new version; without periodic compaction the
+# version count grows linearly and merge eventually fails with a
+# DataFusion "Spill has sent an error" because the join across hundreds
+# of fragments can't spill to disk fast enough. 30 keeps total versions
+# well under 100 between sweeps and stays cheap.
+LIVE_COMPACT_EVERY = 30
+
+
+def _compact_active_generation(generation_id: str) -> None:
+    """Vacuum the active LanceDB table — compact fragments, prune old
+    versions. Best-effort: errors are logged and swallowed because a failed
+    compaction shouldn't block the live drain loop."""
+    from datetime import timedelta
+
+    from .index import connect_lancedb
+
+    try:
+        table = connect_lancedb(generation_id).open_table("chunks")
+        table.optimize(cleanup_older_than=timedelta(seconds=0))
+    except Exception:  # noqa: BLE001
+        logger.exception("search_live_compact_failed gen=%s", generation_id)
+
+
 def drain_live_queue_once(
     *,
     batch_size: int = LIVE_BATCH_SIZE,
@@ -372,7 +398,18 @@ def drain_live_queue_once(
         return 0
 
     complete_items(queue_ids)
+    # A successful drain means whatever was sitting in queue_errors is
+    # stale; clearing it stops the footer from surfacing yesterday's
+    # transient Spill error after we've actually recovered.
+    try:
+        clear_queue_errors()
+    except Exception:  # noqa: BLE001
+        logger.exception("search_clear_queue_errors_failed")
     _last_live_flush_at = current_time
+    global _live_drain_count
+    _live_drain_count += 1
+    if _live_drain_count % LIVE_COMPACT_EVERY == 0:
+        _compact_active_generation(generation.generation_id)
     return len(items)
 
 
