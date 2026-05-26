@@ -110,19 +110,33 @@ class SentenceTransformerEmbeddingProvider:
 
 
 _provider_override: EmbeddingProvider | None = None
+_default_provider: EmbeddingProvider | None = None
 
 
 def set_embedding_provider_for_tests(provider: EmbeddingProvider | None) -> None:
     """Inject a deterministic provider for unit tests."""
-    global _provider_override
+    global _provider_override, _default_provider
     _provider_override = provider
+    # A test-injected provider must also evict any real provider we may have
+    # cached from a previous test or import; otherwise tests bleed state.
+    _default_provider = None
 
 
 def get_embedding_provider() -> EmbeddingProvider:
-    """Return the configured local embedding provider."""
+    """Return the configured local embedding provider.
+
+    The SentenceTransformer-backed provider holds a ~1GB Qwen3 model in
+    memory once loaded; creating a fresh provider per query forced a
+    cold reload (~60s on CPU) every time. We cache one instance per
+    process and reuse it across requests — first query still pays the
+    load, subsequent queries are millisecond-level.
+    """
     if _provider_override is not None:
         return _provider_override
-    return SentenceTransformerEmbeddingProvider()
+    global _default_provider
+    if _default_provider is None:
+        _default_provider = SentenceTransformerEmbeddingProvider()
+    return _default_provider
 
 
 __all__ = [

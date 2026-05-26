@@ -277,8 +277,11 @@ export function Sidebar({
         onOpenHit={onOpenSearchHit}
         onHasActiveQueryChange={handleSearchActiveChange}
       />
-      <div className="session-list">
-        {searchActive ? null : ordered.length === 0 ? (
+      <div
+        className="session-list"
+        style={searchActive ? { display: "none" } : undefined}
+      >
+        {ordered.length === 0 ? (
           sessionsLoaded ? (
             <div className="session-list-empty">No sessions yet.</div>
           ) : (

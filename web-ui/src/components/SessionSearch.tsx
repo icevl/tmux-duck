@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  Brain,
-  Clock3,
+  ChevronDown,
+  ChevronRight,
   Filter,
+  Folder,
+  FolderOpen,
   Loader2,
   Pin,
-  Search,
   X,
 } from "lucide-react";
 import {
@@ -22,7 +23,7 @@ import {
 const ICON = 16;
 const MIN_QUERY_LENGTH = 2;
 const DEFAULT_LIMIT = 10;
-const DEFAULT_HITS_PER_SESSION = 3;
+const DEFAULT_HITS_PER_SESSION = 50;
 
 type RuntimeFilter = "all" | "codex" | "claude";
 type RoleFilter = "all" | "user" | "agent" | "tool";
@@ -71,21 +72,6 @@ const recentOptions: Array<{ value: RecentFilter; label: string }> = [
   { value: "7d", label: "7d" },
 ];
 
-function cwdBase(cwd: string): string {
-  const parts = cwd.split("/").filter(Boolean);
-  return parts.at(-1) ?? cwd;
-}
-
-function formatRelative(ts: number | null): string {
-  if (!ts) return "";
-  const sec = Math.floor(Date.now() / 1000 - ts);
-  if (sec < 5) return "just now";
-  if (sec < 60) return `${sec}s ago`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return `${Math.floor(sec / 86400)}d ago`;
-}
-
 function recentSeconds(filter: RecentFilter): number | null {
   switch (filter) {
     case "1h":
@@ -113,14 +99,6 @@ function rolePayload(filter: RoleFilter): {
     case "all":
       return { role: null, content_type: null };
   }
-}
-
-function hitLabel(hit: SearchHit): string {
-  if (hit.provenance.tool_name) return hit.provenance.tool_name;
-  if (hit.provenance.content_type === "tool_use") return "Tool";
-  if (hit.provenance.role === "assistant") return "Agent";
-  if (hit.provenance.role === "user") return "User";
-  return hit.provenance.role || "System";
 }
 
 function renderSnippet(snippet: string, highlights: SearchHighlight[]) {
@@ -222,6 +200,9 @@ export function SessionSearch({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(
+    () => new Set(),
+  );
   const filtersRef = useRef<HTMLDivElement | null>(null);
   const requestSeq = useRef(0);
 
@@ -251,6 +232,20 @@ export function SessionSearch({
     setPinned(false);
     setRecent("any");
   };
+
+  // Keep the filter-related identifiers referenced so the build doesn't strip
+  // them while the filter button itself is commented out. Re-enabling is a
+  // one-block uncomment in JSX below.
+  void [
+    Filter,
+    Pin,
+    runtimeOptions,
+    roleOptions,
+    recentOptions,
+    searchEnabled,
+    filtersActive,
+    resetFilters,
+  ];
 
   const trimmedQuery = query.trim();
   const active = trimmedQuery.length >= MIN_QUERY_LENGTH;
@@ -309,8 +304,15 @@ export function SessionSearch({
   );
 
   const panel = statusPanel(active, loading, error, response, status);
+  // The backend marks state="degraded" both for "no vector index" (real
+  // lexical-only fallback) and for "vector index exists but the live queue
+  // is behind". The second case is misleading to call "Semantic not ready" —
+  // semantic IS ready, the queue just hasn't merged the freshest events yet.
+  // Only fire the warning when the vector index truly isn't there.
   const showLexicalNotice =
-    response?.status.state === "degraded" && response.results.length > 0;
+    response?.status.state === "degraded" &&
+    response.status.index == null &&
+    response.results.length > 0;
 
   const openHit = (result: SearchSessionResult, hit: SearchHit) => {
     const target: SearchHitTarget = {
@@ -331,7 +333,6 @@ export function SessionSearch({
     <div className={`session-search${active ? " active" : ""}`}>
       <div className="session-search-bar">
         <label className="session-search-input-wrap">
-          <Search size={ICON} aria-hidden="true" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -350,6 +351,8 @@ export function SessionSearch({
             </button>
           )}
         </label>
+        {/* Filter button hidden for now — keep the popover logic wired so we
+            can flip it back on without re-implementing.
         {searchEnabled && (
         <div
           className={`search-filters-anchor${filtersOpen ? " open" : ""}`}
@@ -454,6 +457,7 @@ export function SessionSearch({
           )}
         </div>
         )}
+        */}
       </div>
 
       {active && (
@@ -488,70 +492,52 @@ export function SessionSearch({
                   result.routing.name ||
                   session?.name ||
                   result.routing.window_id;
+                const wid = result.routing.window_id;
+                const expanded = !collapsedSessions.has(wid);
                 return (
-                  <div
-                    className="search-result-group"
-                    key={result.routing.window_id}
-                  >
+                  <div className="search-tree-group" key={wid}>
                     <button
                       type="button"
-                      className="search-result-session"
-                      onClick={() => onOpenResult(result.routing.window_id)}
+                      className="search-tree-row session"
+                      onClick={() =>
+                        setCollapsedSessions((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(wid)) next.delete(wid);
+                          else next.add(wid);
+                          return next;
+                        })
+                      }
                     >
-                      <div className="search-result-title">
-                        {result.routing.pinned && <Pin size={12} />}
-                        <span>{title}</span>
-                      </div>
-                      <div className="search-result-meta">
-                        <Brain
-                          size={12}
-                          className={`runtime-icon runtime-icon-${result.routing.runtime}`}
-                        />
-                        <span>{result.routing.runtime}</span>
-                        <span>{cwdBase(result.routing.cwd)}</span>
-                        <span>{result.hit_count} hits</span>
-                        {session?.last_activity && (
-                          <span>
-                            <Clock3 size={11} />
-                            {formatRelative(session.last_activity)}
-                          </span>
+                      <span className="tree-chevron" aria-hidden="true">
+                        {expanded ? (
+                          <ChevronDown size={12} />
+                        ) : (
+                          <ChevronRight size={12} />
                         )}
-                      </div>
+                      </span>
+                      <span className="tree-icon" aria-hidden="true">
+                        {expanded ? (
+                          <FolderOpen size={14} />
+                        ) : (
+                          <Folder size={14} />
+                        )}
+                      </span>
+                      <span className="tree-label">{title}</span>
+                      <span className="tree-count">{result.hit_count}</span>
                     </button>
-                    <div className="search-result-hits">
-                      {result.hits.map((hit) => {
-                        const labels =
-                          showLexicalNotice &&
-                          !hit.match_labels.some((label) =>
-                            label.toLowerCase().startsWith("lexical"),
-                          )
-                            ? ["Lexical", ...hit.match_labels]
-                            : hit.match_labels;
-                        return (
-                          <button
-                            type="button"
-                            key={`${hit.source_order}:${hit.identity.chunk_index}`}
-                            className="search-result-hit"
-                            onClick={() => openHit(result, hit)}
-                          >
-                            <div className="search-hit-meta">
-                              <span>{hitLabel(hit)}</span>
-                              {hit.timestamp && <span>{hit.timestamp}</span>}
-                            </div>
-                            <div className="search-hit-snippet">
-                              {renderSnippet(hit.snippet, hit.highlights)}
-                            </div>
-                            {labels.length > 0 && (
-                              <div className="search-hit-labels">
-                                {labels.map((label) => (
-                                  <span key={label}>{label}</span>
-                                ))}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {expanded &&
+                      result.hits.map((hit) => (
+                        <button
+                          type="button"
+                          key={`${hit.source_order}:${hit.identity.chunk_index}`}
+                          className="search-tree-row hit"
+                          onClick={() => openHit(result, hit)}
+                        >
+                          <span className="tree-snippet">
+                            {renderSnippet(hit.snippet, hit.highlights)}
+                          </span>
+                        </button>
+                      ))}
                   </div>
                 );
               })}

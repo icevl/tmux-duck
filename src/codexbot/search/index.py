@@ -397,6 +397,16 @@ def document_from_row(row: dict[str, Any]) -> SearchBackfillDocument:
     )
 
 
+SEMANTIC_MIN_SCORE = 0.6
+"""Drop semantic candidates below this score (cosine ≈ 0.2).
+
+LanceDB returns top-K by L2² distance regardless of how loose those matches
+are; for normalized vectors with cosine ≈ 0.2 the docs are barely related
+to the query and just add UI noise. The threshold is intentionally lax —
+the real noise filter for short queries lives in retrieval._hybrid_candidates.
+"""
+
+
 def semantic_scores_for_query(
     generation_id: str,
     *,
@@ -406,26 +416,42 @@ def semantic_scores_for_query(
     connection: Any | None = None,
     table_name: str = DEFAULT_TABLE_NAME,
 ) -> dict[str, float]:
-    """Return normalized semantic candidate scores keyed by stable row id."""
+    """Return normalized semantic candidate scores keyed by stable row id.
+
+    LanceDB defaults to L2 distance; embeddings are L2-normalized by the
+    worker, so the returned `_distance` is L2² ∈ [0, 4] and relates to
+    cosine similarity via `cos = 1 - distance/2`. Mapping to a 0–1 score
+    that way preserves the actual distance ordering instead of the
+    position-fallback (1.0, 0.95, 0.9 …) that treated every top-K hit as
+    near-perfect and flooded the result panel with weakly-related docs.
+    """
     embedder = provider or get_embedding_provider()
     query_vector = embedder.embed_query(query)
     conn = connection or connect_lancedb(generation_id)
     table = conn.open_table(table_name)
     rows = table.search(query_vector).limit(limit).to_list()
     scores: dict[str, float] = {}
-    for index, row in enumerate(rows):
+    for row in rows:
         if not isinstance(row, dict):
             continue
         row_id = row.get("row_id")
         if not isinstance(row_id, str):
             continue
-        raw_score = row.get("_relevance_score", row.get("_score"))
-        if isinstance(raw_score, int | float):
-            score = max(0.0, min(1.0, float(raw_score)))
-        else:
-            score = max(0.0, 1.0 - (index * 0.05))
+        score = _row_to_semantic_score(row)
+        if score < SEMANTIC_MIN_SCORE:
+            continue
         scores[row_id] = score
     return scores
+
+
+def _row_to_semantic_score(row: dict[str, Any]) -> float:
+    distance = row.get("_distance")
+    if isinstance(distance, (int, float)):
+        return max(0.0, min(1.0, 1.0 - float(distance) / 2.0))
+    raw = row.get("_relevance_score", row.get("_score"))
+    if isinstance(raw, (int, float)):
+        return max(0.0, min(1.0, float(raw)))
+    return 0.0
 
 
 __all__ = [

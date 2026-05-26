@@ -208,7 +208,7 @@ def test_lexical_filters_narrow_backend_results(
 
     body = search(
         SearchRequest(
-            query="callback failure",
+            query="callback failure trace",
             runtime="codex",
             cwd="/repo/codi",
             role="assistant",
@@ -277,7 +277,7 @@ def test_stale_generation_sources_are_hidden(
     )
     replace_stale_sources([("/tmp/closed.jsonl", "codex", "session-1")])
 
-    body = search(SearchRequest(query="callback failure")).model_dump(mode="json")
+    body = search(SearchRequest(query="callback failure trace")).model_dump(mode="json")
 
     assert [result["routing"]["window_id"] for result in body["results"]] == ["@40"]
 
@@ -348,9 +348,9 @@ def test_hybrid_hit_label_when_lexical_and_semantic_match(
         lambda *_args, **_kwargs: {row_id_for_identity(target.identity): 0.91},
     )
 
-    body = search(SearchRequest(query="src/codexbot/web/api.py")).model_dump(
-        mode="json"
-    )
+    body = search(
+        SearchRequest(query="inspect src/codexbot/web/api.py route")
+    ).model_dump(mode="json")
 
     hit = body["results"][0]["hits"][0]
     assert body["status"]["state"] == "ready"
@@ -378,7 +378,7 @@ def test_semantic_exception_returns_sanitized_lexical_degraded_results(
         fail_semantic,
     )
 
-    body = search(SearchRequest(query="callback failure")).model_dump(mode="json")
+    body = search(SearchRequest(query="callback failure trace")).model_dump(mode="json")
     serialized = json.dumps(body)
 
     assert body["status"]["state"] == "degraded"
@@ -412,7 +412,7 @@ def test_semantic_failure_returns_safe_lexical_degraded_results(
         fail_semantic,
     )
 
-    body = search(SearchRequest(query="callback failure")).model_dump(mode="json")
+    body = search(SearchRequest(query="callback failure trace")).model_dump(mode="json")
     serialized = json.dumps(body)
 
     assert body["status"]["state"] == "degraded"

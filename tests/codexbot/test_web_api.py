@@ -463,7 +463,7 @@ def test_search_status_after_successful_backfill_is_lexical_degraded(
         {"query": "valid", "limit": 0},
         {"query": "valid", "limit": 51},
         {"query": "valid", "hits_per_session": 0},
-        {"query": "valid", "hits_per_session": 11},
+        {"query": "valid", "hits_per_session": 101},
     ],
 )
 def test_search_rejects_oversized_or_out_of_range_request(

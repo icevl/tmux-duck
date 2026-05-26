@@ -327,7 +327,7 @@ class SearchSessionResult(BaseModel):
     """Search hits grouped under the current routeable open session."""
 
     routing: SearchRoutingMetadata
-    hits: list[SearchHit] = Field(default_factory=list, max_length=10)
+    hits: list[SearchHit] = Field(default_factory=list, max_length=100)
     hit_count: int = Field(default=0, ge=0)
     score: float | None = None
 
@@ -337,7 +337,7 @@ class SearchRequest(BaseModel):
 
     query: str = Field(min_length=1, max_length=500)
     limit: int = Field(default=10, ge=1, le=50)
-    hits_per_session: int = Field(default=3, ge=1, le=10)
+    hits_per_session: int = Field(default=3, ge=1, le=100)
     runtime: str | None = Field(default=None, min_length=1, max_length=64)
     cwd: str | None = Field(default=None, min_length=1, max_length=4096)
     role: str | None = Field(default=None, min_length=1, max_length=64)
@@ -359,7 +359,7 @@ class SearchResponse(BaseModel):
     total_results: int = Field(default=0, ge=0)
     total_sessions: int = Field(default=0, ge=0)
     limit: int = Field(ge=1, le=50)
-    hits_per_session: int = Field(ge=1, le=10)
+    hits_per_session: int = Field(ge=1, le=100)
     outcome: SearchResponseOutcome
 
 
