@@ -43,7 +43,6 @@ import {
 import { SkillsModal } from "./SkillsModal";
 import { Markdown } from "./Markdown";
 import { RuntimeIcon } from "./Sidebar";
-import { DuckLoader } from "./DuckLoader";
 import { DuckLogo } from "./DuckLogo";
 import type { SearchHitTarget } from "./SessionSearch";
 
@@ -2540,7 +2539,29 @@ export function ChatView({
               <p>Send your first prompt below.</p>
             </div>
           ) : (
-            <DuckLoader />
+            <div
+              className="messages-skeleton"
+              role="status"
+              aria-label="Loading history"
+            >
+              {[
+                { side: "left", width: 65 },
+                { side: "right", width: 45 },
+                { side: "left", width: 78 },
+                { side: "right", width: 55 },
+                { side: "left", width: 42 },
+              ].map((row, i) => (
+                <div className={`messages-skeleton-row ${row.side}`} key={i}>
+                  <div
+                    className="skeleton-bubble"
+                    style={{ width: `${row.width}%` }}
+                  >
+                    <div className="skeleton-line skeleton-line-bubble" />
+                    <div className="skeleton-line skeleton-line-bubble short" />
+                  </div>
+                </div>
+              ))}
+            </div>
           )
         ) : (
           <div className="messages-list" ref={messagesListRef}>
