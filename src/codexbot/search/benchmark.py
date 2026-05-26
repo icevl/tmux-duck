@@ -241,6 +241,7 @@ def _provider(
             vector_dimension=env_config.vector_dimension or DEFAULT_EMBEDDING_DIMENSION,
             batch_size=batch_size,
             local_files_only=env_config.local_files_only,
+            device=env_config.device,
         )
     )
 
