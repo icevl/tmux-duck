@@ -1010,6 +1010,38 @@ button.burger {
   overflow-wrap: anywhere;
 }
 
+.search-wipe-button {
+  appearance: none;
+  align-self: flex-start;
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger, #ff6b6b);
+  background: var(--bg-2);
+  border: 1px solid var(--danger, #ff6b6b);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.search-wipe-button:hover:not(:disabled) {
+  background: var(--danger, #ff6b6b);
+  color: var(--bg-0);
+}
+
+.search-wipe-button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.search-wipe-error {
+  color: var(--danger, #ff6b6b);
+  font-style: normal;
+}
+
 .session-list-empty {
   padding: 24px 16px;
   color: var(--text-2);

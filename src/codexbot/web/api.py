@@ -617,6 +617,82 @@ def create_app(
             return None
         return len(windows)
 
+    def _kill_search_worker_subprocesses() -> list[int]:
+        """SIGTERM, then SIGKILL, any `codexbot.search.worker` child process.
+
+        We don't track the worker PID inside the bot process (the supervisor
+        spawns it and drops the handle), so we discover it via `pgrep`. The
+        pause controller respawns a fresh worker on its next tick once the
+        wipe finishes and there's no active generation on disk.
+        """
+        import signal
+        import subprocess
+
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-f", "codexbot.search.worker"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+                timeout=2.0,
+            )
+        except subprocess.CalledProcessError:
+            return []  # exit 1 = no matches
+        except (subprocess.SubprocessError, OSError) as exc:
+            logger.warning("search wipe could not pgrep workers: %s", exc)
+            return []
+
+        self_pid = os.getpid()
+        pids: list[int] = []
+        for line in out.splitlines():
+            try:
+                pid = int(line.strip())
+            except ValueError:
+                continue
+            if pid == self_pid:
+                continue
+            try:
+                os.kill(pid, signal.SIGTERM)
+                pids.append(pid)
+            except ProcessLookupError:
+                continue
+            except OSError as exc:
+                logger.warning("SIGTERM pid=%d failed: %s", pid, exc)
+
+        if pids:
+            # Wait briefly for clean shutdown, then escalate to SIGKILL on
+            # anything that didn't exit. The worker holds a SQLite WAL — a
+            # clean SIGTERM lets it flush; SIGKILL is the safety net.
+            time.sleep(1.0)
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        return pids
+
+    def _wipe_search_dir_contents(path: Path) -> list[str]:
+        """Remove every entry under the search dir but keep the dir itself.
+
+        Returns the names of removed entries for the API response. Errors
+        are swallowed per-entry — best effort, since a partial wipe is still
+        better than no wipe (the worker will rebuild whatever's missing).
+        """
+        import shutil
+
+        if not path.exists():
+            return []
+        removed: list[str] = []
+        for entry in path.iterdir():
+            try:
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+                removed.append(entry.name)
+            except OSError as exc:
+                logger.warning("search wipe could not remove %s: %s", entry, exc)
+        return removed
+
     @app.get("/api/search/status")
     async def search_status(_user: str = Depends(require_auth)) -> dict[str, Any]:
         if not config.search_enabled:
@@ -645,6 +721,18 @@ def create_app(
         return search_client.search(
             req, open_session_count=open_session_count
         ).model_dump(mode="json")
+
+    @app.post("/api/search/wipe")
+    async def search_wipe(_user: str = Depends(require_auth)) -> dict[str, Any]:
+        if not config.search_enabled:
+            raise HTTPException(status_code=503, detail="search is disabled")
+
+        from ..search.state import search_dir
+
+        killed = await asyncio.to_thread(_kill_search_worker_subprocesses)
+        removed = await asyncio.to_thread(_wipe_search_dir_contents, search_dir())
+        logger.info("search_wipe killed_pids=%s removed=%s", killed, removed)
+        return {"ok": True, "killed_pids": killed, "removed": removed}
 
     # -----------------------------------------------------------------------
     # Sessions
