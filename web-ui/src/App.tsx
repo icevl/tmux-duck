@@ -1,6 +1,7 @@
 import {
   CSSProperties,
   Dispatch,
+  ReactElement,
   SetStateAction,
   useCallback,
   useEffect,
@@ -40,6 +41,33 @@ type AuthState = "loading" | "anon" | "authed";
 // with `false` values omitted, so the file stays small and adding new
 // panel kinds later doesn't require migrations.
 const PANEL_STATE_KEY = "codexbot-panel-state-v1";
+const PANEL_ROW_KEY = "codexbot-panel-rows-v1";
+
+type PanelKind = "diff" | "office" | "term" | "files";
+type PanelRow = "top" | "bottom";
+type PanelRowMap = Record<string, Partial<Record<PanelKind, PanelRow>>>;
+
+function loadPanelRowMap(): PanelRowMap {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(PANEL_ROW_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as PanelRowMap;
+  } catch {
+    return {};
+  }
+}
+
+function savePanelRowMap(map: PanelRowMap): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PANEL_ROW_KEY, JSON.stringify(map));
+  } catch {
+    // quota / private mode — best-effort persistence.
+  }
+}
 const NOTIFICATION_PREF_KEY = "codexbot-notifications-enabled-v1";
 const INPUT_REQUIRED_TOOL_NAMES = new Set([
   "request_user_input",
@@ -277,6 +305,37 @@ export function App() {
   );
   const [filesOpenIds, setFilesOpenIds] = useState<Set<string>>(() =>
     setFromMap(loadPanelOpenMap(), "files"),
+  );
+  // Per-session per-panel row assignment for the two-row desktop layout.
+  // Defaults to "top" when unset, which mirrors the prior single-row layout.
+  // Mobile (`isNarrow`) ignores this — panels are full-screen overlays.
+  const [panelRowMap, setPanelRowMap] = useState<PanelRowMap>(() =>
+    loadPanelRowMap(),
+  );
+  useEffect(() => {
+    savePanelRowMap(panelRowMap);
+  }, [panelRowMap]);
+  const setPanelRow = useCallback(
+    (windowId: string, kind: PanelKind, row: PanelRow) => {
+      setPanelRowMap((prev) => {
+        const next: PanelRowMap = { ...prev };
+        const sessionRows: Partial<Record<PanelKind, PanelRow>> = {
+          ...(prev[windowId] ?? {}),
+        };
+        if (row === "top") {
+          delete sessionRows[kind];
+        } else {
+          sessionRows[kind] = row;
+        }
+        if (Object.keys(sessionRows).length === 0) {
+          delete next[windowId];
+        } else {
+          next[windowId] = sessionRows;
+        }
+        return next;
+      });
+    },
+    [],
   );
 
   // Persist whenever the open-state changes. Rebuilds the sparse map so
@@ -574,17 +633,45 @@ export function App() {
   const termOpen = !!activeId && termOpenIds.has(activeId);
   const filesOpen = !!activeId && filesOpenIds.has(activeId);
 
-  // Panel ids currently inside the PanelGroup. The layout hook keys
-  // persisted sizes by this list, so different open-combinations remember
-  // their own widths.
+  // Per-panel row assignment for the active session. Defaults to "top" so
+  // first-time use looks identical to the prior single-row layout.
+  const activeRows: Partial<Record<PanelKind, PanelRow>> = activeId
+    ? panelRowMap[activeId] ?? {}
+    : {};
+  const rowOf = (kind: PanelKind): PanelRow => activeRows[kind] ?? "top";
+
+  // Partition the currently-open panels by row so the layout renderer can
+  // pick the right structure (flat single row vs vertical sandwich).
+  const openPanelsByRow = useMemo(() => {
+    const top: PanelKind[] = [];
+    const bottom: PanelKind[] = [];
+    const push = (kind: PanelKind, open: boolean) => {
+      if (!open) return;
+      (rowOf(kind) === "bottom" ? bottom : top).push(kind);
+    };
+    push("diff", diffOpen);
+    push("office", officeOpen);
+    push("term", termOpen);
+    push("files", filesOpen);
+    return { top, bottom };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diffOpen, officeOpen, termOpen, filesOpen, activeRows]);
+  const hasTwoRows = openPanelsByRow.bottom.length > 0;
+
+  // Panel ids currently inside the outer horizontal PanelGroup. The layout
+  // hook keys persisted sizes by this list, so different open-combinations
+  // remember their own widths. With two rows we collapse the side panels
+  // into a single "side-area" cell whose internal split is persisted
+  // separately under its own autoSaveId.
   const visiblePanelIds = useMemo(() => {
+    if (hasTwoRows) return ["chat", "side-area"];
     const ids = ["chat"];
     if (diffOpen) ids.push("diff");
     if (officeOpen) ids.push("office");
     if (termOpen) ids.push("term");
     if (filesOpen) ids.push("files");
     return ids;
-  }, [diffOpen, officeOpen, termOpen, filesOpen]);
+  }, [hasTwoRows, diffOpen, officeOpen, termOpen, filesOpen]);
 
   // Per-topic layout id so each session remembers the exact widths the
   // user dragged for its own combination of panels. Falls back to a
@@ -800,11 +887,21 @@ export function App() {
     />
   ) : null;
 
+  const desktopRowProp = (kind: PanelKind): "top" | "bottom" | undefined =>
+    isNarrow ? undefined : rowOf(kind);
+  const desktopToggleProp = (kind: PanelKind): (() => void) | undefined =>
+    isNarrow || !activeId
+      ? undefined
+      : () =>
+          setPanelRow(activeId, kind, rowOf(kind) === "top" ? "bottom" : "top");
+
   const diffNode = activeSession ? (
     <DiffPanel
       windowId={activeSession.window_id}
       open={diffOpen}
       onClose={() => closePanel(setDiffOpenIds)}
+      row={desktopRowProp("diff")}
+      onToggleRow={desktopToggleProp("diff")}
       subscribeWs={subscribeWs}
     />
   ) : null;
@@ -816,6 +913,8 @@ export function App() {
       busy={busyIds.has(activeSession.window_id)}
       open={officeOpen}
       onClose={() => closePanel(setOfficeOpenIds)}
+      row={desktopRowProp("office")}
+      onToggleRow={desktopToggleProp("office")}
       subscribeWs={subscribeWs}
       showToast={showToast}
     />
@@ -826,6 +925,8 @@ export function App() {
       windowId={activeSession.window_id}
       open={termOpen}
       onClose={() => closePanel(setTermOpenIds)}
+      row={desktopRowProp("term")}
+      onToggleRow={desktopToggleProp("term")}
     />
   ) : null;
 
@@ -834,6 +935,8 @@ export function App() {
       windowId={activeSession.window_id}
       open={filesOpen}
       onClose={() => closePanel(setFilesOpenIds)}
+      row={desktopRowProp("files")}
+      onToggleRow={desktopToggleProp("files")}
     />
   ) : null;
 
@@ -889,73 +992,131 @@ export function App() {
           // Desktop: chat + open side panels share a horizontal
           // PanelGroup with draggable resize handles. Sizes persist via
           // localStorage (autoSaveId). Closed panels and their preceding
-          // handles are simply not rendered.
-          <PanelGroup
-            orientation="horizontal"
-            className="panel-group"
-            {...layoutProps}
-          >
-            <Panel
-              id="chat"
-              minSize={25}
-              defaultSize={50}
-              style={PANEL_COLUMN_STYLE}
-            >
-              {chatNode}
-            </Panel>
-            {diffOpen && (
-              <>
-                <PanelResizeHandle className="panel-resize-handle" />
+          // handles are simply not rendered. When the user has split the
+          // side panels into two rows, the side area collapses into one
+          // outer cell whose internal vertical split is persisted under
+          // its own autoSaveId.
+          (() => {
+            const sideNodes: Partial<Record<PanelKind, ReactElement | null>> = {
+              diff: diffNode,
+              office: officeNode,
+              term: termNode,
+              files: filesNode,
+            };
+            const sideMeta: Record<
+              PanelKind,
+              { minSize: number; defaultSize: number }
+            > = {
+              diff: { minSize: 12, defaultSize: 22 },
+              office: { minSize: 14, defaultSize: 26 },
+              term: { minSize: 15, defaultSize: 28 },
+              files: { minSize: 14, defaultSize: 24 },
+            };
+            const renderCell = (kind: PanelKind) => {
+              const node = sideNodes[kind];
+              if (!node) return null;
+              const meta = sideMeta[kind];
+              return (
                 <Panel
-                  id="diff"
-                  minSize={12}
-                  defaultSize={22}
+                  id={kind}
+                  key={kind}
+                  minSize={meta.minSize}
+                  defaultSize={meta.defaultSize}
                   style={PANEL_COLUMN_STYLE}
                 >
-                  {diffNode}
+                  {node}
                 </Panel>
-              </>
-            )}
-            {officeOpen && (
-              <>
-                <PanelResizeHandle className="panel-resize-handle" />
+              );
+            };
+            const renderRowGroup = (
+              kinds: PanelKind[],
+              autoSaveId: string,
+            ) => (
+              <PanelGroup
+                orientation="horizontal"
+                className="panel-group panel-row-group"
+                autoSave={autoSaveId}
+              >
+                {kinds.flatMap((kind, idx) =>
+                  idx === 0
+                    ? [renderCell(kind)]
+                    : [
+                        <PanelResizeHandle
+                          key={`sep-${kind}`}
+                          className="panel-resize-handle"
+                        />,
+                        renderCell(kind),
+                      ],
+                )}
+              </PanelGroup>
+            );
+
+            return (
+              <PanelGroup
+                orientation="horizontal"
+                className="panel-group"
+                {...layoutProps}
+              >
                 <Panel
-                  id="office"
-                  minSize={14}
-                  defaultSize={26}
+                  id="chat"
+                  minSize={25}
+                  defaultSize={50}
                   style={PANEL_COLUMN_STYLE}
                 >
-                  {officeNode}
+                  {chatNode}
                 </Panel>
-              </>
-            )}
-            {termOpen && (
-              <>
-                <PanelResizeHandle className="panel-resize-handle" />
-                <Panel
-                  id="term"
-                  minSize={15}
-                  defaultSize={28}
-                  style={PANEL_COLUMN_STYLE}
-                >
-                  {termNode}
-                </Panel>
-              </>
-            )}
-            {filesOpen && (
-              <>
-                <PanelResizeHandle className="panel-resize-handle" />
-                <Panel
-                  id="files"
-                  minSize={14}
-                  defaultSize={24}
-                  style={PANEL_COLUMN_STYLE}
-                >
-                  {filesNode}
-                </Panel>
-              </>
-            )}
-          </PanelGroup>
+                {hasTwoRows ? (
+                  <>
+                    <PanelResizeHandle className="panel-resize-handle" />
+                    <Panel
+                      id="side-area"
+                      minSize={20}
+                      defaultSize={50}
+                      style={PANEL_COLUMN_STYLE}
+                    >
+                      <PanelGroup
+                        orientation="vertical"
+                        className="panel-group panel-rows-stack"
+                        autoSave={`codexbot-panels-rows:${activeId}`}
+                      >
+                        <Panel
+                          id="row-top"
+                          minSize={15}
+                          defaultSize={50}
+                          style={PANEL_COLUMN_STYLE}
+                        >
+                          {renderRowGroup(
+                            openPanelsByRow.top,
+                            `codexbot-panels-top:${activeId}`,
+                          )}
+                        </Panel>
+                        <PanelResizeHandle className="panel-resize-handle vertical" />
+                        <Panel
+                          id="row-bottom"
+                          minSize={15}
+                          defaultSize={50}
+                          style={PANEL_COLUMN_STYLE}
+                        >
+                          {renderRowGroup(
+                            openPanelsByRow.bottom,
+                            `codexbot-panels-bottom:${activeId}`,
+                          )}
+                        </Panel>
+                      </PanelGroup>
+                    </Panel>
+                  </>
+                ) : (
+                  openPanelsByRow.top.flatMap((kind) => [
+                    <PanelResizeHandle
+                      key={`sep-${kind}`}
+                      className="panel-resize-handle"
+                    />,
+                    renderCell(kind),
+                  ])
+                )}
+              </PanelGroup>
+            );
+          })()
         )
       ) : (
         <main className="chat-area">

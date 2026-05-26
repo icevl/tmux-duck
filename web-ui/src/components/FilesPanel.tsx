@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronRight,
   File as FileIcon,
@@ -32,6 +34,8 @@ interface Props {
   windowId: string;
   open: boolean;
   onClose: () => void;
+  row?: "top" | "bottom";
+  onToggleRow?: () => void;
 }
 
 interface DirEntry {
@@ -170,7 +174,13 @@ function highlight(haystack: string, needle: string) {
   return out;
 }
 
-export function FilesPanel({ windowId, open, onClose }: Props) {
+export function FilesPanel({
+  windowId,
+  open,
+  onClose,
+  row,
+  onToggleRow,
+}: Props) {
   // Per-window tree cache so switching back to a session reuses fetched dirs.
   const treeRef = useRef<Map<string, Tree>>(new Map());
   const getTree = useCallback((): Tree => {
@@ -363,6 +373,23 @@ export function FilesPanel({ windowId, open, onClose }: Props) {
         <div className="files-panel-title">
           <span>Files</span>
         </div>
+        {onToggleRow && (
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onToggleRow}
+            title={row === "bottom" ? "Move to top row" : "Move to bottom row"}
+            aria-label={
+              row === "bottom" ? "Move to top row" : "Move to bottom row"
+            }
+          >
+            {row === "bottom" ? (
+              <ArrowUp size={ICON} />
+            ) : (
+              <ArrowDown size={ICON} />
+            )}
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"
