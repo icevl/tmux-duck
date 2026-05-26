@@ -768,6 +768,37 @@ def create_app(
                     "last_activity": last_activity,
                     "pinned": bool(ws.pinned),
                     "sort_order": ws.sort_order,
+                    "dormant": False,
+                }
+            )
+        # Dormant entries (preserved across reboot) ride along in the same list
+        # so the sidebar can show them with a "sleeping" affordance and the
+        # client can hit /resume to spawn the underlying tmux window on demand.
+        for dormant_key, ws in session_manager.window_states.items():
+            if not session_manager.is_dormant_key(dormant_key):
+                continue
+            runtime_name = ws.runtime or "codex"
+            display_name = (
+                session_manager.get_display_name(dormant_key) or ws.window_name or ""
+            )
+            last_activity = (
+                session_manager._session_mtime_index.get(ws.session_id)
+                if ws.session_id
+                else None
+            )
+            result.append(
+                {
+                    "window_id": dormant_key,
+                    "name": display_name,
+                    "tmux_name": ws.window_name or "",
+                    "cwd": ws.cwd or "",
+                    "runtime": runtime_name,
+                    "session_id": ws.session_id or None,
+                    "pane_command": None,
+                    "last_activity": last_activity,
+                    "pinned": bool(ws.pinned),
+                    "sort_order": ws.sort_order,
+                    "dormant": True,
                 }
             )
         # Pinned sessions float to the top; manual order wins inside each
@@ -855,6 +886,17 @@ def create_app(
     async def kill_session(
         window_id: str, _user: str = Depends(require_auth)
     ) -> dict[str, Any]:
+        # Dormant entries have no live tmux window — just drop the saved
+        # state and skip the kill-window step.
+        if session_manager.is_dormant_key(window_id):
+            if window_id not in session_manager.window_states:
+                raise HTTPException(404, detail="dormant session not found")
+            session_manager.window_states.pop(window_id, None)
+            session_manager.window_display_names.pop(window_id, None)
+            session_manager._save_state()
+            await bus.publish_sessions_changed()
+            return {"ok": True}
+
         ok = await tmux_manager.kill_window(window_id)
         if not ok:
             raise HTTPException(404, detail="window not found")
@@ -878,6 +920,65 @@ def create_app(
                 logger.exception("search stale-source refresh failed")
         await bus.publish_sessions_changed()
         return {"ok": True}
+
+    @app.post("/api/sessions/{window_id}/resume")
+    async def resume_dormant_session(
+        window_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        """Spawn a tmux window for a dormant (post-reboot) session.
+
+        Restores the saved cwd/runtime/session_id by creating a new tmux
+        window with the appropriate `--resume <session_id>` invocation,
+        then rebinds the stored WindowState onto the new live window_id so
+        the rest of the session machinery (history, transcript, search) just
+        sees a normal window.
+        """
+        if not session_manager.is_dormant_key(window_id):
+            raise HTTPException(400, detail="session is not dormant")
+        ws = session_manager.window_states.get(window_id)
+        if ws is None:
+            raise HTTPException(404, detail="dormant session not found")
+        if not ws.session_id or not ws.cwd:
+            raise HTTPException(
+                409,
+                detail="dormant session is missing session_id or cwd; cannot resume",
+            )
+        runtime = get_runtime(ws.runtime or "codex")
+        path = Path(ws.cwd).expanduser()
+        if not path.exists() or not path.is_dir():
+            raise HTTPException(400, detail=f"session cwd no longer exists: {ws.cwd}")
+
+        success, message, wname, new_wid = await tmux_manager.create_window(
+            str(path),
+            window_name=ws.window_name or None,
+            resume_session_id=ws.session_id,
+            runtime=runtime,
+        )
+        if not success:
+            raise HTTPException(400, detail=message)
+
+        # Carry the saved state over to the freshly-created window_id. The
+        # tmux side might already have stamped a fresh empty WindowState
+        # under the new id (created when get_window_state was called during
+        # create_window) — drop it before rebinding so the resumed entry's
+        # pinned/sort_order/display_name win.
+        session_manager.window_states.pop(new_wid, None)
+        ok = session_manager.rebind_dormant_to_live(window_id, new_wid)
+        if not ok:
+            raise HTTPException(500, detail="failed to rebind dormant state")
+        if wname:
+            session_manager.window_states[new_wid].window_name = wname
+        session_manager._save_state()
+
+        await bus.publish_sessions_changed()
+        return {
+            "ok": True,
+            "window_id": new_wid,
+            "name": session_manager.get_display_name(new_wid) or wname or new_wid,
+            "runtime": runtime.name,
+            "cwd": str(path),
+            "session_id": ws.session_id,
+        }
 
     @app.patch("/api/sessions/order")
     async def reorder_sessions(

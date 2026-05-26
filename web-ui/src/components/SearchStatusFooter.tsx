@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronUp, Copy, Loader2, Trash2 } from "lucide-react";
+import { ChevronUp, Loader2, Trash2 } from "lucide-react";
 import { api, SearchStatusResponse } from "../api";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -139,60 +139,6 @@ function formatDuration(seconds: number | null | undefined): string {
   return `${Math.floor(seconds / 86400)}d`;
 }
 
-function shouldShowRecovery(status: SearchStatusResponse | null): boolean {
-  // Maintenance commands are noise during healthy operation. Surface them
-  // only when the user actually has something to fix.
-  if (!status) return false;
-  // Supervisor is deliberately holding back. Nothing to recover — wait
-  // for the workload to settle.
-  if (status.deferred) return false;
-  if (status.state === "unavailable") return true;
-  if (status.state === "missing") return true;
-  if (status.state === "degraded") return true;
-  if (status.state === "stale") return true;
-  const ops = status.operations;
-  if (ops) {
-    if (ops.worker.status === "failed") return true;
-    if (ops.worker.stale) return true;
-    if (ops.recent_errors.length > 0) return true;
-    if (ops.queue.failed_items > 0) return true;
-  }
-  return false;
-}
-
-function RecoveryCommandItem({
-  item,
-}: {
-  item: { label: string; command: string; description: string | null };
-}) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    void navigator.clipboard.writeText(item.command).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    });
-  };
-  return (
-    <div className="recovery-command">
-      <div className="recovery-command-head">
-        <strong>{item.label}</strong>
-        <button
-          type="button"
-          className="recovery-command-copy"
-          onClick={copy}
-          title="Copy command"
-          aria-label="Copy command"
-        >
-          <Copy size={11} />
-          {copied ? "copied" : "copy"}
-        </button>
-      </div>
-      {item.description && <small>{item.description}</small>}
-      <code>{item.command}</code>
-    </div>
-  );
-}
-
 export function SearchStatusFooter({ status }: Props) {
   const [open, setOpen] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
@@ -200,7 +146,6 @@ export function SearchStatusFooter({ status }: Props) {
   const [wipeError, setWipeError] = useState<string | null>(null);
   const line = statusLine(status);
   const operations = status?.operations ?? null;
-  const showRecovery = shouldShowRecovery(status);
   const detailsId = "search-status-footer-details";
 
   const runWipe = async () => {
@@ -284,18 +229,6 @@ export function SearchStatusFooter({ status }: Props) {
                   <span>Recent errors</span>
                   {operations.recent_errors.map((message) => (
                     <small key={message}>{message}</small>
-                  ))}
-                </div>
-              )}
-              {showRecovery && operations.recovery_commands.length > 0 && (
-                <div className="search-detail-row vertical recovery-block">
-                  <span>Manual operations</span>
-                  <small>
-                    Run these in the Codi project shell when search looks
-                    stuck or out of date.
-                  </small>
-                  {operations.recovery_commands.map((item) => (
-                    <RecoveryCommandItem key={item.command} item={item} />
                   ))}
                 </div>
               )}

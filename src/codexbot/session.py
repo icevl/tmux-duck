@@ -252,6 +252,16 @@ class SessionManager:
     def _is_window_id(self, key: str) -> bool:
         return key.startswith("@") and len(key) > 1 and key[1:].isdigit()
 
+    @staticmethod
+    def is_dormant_key(key: str) -> bool:
+        """Return True for `window_states` keys that represent a dormant
+        (post-reboot, resumable) session rather than a live tmux window."""
+        return key.startswith("dormant:")
+
+    @staticmethod
+    def dormant_key_for_session(session_id: str) -> str:
+        return f"dormant:{session_id}"
+
     def _load_state(self) -> None:
         if not config.state_file.exists():
             return
@@ -301,6 +311,11 @@ class SessionManager:
 
         new_window_states: dict[str, WindowState] = {}
         for key, ws in self.window_states.items():
+            # Existing dormant entries (saved from a previous startup) survive
+            # untouched until the user explicitly resumes them.
+            if self.is_dormant_key(key):
+                new_window_states[key] = ws
+                continue
             if self._is_window_id(key):
                 if key in live_ids:
                     new_window_states[key] = ws
@@ -313,8 +328,19 @@ class SessionManager:
                     self.window_display_names[resolved] = display
                     self.window_display_names.pop(key, None)
                     changed = True
-                else:
-                    changed = True
+                    continue
+                # No live tmux window and no name-match. Persist as dormant if
+                # we have enough to resume (session_id + cwd); otherwise drop.
+                # Lazy resume: the entry stays visible in the sidebar, history
+                # loads from the transcript on disk, and a real tmux window is
+                # spawned only when the user opens it.
+                if ws.session_id and ws.cwd:
+                    dormant_key = self.dormant_key_for_session(ws.session_id)
+                    new_window_states[dormant_key] = ws
+                    display = self.window_display_names.pop(key, None)
+                    if display:
+                        self.window_display_names[dormant_key] = display
+                changed = True
                 continue
 
             # old format: key was window name
@@ -910,6 +936,28 @@ class SessionManager:
         if window_id not in self.window_states:
             self.window_states[window_id] = WindowState()
         return self.window_states[window_id]
+
+    def rebind_dormant_to_live(self, dormant_key: str, live_window_id: str) -> bool:
+        """Move a dormant window_state entry to a freshly-created tmux window.
+
+        Called from the resume endpoint after tmux spawns a new window for a
+        previously-dormant session. Carries over the saved session_id, cwd,
+        runtime, display name, pinned/sort_order so the lazy-resumed session
+        looks identical to its pre-reboot incarnation.
+        """
+        if not self.is_dormant_key(dormant_key):
+            return False
+        ws = self.window_states.pop(dormant_key, None)
+        if ws is None:
+            return False
+        # The freshly-created live key may have been auto-populated by
+        # tmux_manager.create_window flow; prefer the dormant payload.
+        self.window_states[live_window_id] = ws
+        display = self.window_display_names.pop(dormant_key, None)
+        if display:
+            self.window_display_names[live_window_id] = display
+        self._save_state()
+        return True
 
     def clear_window_session(self, window_id: str) -> None:
         self.mark_window_for_new_session(window_id, clear_existing=True)

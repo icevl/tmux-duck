@@ -1144,6 +1144,18 @@ button.burger {
   border-left-color: var(--accent);
 }
 
+.session-item.dormant {
+  opacity: 0.66;
+}
+
+.session-item.dormant .session-name {
+  font-style: italic;
+}
+
+.session-item.dormant:hover {
+  opacity: 1;
+}
+
 .session-row {
   display: flex;
   align-items: center;

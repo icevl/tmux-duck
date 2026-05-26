@@ -10,10 +10,20 @@ export interface SessionSummary {
   cwd: string;
   runtime: "codex" | "claude" | string;
   session_id: string | null;
-  pane_command: string;
+  pane_command: string | null;
   last_activity: number | null;
   pinned: boolean;
   sort_order: number | null;
+  dormant?: boolean;
+}
+
+export interface ResumeDormantResponse {
+  ok: boolean;
+  window_id: string;
+  name: string;
+  runtime: string;
+  cwd: string;
+  session_id: string;
 }
 
 export interface SessionMessage {
@@ -392,6 +402,11 @@ export const api = {
   wipeSearchIndex: () =>
     request<{ ok: boolean; killed_pids: number[]; removed: string[] }>(
       "/api/search/wipe",
+      { method: "POST" },
+    ),
+  resumeDormantSession: (windowId: string) =>
+    request<ResumeDormantResponse>(
+      `/api/sessions/${encodeURIComponent(windowId)}/resume`,
       { method: "POST" },
     ),
   createSession: (body: {
