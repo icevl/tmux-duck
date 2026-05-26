@@ -8,15 +8,6 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-# Batch size for incremental embedding. Each batch on CPU takes roughly
-# (size / cores) × per-doc-latency seconds, so we keep it small enough
-# that the UI ticks at least every ~30s on a 4-core machine. Set
-# CODEXBOT_SEARCH_BATCH_SIZE separately for the sentence-transformers
-# internal batch (the value here is the *callback* granularity).
-EMBED_PROGRESS_BATCH_SIZE = 16
-
-ProgressCallback = Callable[[int, int], None]
-
 from .contracts import (
     SearchBackfillDocument,
     SearchIndexMetadata,
@@ -32,6 +23,15 @@ from .state import (
     read_index_metadata,
     write_index_metadata,
 )
+
+# Batch size for incremental embedding. Each batch on CPU takes roughly
+# (size / cores) × per-doc-latency seconds, so we keep it small enough
+# that the UI ticks at least every ~30s on a 4-core machine. Set
+# CODEXBOT_SEARCH_BATCH_SIZE separately for the sentence-transformers
+# internal batch (the value here is the *callback* granularity).
+EMBED_PROGRESS_BATCH_SIZE = 16
+
+ProgressCallback = Callable[[int, int], None]
 
 DEFAULT_TABLE_NAME = "chunks"
 

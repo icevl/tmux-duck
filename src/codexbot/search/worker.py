@@ -32,12 +32,22 @@ from .index import (
     row_id_for_identity,
     upsert_index_documents,
 )
-from .live import read_generation_documents
+from .live import read_generation_documents, upsert_generation_documents
+from .queue import (
+    complete_items,
+    fail_items,
+    lease_ready_items,
+    ready_item_count,
+    record_queue_error,
+    sanitize_error,
+)
 from .state import (
-    generation_dir,
+    activate_generation,
     generations_dir,
     read_generation_manifest,
+    read_generation_metadata,
     search_dir,
+    write_worker_status,
 )
 
 PAUSE_POLL_SLEEP_SECONDS = 1.0
@@ -84,16 +94,7 @@ def _purge_other_generations(keep_generation_id: str) -> None:
             logger.info("purged orphan search generation %s", entry.name)
         except OSError as exc:
             logger.warning("could not purge %s: %s", entry, exc)
-from .live import upsert_generation_documents
-from .queue import (
-    complete_items,
-    fail_items,
-    lease_ready_items,
-    ready_item_count,
-    record_queue_error,
-    sanitize_error,
-)
-from .state import activate_generation, read_generation_metadata, write_worker_status
+
 
 logger = logging.getLogger(__name__)
 LIVE_BATCH_SIZE = 32

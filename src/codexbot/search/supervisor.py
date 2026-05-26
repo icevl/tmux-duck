@@ -7,14 +7,10 @@ import logging
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from .idle_detector import IdleTracker, is_workload_idle
 from .state import read_generation_metadata, read_worker_status, search_dir
 from .worker import drain_live_queue_once
-
-if TYPE_CHECKING:
-    from ..session_monitor import SessionMonitor
 
 logger = logging.getLogger(__name__)
 
