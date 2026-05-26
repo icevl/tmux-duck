@@ -389,6 +389,11 @@ export const api = {
       method: "POST",
       json: searchRequest,
     }),
+  wipeSearchIndex: () =>
+    request<{ ok: boolean; killed_pids: number[]; removed: string[] }>(
+      "/api/search/wipe",
+      { method: "POST" },
+    ),
   createSession: (body: {
     cwd: string;
     runtime: string;

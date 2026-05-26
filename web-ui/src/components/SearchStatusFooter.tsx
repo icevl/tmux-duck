@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ChevronUp, Copy, Loader2 } from "lucide-react";
-import { SearchStatusResponse } from "../api";
+import { ChevronUp, Copy, Loader2, Trash2 } from "lucide-react";
+import { api, SearchStatusResponse } from "../api";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface Props {
   status: SearchStatusResponse | null;
@@ -194,10 +195,26 @@ function RecoveryCommandItem({
 
 export function SearchStatusFooter({ status }: Props) {
   const [open, setOpen] = useState(false);
+  const [confirmWipe, setConfirmWipe] = useState(false);
+  const [wiping, setWiping] = useState(false);
+  const [wipeError, setWipeError] = useState<string | null>(null);
   const line = statusLine(status);
   const operations = status?.operations ?? null;
   const showRecovery = shouldShowRecovery(status);
   const detailsId = "search-status-footer-details";
+
+  const runWipe = async () => {
+    setWiping(true);
+    setWipeError(null);
+    try {
+      await api.wipeSearchIndex();
+      setConfirmWipe(false);
+    } catch (err) {
+      setWipeError(err instanceof Error ? err.message : "wipe failed");
+    } finally {
+      setWiping(false);
+    }
+  };
 
   return (
     <div className={`search-status-footer${open ? " open" : ""}`}>
@@ -282,6 +299,28 @@ export function SearchStatusFooter({ status }: Props) {
                   ))}
                 </div>
               )}
+              <div className="search-detail-row vertical recovery-block">
+                <span>Reset</span>
+                <small>
+                  Stops the worker, drops the local queue and embeddings,
+                  and triggers a fresh backfill from currently open sessions.
+                </small>
+                <button
+                  type="button"
+                  className="search-wipe-button"
+                  onClick={() => {
+                    setWipeError(null);
+                    setConfirmWipe(true);
+                  }}
+                  disabled={wiping}
+                >
+                  <Trash2 size={12} />
+                  {wiping ? "Wiping…" : "Wipe index"}
+                </button>
+                {wipeError && (
+                  <small className="search-wipe-error">{wipeError}</small>
+                )}
+              </div>
             </>
           ) : (
             <div className="search-detail-row vertical">
@@ -319,6 +358,18 @@ export function SearchStatusFooter({ status }: Props) {
           aria-hidden="true"
         />
       </button>
+      {confirmWipe && (
+        <ConfirmDialog
+          title="Wipe search index?"
+          body="This terminates the indexing worker, removes the local queue and embeddings, and starts a fresh backfill from the currently open sessions. Existing transcripts on disk are not touched."
+          confirmLabel={wiping ? "Wiping…" : "Wipe index"}
+          danger
+          onConfirm={runWipe}
+          onCancel={() => {
+            if (!wiping) setConfirmWipe(false);
+          }}
+        />
+      )}
     </div>
   );
 }
