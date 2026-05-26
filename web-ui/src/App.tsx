@@ -747,14 +747,9 @@ export function App() {
 
   if (auth === "loading") {
     return (
-      <div className="login-shell">
-        <div className="login-card">
-          <div className="login-brand">
-            <DuckLogo width={64} height={64} />
-            <h1>TmuxDuck</h1>
-          </div>
-          <p className="subtitle">Loading…</p>
-        </div>
+      <div className="boot-splash">
+        <DuckLogo width={72} height={72} />
+        <h1>TmuxDuck</h1>
       </div>
     );
   }
