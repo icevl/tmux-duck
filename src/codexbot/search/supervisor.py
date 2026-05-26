@@ -141,9 +141,7 @@ async def pause_controller_loop(idle_tracker: IdleTracker | None = None) -> None
                 _clear_pause()
                 await start_worker_if_needed(idle_tracker)
             else:
-                _set_pause(
-                    "agent or build process active in a tmux pane"
-                )
+                _set_pause("agent or build process active in a tmux pane")
         except asyncio.CancelledError:
             _clear_pause()
             raise
