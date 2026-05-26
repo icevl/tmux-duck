@@ -4,10 +4,9 @@ import {
   ChevronDown,
   ChevronRight,
   Filter,
-  Folder,
-  FolderOpen,
   Loader2,
   Pin,
+  TerminalSquare,
   X,
 } from "lucide-react";
 import {
@@ -516,11 +515,7 @@ export function SessionSearch({
                         )}
                       </span>
                       <span className="tree-icon" aria-hidden="true">
-                        {expanded ? (
-                          <FolderOpen size={14} />
-                        ) : (
-                          <Folder size={14} />
-                        )}
+                        <TerminalSquare size={14} />
                       </span>
                       <span className="tree-label">{title}</span>
                       <span className="tree-count">{result.hit_count}</span>
