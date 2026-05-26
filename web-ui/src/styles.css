@@ -1103,6 +1103,53 @@ button.burger {
   text-align: center;
 }
 
+.session-list-skeleton {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.session-skeleton-row {
+  padding: 10px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-left: 3px solid transparent;
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-2) 0%,
+    var(--bg-3) 50%,
+    var(--bg-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-line-name {
+  width: 60%;
+  height: 12px;
+}
+
+.skeleton-line-meta {
+  width: 40%;
+  height: 9px;
+  opacity: 0.7;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 .session-item {
   padding: 10px 16px;
   border-left: 3px solid transparent;

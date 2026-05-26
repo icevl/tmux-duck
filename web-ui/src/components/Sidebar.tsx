@@ -286,9 +286,17 @@ export function Sidebar({
           sessionsLoaded ? (
             <div className="session-list-empty">No sessions yet.</div>
           ) : (
-            <div className="session-list-empty session-list-loading">
-              <div className="empty-state-spinner small" />
-              <span>Loading…</span>
+            <div
+              className="session-list-skeleton"
+              role="status"
+              aria-label="Loading sessions"
+            >
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div className="session-skeleton-row" key={i}>
+                  <div className="skeleton-line skeleton-line-name" />
+                  <div className="skeleton-line skeleton-line-meta" />
+                </div>
+              ))}
             </div>
           )
         ) : (
