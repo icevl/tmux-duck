@@ -90,6 +90,18 @@ def _counters(
     values = existing.model_dump() if existing is not None else {}
     if open_session_count is not None:
         values["open_sessions"] = open_session_count
+    # `indexed_sessions` in the manifest is frozen at backfill time. Subtract
+    # the live stale-source count so deleting a session in the UI immediately
+    # drops the footer counter instead of showing phantom indexed sessions.
+    indexed = int(values.get("indexed_sessions", 0))
+    if indexed:
+        try:
+            from .queue import list_stale_sources
+
+            stale = len(list_stale_sources())
+        except Exception:  # noqa: BLE001
+            stale = 0
+        values["indexed_sessions"] = max(0, indexed - stale)
     if queue_snapshot is not None and has_queue_values:
         existing_failed = int(values.get("failed_items", 0))
         values["queued_items"] = (
