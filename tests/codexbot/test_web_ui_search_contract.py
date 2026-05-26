@@ -36,17 +36,17 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
     assert "const DEFAULT_LIMIT = 10" in search_source
     assert "const DEFAULT_HITS_PER_SESSION = 3" in search_source
     assert "window.setTimeout" in search_source
-    assert "window.setInterval(load, 10000)" in search_source
     assert "setDebouncedQuery(trimmedQuery)" in search_source
-    assert "api.getSearchStatus()" in search_source
     assert ".searchSessions({" in search_source
     assert "limit: DEFAULT_LIMIT" in search_source
     assert "hits_per_session: DEFAULT_HITS_PER_SESSION" in search_source
     assert "api.getMessages" not in search_source
 
+    # Status polling/footer copy moved to Sidebar + SearchStatusFooter; only
+    # the inline state-panel copy that SessionSearch still renders is asserted
+    # here.
     for copy in [
         "Search open sessions",
-        "Open sessions only",
         "Searching...",
         "No matches",
         "Try different terms or filters.",
@@ -54,14 +54,6 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
         "Results may be incomplete.",
         "Degraded",
         "Semantic search is not ready. Showing lexical results.",
-        "Show details",
-        "Hide details",
-        "Search status details",
-        "Worker heartbeat",
-        "Queue lag",
-        "Backfill",
-        "Recent errors",
-        "Local recovery",
         "Search unavailable",
         "Keep working and try again after indexing recovers.",
     ]:
@@ -167,9 +159,12 @@ def test_app_and_chatview_search_hit_navigation_contract() -> None:
 def test_search_mobile_styles_and_highlight_contract() -> None:
     styles = _read("web-ui/src/styles.css")
 
+    # `.search-details-toggle` was replaced by the bottom `.search-status-footer`
+    # widget, which lives in SearchStatusFooter rather than inside the search
+    # results panel. The remaining selectors are still load-bearing.
     for selector in [
         ".session-search",
-        ".search-details-toggle",
+        ".search-status-footer",
         ".search-status-details",
         ".search-detail-row",
         ".search-result-hit",
@@ -185,7 +180,6 @@ def test_search_mobile_styles_and_highlight_contract() -> None:
     assert ".session-search" in mobile
     assert ".session-search-input-wrap input" in mobile
     assert "font-size: 16px" in mobile
-    assert ".search-details-toggle" in mobile
     assert ".search-status-details" in mobile
     assert ".search-filter-row" in mobile
     assert ".search-results" in mobile
