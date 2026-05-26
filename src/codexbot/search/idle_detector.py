@@ -39,7 +39,12 @@ logger = logging.getLogger(__name__)
 # How long the workload must look quiet (no agent activity, no heavy
 # process, no recent message) before we consider it OK to start a fresh
 # backfill or resume a paused one.
-IDLE_TIMEOUT_SECONDS = 120.0
+IDLE_TIMEOUT_SECONDS = 30.0
+# Was 120s — too aggressive for chat-heavy workflows. With one
+# user/agent message per minute (typical conversation pace) the tracker
+# never aged out, so the supervisor kept the pause flag set indefinitely
+# and the live queue accumulated for hours. 30s is enough for the agent
+# to finish a response burst without competing with merge_insert.
 
 # Commands that are obviously a build, test, or other resource-heavy
 # workload. When tmux reports any of these as the foreground process in
