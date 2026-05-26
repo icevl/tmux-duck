@@ -1181,7 +1181,9 @@ button.burger {
 }
 
 .messages-skeleton-row.right .skeleton-bubble {
-  background: var(--bubble-user);
+  /* `.bubble.user` overrides the purple `--bubble-user` token with a
+     yellow tint; mirror it here so the skeleton previews the real palette. */
+  background: rgba(246, 185, 4, 0.1);
 }
 
 .skeleton-line-bubble {
