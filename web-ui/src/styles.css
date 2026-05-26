@@ -412,7 +412,6 @@ button.burger {
 }
 
 .session-search {
-  border-bottom: 1px solid var(--border);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
