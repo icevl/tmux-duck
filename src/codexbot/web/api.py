@@ -867,6 +867,15 @@ def create_app(
         session_manager._save_state()
         if config.search_enabled:
             await asyncio.to_thread(_drop_search_artifacts_for_window, window_id)
+            # Refresh stale-source bookkeeping so lexical search stops returning
+            # hits from the just-killed window and the status counter reflects
+            # the new indexed_sessions total in the next /search/status call.
+            try:
+                from ..search.live import refresh_stale_sources
+
+                await refresh_stale_sources()
+            except Exception:  # noqa: BLE001
+                logger.exception("search stale-source refresh failed")
         await bus.publish_sessions_changed()
         return {"ok": True}
 
