@@ -337,6 +337,17 @@ a {
   background: var(--accent);
 }
 
+/* Vertical splitter between top/bottom rows: same look, rotated cursor. */
+.panel-resize-handle.vertical {
+  flex: 0 0 12px;
+  cursor: row-resize;
+}
+
+.panel-resize-handle.vertical::after {
+  inset: 5px 0;
+}
+
+
 .sidebar {
   width: 280px;
   flex: 0 0 280px;

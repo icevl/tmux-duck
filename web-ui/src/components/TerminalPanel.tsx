@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Keyboard, Terminal as TerminalIcon, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Keyboard,
+  Terminal as TerminalIcon,
+  X,
+} from "lucide-react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -12,6 +18,8 @@ interface Props {
   windowId: string;
   open: boolean;
   onClose: () => void;
+  row?: "top" | "bottom";
+  onToggleRow?: () => void;
 }
 
 const FONT_FAMILY =
@@ -102,7 +110,13 @@ function writeStoredControlsOpen(open: boolean): void {
   }
 }
 
-export function TerminalPanel({ windowId, open, onClose }: Props) {
+export function TerminalPanel({
+  windowId,
+  open,
+  onClose,
+  row,
+  onToggleRow,
+}: Props) {
   const [modeState, setModeState] = useState<{
     windowId: string;
     mode: TermMode;
@@ -338,6 +352,23 @@ export function TerminalPanel({ windowId, open, onClose }: Props) {
             ? "retry"
             : "off"}
         </span>
+        {onToggleRow && (
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onToggleRow}
+            title={row === "bottom" ? "Move to top row" : "Move to bottom row"}
+            aria-label={
+              row === "bottom" ? "Move to top row" : "Move to bottom row"
+            }
+          >
+            {row === "bottom" ? (
+              <ArrowUp size={ICON} />
+            ) : (
+              <ArrowDown size={ICON} />
+            )}
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"
