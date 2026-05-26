@@ -6,6 +6,7 @@ import {
   GripVertical,
   Loader2,
   LogOut,
+  Moon,
   MoreVertical,
   Pencil,
   Pin,
@@ -301,9 +302,11 @@ export function Sidebar({
                 className={`session-item${
                   s.window_id === activeId ? " active" : ""
                 }${s.pinned ? " pinned" : ""}${
+                  s.dormant ? " dormant" : ""
+                }${
                   draggingId === s.window_id ? " dragging" : ""
                 }${dragOverId === s.window_id ? " drag-over" : ""}`}
-                draggable
+                draggable={!s.dormant}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";
                   e.dataTransfer.setData("text/plain", s.window_id);
@@ -339,15 +342,26 @@ export function Sidebar({
                   setDraggingId(null);
                   setDragOverId(null);
                 }}
-                onClick={() => onSelect(s.window_id)}
+                onClick={async () => {
+                  if (s.dormant) {
+                    try {
+                      const res = await api.resumeDormantSession(s.window_id);
+                      onSelect(res.window_id);
+                    } catch (err) {
+                      console.error("resume dormant session failed:", err);
+                    }
+                    return;
+                  }
+                  onSelect(s.window_id);
+                }}
               >
                 <div className="session-row">
                   <span
                     className="session-drag-handle"
-                    title="Drag to reorder"
+                    title={s.dormant ? "Dormant — click to resume" : "Drag to reorder"}
                     aria-hidden="true"
                   >
-                    <GripVertical size={14} />
+                    {s.dormant ? <Moon size={14} /> : <GripVertical size={14} />}
                   </span>
                   <div className="session-text">
                     <div className="session-name">
