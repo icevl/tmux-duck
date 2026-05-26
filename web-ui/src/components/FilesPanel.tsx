@@ -4,13 +4,16 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
   File as FileIcon,
   Folder,
   FolderOpen,
+  RefreshCw,
   Search,
   X,
 } from "lucide-react";
 import { api } from "../api";
+import { CodeViewer } from "./CodeViewer";
 import { Markdown } from "./Markdown";
 
 const ICON = 16;
@@ -209,6 +212,10 @@ export function FilesPanel({
 
   const [selected, setSelected] = useState<FileView | null>(null);
   const [selectedLoading, setSelectedLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // For markdown files we default to rendered preview; toggle flips to raw.
   // Reset per file so opening a new file shows its native default.
@@ -322,9 +329,12 @@ export function FilesPanel({
       setSelectedLoading(true);
       setError(null);
       setMarkdownPreview(true);
+      setEditMode(false);
+      setSaveError(null);
       try {
         const res = await api.getSessionFileContent(windowId, entry.path);
         setSelected(res);
+        setEditValue(res.content);
       } catch (err) {
         setError((err as Error).message);
         setSelected(null);
@@ -334,6 +344,45 @@ export function FilesPanel({
     },
     [windowId],
   );
+
+  const startEdit = useCallback(() => {
+    if (!selected || selected.binary || selected.truncated) return;
+    setEditValue(selected.content);
+    setEditMode(true);
+    setSaveError(null);
+  }, [selected]);
+
+  const cancelEdit = useCallback(() => {
+    if (selected) setEditValue(selected.content);
+    setEditMode(false);
+    setSaveError(null);
+  }, [selected]);
+
+  const saveEdit = useCallback(async () => {
+    if (!selected) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await api.saveSessionFileContent(
+        windowId,
+        selected.path,
+        editValue,
+      );
+      setSelected({
+        ...selected,
+        content: editValue,
+        size: res.size,
+      });
+      setEditMode(false);
+    } catch (err) {
+      setSaveError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }, [editValue, selected, windowId]);
+
+  const isDirty =
+    selected !== null && editMode && editValue !== selected.content;
 
   // Clicking a directory in search results: clear the search, expand the
   // dir and all its ancestors so the user lands on it in tree view, and
@@ -357,6 +406,23 @@ export function FilesPanel({
     },
     [fetchDir, getTree],
   );
+
+  // Drop the cached tree and refetch the root + every dir the user has
+  // expanded so the panel reflects whatever the agent (or anything else)
+  // wrote to disk since the last load.
+  const refreshTree = useCallback(() => {
+    const tree = getTree();
+    const pathsToReload = ["", ...Array.from(expanded)];
+    tree.clear();
+    bump();
+    for (const path of pathsToReload) {
+      void fetchDir(path);
+    }
+  }, [bump, expanded, fetchDir, getTree]);
+
+  const collapseAll = useCallback(() => {
+    setExpanded(new Set());
+  }, []);
 
   const root = getTree().get("");
   const tree = getTree();
@@ -417,7 +483,8 @@ export function FilesPanel({
             </span>
             {isMarkdownPath(selected.path) &&
               !selected.binary &&
-              !selected.truncated && (
+              !selected.truncated &&
+              !editMode && (
                 <div
                   className="files-viewer-mode"
                   role="group"
@@ -440,7 +507,48 @@ export function FilesPanel({
                 </div>
               )}
             <span className="files-viewer-size">{formatSize(selected.size)}</span>
+            {!selected.binary && !selected.truncated && !editMode && (
+              <button
+                type="button"
+                className="files-viewer-edit"
+                onClick={startEdit}
+                title="Edit file"
+                aria-label="Edit file"
+              >
+                Edit
+              </button>
+            )}
+            {editMode && (
+              <>
+                <button
+                  type="button"
+                  className="files-viewer-edit"
+                  onClick={cancelEdit}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="files-viewer-save"
+                  onClick={saveEdit}
+                  disabled={!isDirty || saving}
+                  title={
+                    saving
+                      ? "Saving…"
+                      : isDirty
+                      ? "Save changes (Ctrl/Cmd+S)"
+                      : "No changes"
+                  }
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+              </>
+            )}
           </div>
+          {saveError && (
+            <div className="files-viewer-save-error">{saveError}</div>
+          )}
           <div className="files-viewer-body">
             {selectedLoading ? (
               <div className="files-viewer-empty">Loading…</div>
@@ -450,39 +558,69 @@ export function FilesPanel({
               <div className="files-viewer-empty">
                 File is larger than 1 MB — preview disabled.
               </div>
-            ) : isMarkdownPath(selected.path) && markdownPreview ? (
+            ) : isMarkdownPath(selected.path) &&
+              markdownPreview &&
+              !editMode ? (
               <div className="files-viewer-markdown">
                 <Markdown text={selected.content} />
               </div>
+            ) : editMode ? (
+              <CodeViewer
+                text={editValue}
+                path={selected.path}
+                editable
+                onChange={setEditValue}
+              />
             ) : (
-              <pre className="files-viewer-content">{selected.content}</pre>
+              <CodeViewer text={selected.content} path={selected.path} />
             )}
           </div>
         </div>
       ) : (
         <>
-          <div className="files-filter">
-            <Search size={14} aria-hidden="true" />
-            <input
-              type="text"
-              placeholder="Search by name across all files…"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              spellCheck={false}
-              autoCorrect="off"
-              autoCapitalize="off"
-            />
-            {filter && (
-              <button
-                type="button"
-                className="files-filter-clear"
-                onClick={() => setFilter("")}
-                title="Clear search"
-                aria-label="Clear search"
-              >
-                <X size={14} />
-              </button>
-            )}
+          <div className="files-filter-row">
+            <div className="files-filter">
+              <Search size={14} aria-hidden="true" />
+              <input
+                type="text"
+                placeholder="Search by name across all files…"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                spellCheck={false}
+                autoCorrect="off"
+                autoCapitalize="off"
+              />
+              {filter && (
+                <button
+                  type="button"
+                  className="files-filter-clear"
+                  onClick={() => setFilter("")}
+                  title="Clear search"
+                  aria-label="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              className="files-tool-button"
+              onClick={refreshTree}
+              title="Refresh from disk"
+              aria-label="Refresh file tree"
+            >
+              <RefreshCw size={14} />
+            </button>
+            <button
+              type="button"
+              className="files-tool-button"
+              onClick={collapseAll}
+              disabled={expanded.size === 0}
+              title="Collapse all folders"
+              aria-label="Collapse all folders"
+            >
+              <ChevronsDownUp size={14} />
+            </button>
           </div>
           <div className="files-tree">
             {error && <div className="files-error">{error}</div>}

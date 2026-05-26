@@ -134,6 +134,13 @@ class SwitchBranchRequest(BaseModel):
     branch: str = Field(min_length=1, max_length=255)
 
 
+class WriteFileRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+    # Cap matches the read-side preview limit (1 MB) so the editor can't
+    # commit something larger than it can render back.
+    content: str = Field(max_length=1_000_000)
+
+
 class ChooseOptionRequest(BaseModel):
     option_index: int = Field(ge=0, le=99)
     total: int = Field(ge=1, le=100)
@@ -1428,6 +1435,35 @@ def create_app(
         # Dirs first, then files; both alphabetical (case-insensitive).
         entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
         return {"path": path, "entries": entries}
+
+    @app.put("/api/sessions/{window_id}/files/content")
+    async def write_file(
+        window_id: str,
+        req: WriteFileRequest,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        cwd = await _resolve_window_cwd(window_id)
+        if not cwd:
+            raise HTTPException(404, detail="window not found")
+        target = _resolve_files_path(cwd, req.path)
+        if target.exists() and target.is_dir():
+            raise HTTPException(400, detail="path is a directory")
+        encoded = req.content.encode("utf-8")
+        if len(encoded) > _FILE_PREVIEW_MAX_BYTES:
+            raise HTTPException(413, detail="content too large")
+
+        def _atomic_write() -> int:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_name(target.name + ".codexbot.tmp")
+            tmp.write_bytes(encoded)
+            tmp.replace(target)
+            return target.stat().st_size
+
+        try:
+            size = await asyncio.to_thread(_atomic_write)
+        except OSError as exc:
+            raise HTTPException(500, detail=f"write failed: {exc}") from exc
+        return {"path": req.path, "size": size}
 
     @app.get("/api/sessions/{window_id}/files/content")
     async def read_file(
