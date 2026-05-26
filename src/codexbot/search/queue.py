@@ -525,6 +525,13 @@ def record_queue_error(error: BaseException | str) -> str:
     return safe_error
 
 
+def clear_queue_errors() -> None:
+    """Drop the recent-error log. Called after a successful drain so the
+    status footer stops surfacing yesterday's transient failure."""
+    with _connect() as conn:
+        conn.execute("DELETE FROM queue_errors")
+
+
 def read_watermark(runtime: str, transcript_source: str) -> TranscriptWatermark | None:
     """Read the last safe queue coordinate for a transcript source."""
     with _connect() as conn:
