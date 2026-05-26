@@ -75,7 +75,6 @@ class SentenceTransformerEmbeddingProvider:
 
     def _load_model(self) -> object:
         if self._model is None:
-            import torch
             from sentence_transformers import SentenceTransformer
 
             kwargs: dict[str, Any] = {}
@@ -87,8 +86,10 @@ class SentenceTransformerEmbeddingProvider:
             # on CPU for Qwen3-Embedding-0.6B) and the encoder still produces
             # vectors whose cosine similarity matches the float32 reference
             # within ~1e-3, so the on-disk float32 index (built by the worker
-            # subprocess) remains compatible without a re-backfill.
-            kwargs["model_kwargs"] = {"torch_dtype": torch.float16}
+            # subprocess) remains compatible without a re-backfill. Passed
+            # as a string so pyright doesn't trip on torch's non-exported
+            # `float16` attribute; HF `from_pretrained` accepts either form.
+            kwargs["model_kwargs"] = {"torch_dtype": "float16"}
             self._model = SentenceTransformer(self.model_id, **kwargs)
         return self._model
 
