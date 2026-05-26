@@ -142,7 +142,7 @@ def test_search_request_bounds_reject_oversized_inputs() -> None:
         SearchRequest(query="find stack trace", limit=10, hits_per_session=0)
 
     with pytest.raises(ValueError):
-        SearchRequest(query="find stack trace", limit=10, hits_per_session=11)
+        SearchRequest(query="find stack trace", limit=10, hits_per_session=101)
 
     with pytest.raises(ValueError):
         SearchRequest(query="find stack trace", recent_seconds=0)

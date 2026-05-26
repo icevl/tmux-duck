@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from .contracts import (
     SearchGenerationMetadata,
     SearchRequest,
@@ -20,6 +22,14 @@ from .ranking import (
 
 
 LEXICAL_DEGRADED_REASON = "semantic index is unavailable; using lexical retrieval"
+
+# Single-word queries against a multilingual embedding model surface
+# "topic-adjacent" docs (a query like "фикс" pulls in every code-editing
+# message because they all cluster together in vector space). For ≤2-token
+# queries the lexical path is more accurate; semantic activates only once
+# the query has enough words to disambiguate intent.
+_TOKEN_GATE_RE = re.compile(r"[\w./:@+#-]+")
+_MIN_TOKENS_FOR_SEMANTIC = 3
 
 
 def search_generation_lexical(
@@ -56,11 +66,15 @@ def _hybrid_candidates(
     documents = filter_stale_documents(
         read_generation_documents(generation.generation_id)
     )
-    semantic_scores = semantic_scores_for_query(
-        generation.generation_id,
-        query=req.query,
-        limit=max(req.limit * req.hits_per_session * 2, 10),
-    )
+    token_count = len(_TOKEN_GATE_RE.findall(req.query))
+    if token_count >= _MIN_TOKENS_FOR_SEMANTIC:
+        semantic_scores = semantic_scores_for_query(
+            generation.generation_id,
+            query=req.query,
+            limit=max(req.limit * req.hits_per_session * 2, 10),
+        )
+    else:
+        semantic_scores = {}
     candidates = []
     for document in documents:
         row_id = row_id_for_identity(document.identity)
@@ -71,6 +85,15 @@ def _hybrid_candidates(
         )
         if candidate is not None:
             candidates.append(candidate)
+
+    # When any candidate has an exact lexical hit, drop pure-semantic ones.
+    # Otherwise topic-adjacent noise (tool-call summaries, unrelated code
+    # reads) outranks the literal phrase the user typed because the embed
+    # model groups them by surrounding conversation context, not by the
+    # snippet text itself. "I remember seeing this phrase" queries should
+    # return that phrase, not its neighbours.
+    if any(c.lexical_score > 0 for c in candidates):
+        candidates = [c for c in candidates if c.lexical_score > 0]
     return candidates
 
 

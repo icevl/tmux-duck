@@ -34,7 +34,7 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
 
     assert "const MIN_QUERY_LENGTH = 2" in search_source
     assert "const DEFAULT_LIMIT = 10" in search_source
-    assert "const DEFAULT_HITS_PER_SESSION = 3" in search_source
+    assert "const DEFAULT_HITS_PER_SESSION = 50" in search_source
     assert "window.setTimeout" in search_source
     assert "setDebouncedQuery(trimmedQuery)" in search_source
     assert ".searchSessions({" in search_source
@@ -96,7 +96,7 @@ def test_session_search_routes_by_window_id_and_preserves_local_query() -> None:
     assert "setQuery" not in open_hit
     assert "setResponse" not in open_hit
 
-    assert "onClick={() => onOpenResult(result.routing.window_id)}" in search_source
+    assert "onOpenResult(result.routing.window_id)" in search_source
     assert 'onClick={() => setQuery("")}' in search_source
 
 
@@ -108,7 +108,7 @@ def test_sidebar_search_keeps_session_ordering_and_pinned_list() -> None:
     )
     assert "<SessionSearch" in sidebar_source
     assert "onHasActiveQueryChange={handleSearchActiveChange}" in sidebar_source
-    assert "searchActive ? null : ordered.length === 0" in sidebar_source
+    assert 'searchActive ? { display: "none" } : undefined' in sidebar_source
 
     for existing_list_contract in [
         "ordered.map((s) =>",
