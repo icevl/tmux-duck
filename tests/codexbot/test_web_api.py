@@ -53,6 +53,10 @@ def _baseline_config(monkeypatch: pytest.MonkeyPatch) -> None:
         ("http://testserver",),
         raising=False,
     )
+    # Search is opt-in in production (CODEXBOT_SEARCH_ENABLED=false by
+    # default), but the web API tests exercise the search status/route
+    # contracts; pin it on so they don't all 503 in clean-env CI.
+    monkeypatch.setattr(config_module.config, "search_enabled", True, raising=False)
 
 
 @pytest.fixture
