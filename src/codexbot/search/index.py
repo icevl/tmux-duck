@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
+
+# Batch size for incremental embedding. Each batch on CPU takes roughly
+# (size / cores) × per-doc-latency seconds, so we keep it small enough
+# that the UI ticks at least every ~30s on a 4-core machine. Set
+# CODEXBOT_SEARCH_BATCH_SIZE separately for the sentence-transformers
+# internal batch (the value here is the *callback* granularity).
+EMBED_PROGRESS_BATCH_SIZE = 16
+
+ProgressCallback = Callable[[int, int], None]
 
 from .contracts import (
     SearchBackfillDocument,
@@ -79,22 +88,52 @@ def row_for_document(
     }
 
 
-def rows_for_documents(
+def _embed_batch(
+    embedder: EmbeddingProvider,
     documents: list[SearchBackfillDocument],
-    *,
-    provider: EmbeddingProvider | None = None,
-) -> tuple[list[dict[str, Any]], EmbeddingProvider]:
-    """Embed and flatten backfill documents into index rows."""
-    embedder = provider or get_embedding_provider()
+) -> list[dict[str, Any]]:
+    """Embed one batch of docs into LanceDB rows."""
     if not documents:
-        return [], embedder
-    vectors = embedder.embed_documents([document.text for document in documents])
+        return []
+    vectors = embedder.embed_documents([d.text for d in documents])
     if len(vectors) != len(documents):
         raise ValueError("embedding provider returned an unexpected vector count")
     return [
         row_for_document(document, vector)
         for document, vector in zip(documents, vectors, strict=True)
-    ], embedder
+    ]
+
+
+def rows_for_documents(
+    documents: list[SearchBackfillDocument],
+    *,
+    provider: EmbeddingProvider | None = None,
+    progress_cb: ProgressCallback | None = None,
+    batch_size: int = EMBED_PROGRESS_BATCH_SIZE,
+) -> tuple[list[dict[str, Any]], EmbeddingProvider]:
+    """Embed and flatten backfill documents into index rows.
+
+    Used only by the no-incremental-persist path (e.g. live-drain
+    snapshots). For the long-running backfill, `upsert_index_documents`
+    embeds and upserts one batch at a time so a killed worker doesn't
+    lose all its work.
+    """
+    embedder = provider or get_embedding_provider()
+    if not documents:
+        if progress_cb is not None:
+            progress_cb(0, 0)
+        return [], embedder
+    total = len(documents)
+    if progress_cb is None:
+        return _embed_batch(embedder, documents), embedder
+
+    rows: list[dict[str, Any]] = []
+    progress_cb(0, total)
+    for start in range(0, total, batch_size):
+        chunk = documents[start : start + batch_size]
+        rows.extend(_embed_batch(embedder, chunk))
+        progress_cb(start + len(chunk), total)
+    return rows, embedder
 
 
 def connect_lancedb(generation_id: str) -> Any:
@@ -156,13 +195,48 @@ def upsert_index_documents(
     provider: EmbeddingProvider | None = None,
     connection: Any | None = None,
     table_name: str = DEFAULT_TABLE_NAME,
+    progress_cb: ProgressCallback | None = None,
+    batch_size: int = EMBED_PROGRESS_BATCH_SIZE,
 ) -> SearchIndexMetadata:
-    """Embed and upsert live documents into the generation-owned LanceDB table."""
-    rows, embedder = rows_for_documents(documents, provider=provider)
+    """Embed and upsert documents into the generation-owned LanceDB table.
+
+    Embedding and upsert happen one batch at a time so the on-disk index
+    grows incrementally. A killed worker preserves every completed batch,
+    and `existing_row_ids()` on resume reports those rows so we skip
+    re-embedding them. Without per-batch persistence we'd lose hours of
+    embedding work on every restart.
+    """
+    embedder = provider or get_embedding_provider()
+    total = len(documents)
+    if progress_cb is not None:
+        progress_cb(0, total)
+    if not documents:
+        # Still write metadata so callers see a "completed" record even
+        # for an empty pass (e.g. fully-resumed generation).
+        metadata = SearchIndexMetadata(
+            schema_version=SEARCH_SCHEMA_VERSION,
+            generation_id=generation_id,
+            model_id=embedder.model_id,
+            vector_dimension=embedder.vector_dimension,
+            table_name=table_name,
+            created_at=_now_iso(),
+            completed=True,
+        )
+        write_index_metadata(metadata)
+        return metadata
+
     conn = connection or connect_lancedb(generation_id)
-    table = open_or_create_table(conn, table_name=table_name, rows=rows)
-    upsert_rows(table, rows)
-    create_indexes(table)
+    table: Any | None = None
+    for start in range(0, total, batch_size):
+        chunk = documents[start : start + batch_size]
+        rows = _embed_batch(embedder, chunk)
+        if table is None:
+            table = open_or_create_table(conn, table_name=table_name, rows=rows)
+        upsert_rows(table, rows)
+        if progress_cb is not None:
+            progress_cb(start + len(chunk), total)
+    if table is not None:
+        create_indexes(table)
 
     metadata = SearchIndexMetadata(
         schema_version=SEARCH_SCHEMA_VERSION,
@@ -184,6 +258,7 @@ def materialize_generation_index(
     provider: EmbeddingProvider | None = None,
     connection: Any | None = None,
     table_name: str = DEFAULT_TABLE_NAME,
+    progress_cb: ProgressCallback | None = None,
 ) -> SearchIndexMetadata:
     """Build or refresh the local index for one completed generation."""
     source_documents = (
@@ -192,10 +267,67 @@ def materialize_generation_index(
     return upsert_index_documents(
         generation_id,
         source_documents,
+        progress_cb=progress_cb,
         provider=provider,
         connection=connection,
         table_name=table_name,
     )
+
+
+def existing_row_ids(
+    generation_id: str,
+    *,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> set[str]:
+    """Return all row_ids already written to this generation's LanceDB table.
+
+    Used by the worker to resume a partially-finished backfill: docs whose
+    row_id is in this set were embedded in a previous run and can be
+    skipped on the next pass."""
+    from .state import generation_lancedb_dir
+
+    path = generation_lancedb_dir(generation_id)
+    if not path.exists():
+        return set()
+    try:
+        conn = connect_lancedb(generation_id)
+        if table_name not in _table_names(conn):
+            return set()
+        table = conn.open_table(table_name)
+        rows = table.to_pandas(columns=["row_id"])
+    except Exception:  # noqa: BLE001
+        # If the table is corrupt or unreadable we'd rather re-embed from
+        # scratch than silently skip rows we couldn't verify.
+        return set()
+    return {str(value) for value in rows["row_id"].tolist() if value}
+
+
+def delete_session_rows(
+    generation_id: str,
+    window_id: str,
+    *,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> int:
+    """Delete all index rows belonging to one tmux window. Returns the
+    number of rows removed. Safe to call when no table exists yet."""
+    from .state import generation_lancedb_dir
+
+    path = generation_lancedb_dir(generation_id)
+    if not path.exists():
+        return 0
+    try:
+        conn = connect_lancedb(generation_id)
+        if table_name not in _table_names(conn):
+            return 0
+        table = conn.open_table(table_name)
+        before = table.count_rows()
+        # Embedded single-quote injection is impossible here — window ids
+        # match tmux's `@<int>` pattern.
+        table.delete(f"window_id = '{window_id}'")
+        after = table.count_rows()
+        return max(0, before - after)
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def has_completed_index(generation_id: str) -> bool:
@@ -302,6 +434,8 @@ __all__ = [
     "create_indexes",
     "document_from_row",
     "has_completed_index",
+    "delete_session_rows",
+    "existing_row_ids",
     "materialize_generation_index",
     "open_or_create_table",
     "row_for_document",

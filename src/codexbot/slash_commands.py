@@ -372,6 +372,15 @@ class SlashCommandRegistry:
                 self._remember_session_fallback(runtime, window_id, session_id)
                 return
 
+            # Claude Code v2 renders `/help` as a TUI overlay that captures
+            # keystrokes until dismissed with Escape — without this, the user's
+            # first message after a new session is swallowed by the overlay.
+            if runtime == "claude":
+                await asyncio.sleep(0.5)
+                await tmux_manager.send_keys(
+                    window_id, "Escape", enter=False, literal=False
+                )
+
             deadline = time.monotonic() + self.discovery_timeout_seconds
             while time.monotonic() < deadline:
                 stdout = await asyncio.to_thread(
