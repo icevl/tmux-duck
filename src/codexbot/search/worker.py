@@ -10,19 +10,80 @@ import argparse
 import asyncio
 import json
 import logging
+import shutil
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Sequence
 
 from .backfill import materialize_initial_backfill, new_generation_id
 from .contracts import (
     SearchBackfillDocument,
+    SearchBackfillManifest,
+    SearchCounters,
     SearchRoutingMetadata,
     SearchRowIdentity,
     SearchWorkerStatus,
     TranscriptProvenance,
 )
-from .index import materialize_generation_index, upsert_index_documents
+from .index import (
+    existing_row_ids,
+    materialize_generation_index,
+    row_id_for_identity,
+    upsert_index_documents,
+)
+from .live import read_generation_documents
+from .state import (
+    generation_dir,
+    generations_dir,
+    read_generation_manifest,
+    search_dir,
+)
+
+PAUSE_POLL_SLEEP_SECONDS = 1.0
+PAUSE_FLAG_FILENAME = "pause"
+
+
+def _pause_flag_path() -> Path:
+    return search_dir() / PAUSE_FLAG_FILENAME
+
+
+def _find_resumable_generation() -> SearchBackfillManifest | None:
+    """Pick the freshest generation that finished its discover step but
+    didn't get a state.json marker. If a previous run was killed during
+    embedding its manifest + documents.jsonl + partial LanceDB sit on
+    disk untouched, and we can pick up where it left off."""
+    root = generations_dir()
+    if not root.exists():
+        return None
+    candidates: list[tuple[str, SearchBackfillManifest]] = []
+    for entry in sorted(root.iterdir(), reverse=True):
+        if not entry.is_dir():
+            continue
+        manifest = read_generation_manifest(entry.name)
+        if manifest is None or not manifest.completed:
+            continue
+        candidates.append((entry.name, manifest))
+    if not candidates:
+        return None
+    return candidates[0][1]
+
+
+def _purge_other_generations(keep_generation_id: str) -> None:
+    """After a successful activate_generation, delete every generation
+    directory except the one we just activated. Previous runs accumulated
+    one dir per kill; this keeps the search/ tree clean."""
+    root = generations_dir()
+    if not root.exists():
+        return
+    for entry in root.iterdir():
+        if entry.name == keep_generation_id or not entry.is_dir():
+            continue
+        try:
+            shutil.rmtree(entry)
+            logger.info("purged orphan search generation %s", entry.name)
+        except OSError as exc:
+            logger.warning("could not purge %s: %s", entry, exc)
 from .live import upsert_generation_documents
 from .queue import (
     complete_items,
@@ -58,9 +119,96 @@ def _run_generation_task(current_task: str) -> None:
         )
     )
     try:
-        manifest = asyncio.run(materialize_initial_backfill())
-        materialize_generation_index(manifest.generation.generation_id)
+        # Resume the previous run if we find a manifest-but-no-state.json
+        # generation on disk. That happens whenever the worker was killed
+        # mid-embedding — without resume every restart re-embeds from
+        # zero into a brand-new generation_id.
+        resumable = _find_resumable_generation()
+        if resumable is not None:
+            manifest = resumable
+            documents = read_generation_documents(manifest.generation.generation_id)
+            already_indexed = existing_row_ids(manifest.generation.generation_id)
+            pending = [
+                doc
+                for doc in documents
+                if row_id_for_identity(doc.identity) not in already_indexed
+            ]
+            existing_count = len(documents) - len(pending)
+            logger.info(
+                "search_worker_resuming generation=%s already=%d remaining=%d",
+                manifest.generation.generation_id,
+                existing_count,
+                len(pending),
+            )
+        else:
+            manifest = asyncio.run(materialize_initial_backfill())
+            documents = None  # not pre-loaded; index helper will read jsonl
+            pending = None
+            existing_count = 0
+
+        # Snapshot counters so the UI sees discovered totals before embedding
+        # starts, then tick indexed_chunks as each embedding batch lands.
+        # The fresh heartbeat on every callback also keeps the bot-side
+        # status publisher from flipping the footer to "stale" while a
+        # multi-minute embedding pass is in flight.
+        base = manifest.counters
+        total_chunks = manifest.document_count
+
+        def _write_progress(processed: int, total: int, *, paused: bool) -> None:
+            counters = SearchCounters(
+                open_sessions=base.open_sessions,
+                indexed_sessions=base.indexed_sessions if processed >= total > 0 else 0,
+                indexed_chunks=processed,
+                total_chunks=total or total_chunks,
+                queued_items=base.queued_items,
+                failed_items=base.failed_items,
+            )
+            write_worker_status(
+                SearchWorkerStatus(
+                    status="running",
+                    current_task=current_task,
+                    heartbeat_at=_now_iso(),
+                    counters=counters,
+                    paused=paused,
+                )
+            )
+
+        def progress(processed_local: int, total_local: int) -> None:
+            # Park here while the supervisor's pause flag is up so the
+            # embedding doesn't compete with the user's active tmux work.
+            # We refresh the heartbeat each loop so request-path code
+            # doesn't decide we've died.
+            #
+            # `processed_local` is the count for the current pending list;
+            # add `existing_count` so the UI shows the absolute progress
+            # across the full generation (resume-friendly).
+            absolute_processed = existing_count + processed_local
+            flag = _pause_flag_path()
+            paused_already_logged = False
+            while flag.exists():
+                if not paused_already_logged:
+                    logger.info(
+                        "search_worker_paused processed=%d total=%d",
+                        absolute_processed,
+                        total_chunks,
+                    )
+                    paused_already_logged = True
+                _write_progress(absolute_processed, total_chunks, paused=True)
+                time.sleep(PAUSE_POLL_SLEEP_SECONDS)
+            _write_progress(absolute_processed, total_chunks, paused=False)
+
+        progress(0, len(pending) if pending is not None else total_chunks)
+        if pending is not None and not pending:
+            # Resume found a fully-embedded generation; just activate.
+            pass
+        else:
+            materialize_generation_index(
+                manifest.generation.generation_id,
+                documents=pending,  # None = read from jsonl (cold start)
+                progress_cb=progress,
+            )
         activate_generation(manifest)
+        _purge_other_generations(manifest.generation.generation_id)
     except Exception as exc:
         logger.exception("search_generation_task_failed task=%s", current_task)
         write_worker_status(

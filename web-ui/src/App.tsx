@@ -868,6 +868,7 @@ export function App() {
         onDelete={setKillTarget}
         onReorder={handleSidebarReorder}
         onOpenSearchHit={handleOpenSearchHit}
+        subscribeWs={subscribeWs}
         notificationsSupported={browserNotificationsSupported()}
         notificationsEnabled={notificationsEnabled}
         notificationPermission={notificationPermission}

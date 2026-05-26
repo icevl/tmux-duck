@@ -16,8 +16,9 @@ import {
 } from "lucide-react";
 import { TunioPlayer } from "tunio-player";
 import "tunio-player/styles.css";
-import { SessionSummary } from "../api";
+import { api, SearchStatusResponse, SessionSummary, WsEvent } from "../api";
 import { DuckLogo } from "./DuckLogo";
+import { SearchStatusFooter } from "./SearchStatusFooter";
 import { SessionSearch, type SearchHitTarget } from "./SessionSearch";
 
 const ICON = 16;
@@ -58,6 +59,7 @@ interface Props {
   onDelete: (session: SessionSummary) => void;
   onReorder: (windowIds: string[]) => void | Promise<void>;
   onOpenSearchHit?: (target: SearchHitTarget) => void;
+  subscribeWs: (listener: (e: WsEvent) => void) => () => void;
   notificationsSupported: boolean;
   notificationsEnabled: boolean;
   notificationPermission: NotificationPermission | "unsupported";
@@ -101,6 +103,7 @@ export function Sidebar({
   onDelete,
   onReorder,
   onOpenSearchHit,
+  subscribeWs,
   notificationsSupported,
   notificationsEnabled,
   notificationPermission,
@@ -121,11 +124,51 @@ export function Sidebar({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [searchActive, setSearchActive] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<SearchStatusResponse | null>(
+    null,
+  );
+  // null = not yet known (initial fetch in flight); true/false = backend
+  // CODEXBOT_SEARCH_ENABLED.
+  const [searchEnabled, setSearchEnabled] = useState<boolean | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const handleSearchActiveChange = useCallback((active: boolean) => {
     setSearchActive(active);
   }, []);
+
+  const handleSearchStatusUpdate = useCallback((next: SearchStatusResponse) => {
+    setSearchStatus(next);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getSearchStatus()
+      .then((next) => {
+        if (cancelled) return;
+        if (next.enabled === false) {
+          setSearchEnabled(false);
+          setSearchStatus(null);
+        } else {
+          setSearchEnabled(true);
+          setSearchStatus(next);
+        }
+      })
+      .catch(() => {
+        // Footer falls back to "search idle" when nothing has landed yet.
+      });
+    const unsub = subscribeWs((event) => {
+      if (event.type === "search_status") {
+        const { type: _type, ts: _ts, seq: _seq, ...rest } = event;
+        setSearchEnabled(true);
+        setSearchStatus(rest as SearchStatusResponse);
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [subscribeWs]);
 
   // Close the popover on outside click / Escape / scroll inside the list.
   useEffect(() => {
@@ -227,6 +270,9 @@ export function Sidebar({
       </div>
       <SessionSearch
         sessions={sessions}
+        status={searchStatus}
+        searchEnabled={searchEnabled !== false}
+        onStatusUpdate={handleSearchStatusUpdate}
         onOpenResult={onSelect}
         onOpenHit={onOpenSearchHit}
         onHasActiveQueryChange={handleSearchActiveChange}
@@ -392,6 +438,7 @@ export function Sidebar({
           })
         )}
       </div>
+      {searchEnabled !== false && <SearchStatusFooter status={searchStatus} />}
     </aside>
   );
 }

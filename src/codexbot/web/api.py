@@ -580,6 +580,37 @@ def create_app(
             "totp_required": auth.totp_enabled,
         }
 
+    def _drop_search_artifacts_for_window(window_id: str) -> None:
+        """Remove the killed session's chunks from the active index and
+        from any still-queued live updates. Best-effort — runs synchronously
+        from a threadpool so the user-facing DELETE returns promptly even
+        if the LanceDB call is slow on a large table."""
+        from ..search.index import delete_session_rows
+        from ..search.queue import delete_queue_items_by_window
+        from ..search.state import read_generation_metadata
+
+        try:
+            queued_removed = delete_queue_items_by_window(window_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("search queue cleanup failed window=%s", window_id)
+            queued_removed = 0
+        active = read_generation_metadata()
+        rows_removed = 0
+        if active is not None:
+            try:
+                rows_removed = delete_session_rows(
+                    active.generation_id, window_id
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("search row cleanup failed window=%s", window_id)
+        if queued_removed or rows_removed:
+            logger.info(
+                "search cleanup window=%s rows=%d queued=%d",
+                window_id,
+                rows_removed,
+                queued_removed,
+            )
+
     async def _search_open_session_count() -> int | None:
         try:
             windows = await tmux_manager.list_windows()
@@ -590,15 +621,28 @@ def create_app(
 
     @app.get("/api/search/status")
     async def search_status(_user: str = Depends(require_auth)) -> dict[str, Any]:
+        if not config.search_enabled:
+            return {"enabled": False}
+        from ..search.supervisor import pause_flag_path
+
         open_session_count = await _search_open_session_count()
-        return search_client.get_status(
+        payload = search_client.get_status(
             open_session_count=open_session_count
         ).model_dump(mode="json")
+        payload["enabled"] = True
+        # The supervisor sets this file while a tmux pane has an active
+        # agent or build process. Frontend uses it to render a "deferred"
+        # footer instead of "degraded/missing", since nothing is actually
+        # broken — we're just holding off until the workload settles.
+        payload["deferred"] = pause_flag_path().exists()
+        return payload
 
     @app.post("/api/search")
     async def search(
         req: SearchRequest, _user: str = Depends(require_auth)
     ) -> dict[str, Any]:
+        if not config.search_enabled:
+            raise HTTPException(status_code=503, detail="search is disabled")
         open_session_count = await _search_open_session_count()
         return search_client.search(
             req, open_session_count=open_session_count
@@ -735,6 +779,8 @@ def create_app(
         session_manager.window_states.pop(window_id, None)
         session_manager.window_display_names.pop(window_id, None)
         session_manager._save_state()
+        if config.search_enabled:
+            await asyncio.to_thread(_drop_search_artifacts_for_window, window_id)
         await bus.publish_sessions_changed()
         return {"ok": True}
 

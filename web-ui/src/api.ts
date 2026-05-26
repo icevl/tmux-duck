@@ -103,6 +103,9 @@ export type SearchResponseOutcome = "ok" | "not_ready" | "unavailable";
 export type SearchOutcome = "lexical" | "semantic" | "metadata" | "hybrid";
 
 export interface SearchCounters {
+  /** Total chunks discovered by the current backfill before embedding starts.
+   * Used together with indexed_chunks for an "X/Y" progress display. */
+  total_chunks?: number;
   open_sessions: number;
   indexed_sessions: number;
   indexed_chunks: number;
@@ -129,6 +132,9 @@ export interface SearchIndexMetadata {
 }
 
 export interface SearchWorkerHealth {
+  /** True while the worker is sleeping between batches because the
+   * supervisor saw user activity (tmux pane busy / agent generating). */
+  paused?: boolean;
   status: "idle" | "running" | "completed" | "failed" | null;
   current_task: string | null;
   heartbeat_at: string | null;
@@ -150,6 +156,7 @@ export interface SearchQueueHealth {
 }
 
 export interface SearchBackfillProgress {
+  total_chunks?: number;
   open_sessions: number;
   indexed_sessions: number;
   indexed_chunks: number;
@@ -213,7 +220,21 @@ export interface SearchStatusResponse {
   generation: SearchGenerationMetadata | null;
   index: SearchIndexMetadata | null;
   operations: SearchOperationalStatus | null;
+  // True when the backend feature flag (CODEXBOT_SEARCH_ENABLED) is on.
+  // When false the rest of the fields are absent and the UI hides the
+  // search filter affordance and the index footer entirely.
+  enabled?: boolean;
+  // True when the supervisor has paused indexing because tmux work is
+  // active. UI uses this to show a "deferred" footer instead of
+  // misleading degraded/missing/unavailable.
+  deferred?: boolean;
 }
+
+export interface SearchStatusDisabled {
+  enabled: false;
+}
+
+export type SearchStatusPayload = SearchStatusResponse | SearchStatusDisabled;
 
 export interface SearchRoutingMetadata {
   window_id: string;
@@ -726,4 +747,5 @@ export type WsEvent =
       window_id: string;
       ts: number;
       seq?: number;
-    };
+    }
+  | (SearchStatusResponse & { type: "search_status"; ts: number; seq?: number });

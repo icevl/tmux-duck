@@ -39,10 +39,17 @@ class EmbeddingConfig:
     vector_dimension: int
     batch_size: int
     local_files_only: bool
+    device: str | None
 
 
 def embedding_config_from_env() -> EmbeddingConfig:
     """Read embedding config without importing the model stack."""
+    raw_device = os.getenv("CODEXBOT_SEARCH_DEVICE", "cpu").strip()
+    # The default is cpu: PyTorch MPS on Apple Silicon has hung the worker
+    # mid-load on Qwen3-Embedding. CPU is slower but reliable for the
+    # one-shot backfill. Set "auto" to delegate to SentenceTransformer's
+    # built-in selection, or "mps"/"cuda" explicitly.
+    device = None if raw_device.lower() == "auto" else raw_device or None
     return EmbeddingConfig(
         model_id=os.getenv("CODEXBOT_SEARCH_MODEL_ID", DEFAULT_EMBEDDING_MODEL_ID),
         vector_dimension=int(
@@ -53,6 +60,7 @@ def embedding_config_from_env() -> EmbeddingConfig:
         ),
         local_files_only=os.getenv("CODEXBOT_SEARCH_LOCAL_FILES_ONLY", "false").lower()
         in {"1", "true", "yes"},
+        device=device,
     )
 
 
@@ -72,6 +80,8 @@ class SentenceTransformerEmbeddingProvider:
             kwargs = {}
             if self.config.local_files_only:
                 kwargs["local_files_only"] = True
+            if self.config.device:
+                kwargs["device"] = self.config.device
             self._model = SentenceTransformer(self.model_id, **kwargs)
         return self._model
 
