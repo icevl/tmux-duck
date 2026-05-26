@@ -598,9 +598,7 @@ def create_app(
         rows_removed = 0
         if active is not None:
             try:
-                rows_removed = delete_session_rows(
-                    active.generation_id, window_id
-                )
+                rows_removed = delete_session_rows(active.generation_id, window_id)
             except Exception:  # noqa: BLE001
                 logger.exception("search row cleanup failed window=%s", window_id)
         if queued_removed or rows_removed:
