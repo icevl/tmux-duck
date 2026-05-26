@@ -6,7 +6,7 @@ import json
 import asyncio
 import tomllib
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
 
@@ -178,6 +178,7 @@ def test_running_worker_status_makes_search_status_building(
         "open_sessions": 5,
         "indexed_sessions": 1,
         "indexed_chunks": 11,
+        "total_chunks": 0,
         "queued_items": 0,
         "failed_items": 0,
     }
@@ -327,7 +328,9 @@ def test_initial_backfill_worker_materializes_generation_and_status(
     assert main(["initial-backfill"]) == 0
 
     async_materialize.assert_awaited_once()
-    materialize_index.assert_called_once_with("gen-test")
+    materialize_index.assert_called_once_with(
+        "gen-test", documents=None, progress_cb=ANY
+    )
     activate_generation.assert_called_once_with(manifest)
     status = read_worker_status()
     assert status is not None
@@ -352,6 +355,12 @@ def test_rebuild_worker_activates_fresh_generation(
     _write_generation_files("gen-new", new_manifest)
     async_materialize = AsyncMock(return_value=new_manifest)
     materialize_index = Mock()
+    # Suppress resume detection so we exercise the rebuild path (rebuild is
+    # explicitly "make a fresh generation"; resume would short-circuit it).
+    monkeypatch.setattr(
+        "codexbot.search.worker._find_resumable_generation",
+        lambda: None,
+    )
     monkeypatch.setattr(
         "codexbot.search.worker.materialize_initial_backfill",
         async_materialize,
@@ -364,7 +373,9 @@ def test_rebuild_worker_activates_fresh_generation(
     assert main(["rebuild"]) == 0
 
     async_materialize.assert_awaited_once()
-    materialize_index.assert_called_once_with("gen-new")
+    materialize_index.assert_called_once_with(
+        "gen-new", documents=None, progress_cb=ANY
+    )
     active = read_generation_metadata()
     assert active is not None
     assert active.generation_id == "gen-new"

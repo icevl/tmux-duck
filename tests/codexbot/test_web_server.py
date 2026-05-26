@@ -56,15 +56,19 @@ async def test_start_web_server_schedules_search_supervisor_without_waiting(
     monkeypatch.setattr(
         config_module.config, "auto_update_enabled", False, raising=False
     )
+    monkeypatch.setattr(config_module.config, "search_enabled", True, raising=False)
 
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def fake_start_worker_if_needed() -> None:
+    async def fake_pause_controller_loop(_idle_tracker: object) -> None:
         started.set()
         await release.wait()
 
     async def fake_live_queue_loop() -> None:
+        await release.wait()
+
+    async def fake_status_publisher(_bus: object) -> None:
         await release.wait()
 
     async def fake_serve(self: EmbeddedUvicornServer, sockets: object = None) -> None:
@@ -75,13 +79,16 @@ async def test_start_web_server_schedules_search_supervisor_without_waiting(
 
     monkeypatch.setattr(
         web_server.search_supervisor,
-        "start_worker_if_needed",
-        fake_start_worker_if_needed,
+        "pause_controller_loop",
+        fake_pause_controller_loop,
     )
     monkeypatch.setattr(
         web_server.search_supervisor,
         "live_queue_loop",
         fake_live_queue_loop,
+    )
+    monkeypatch.setattr(
+        web_server, "search_status_publisher_loop", fake_status_publisher
     )
     monkeypatch.setattr(EmbeddedUvicornServer, "_serve", fake_serve)
     monkeypatch.setattr(web_server, "stream_pane_loop", fake_stream_pane_loop)
@@ -115,6 +122,7 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
     monkeypatch.setattr(
         config_module.config, "auto_update_enabled", False, raising=False
     )
+    monkeypatch.setattr(config_module.config, "search_enabled", True, raising=False)
 
     class FakeMonitor:
         def __init__(self) -> None:
@@ -132,10 +140,13 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
     release = asyncio.Event()
     replay_started = asyncio.Event()
 
-    async def fake_start_worker_if_needed() -> None:
+    async def fake_pause_controller_loop(_idle_tracker: object) -> None:
         await release.wait()
 
     async def fake_live_queue_loop() -> None:
+        await release.wait()
+
+    async def fake_status_publisher(_bus: object) -> None:
         await release.wait()
 
     async def fake_replay_open_session_queue() -> int:
@@ -151,13 +162,16 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
 
     monkeypatch.setattr(
         web_server.search_supervisor,
-        "start_worker_if_needed",
-        fake_start_worker_if_needed,
+        "pause_controller_loop",
+        fake_pause_controller_loop,
     )
     monkeypatch.setattr(
         web_server.search_supervisor,
         "live_queue_loop",
         fake_live_queue_loop,
+    )
+    monkeypatch.setattr(
+        web_server, "search_status_publisher_loop", fake_status_publisher
     )
     monkeypatch.setattr(
         web_server,
@@ -173,7 +187,9 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
     assert handle.search_live_task is not None
     assert handle.listener in monitor.listeners
     assert handle.search_listener in monitor.listeners
-    assert len(monitor.listeners) == 2
+    assert handle.idle_tracker is not None
+    assert handle.idle_tracker.listener in monitor.listeners
+    assert len(monitor.listeners) == 3
     await asyncio.wait_for(replay_started.wait(), timeout=1.0)
 
     # The listener is callable and returns promptly for monitor fan-out.
@@ -187,4 +203,5 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
 
     assert handle.listener in monitor.removed
     assert handle.search_listener in monitor.removed
+    assert handle.idle_tracker.listener in monitor.removed
     assert monitor.listeners == []

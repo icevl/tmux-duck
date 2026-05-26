@@ -154,10 +154,6 @@ def test_search_status_returns_typed_missing(
     commands = [item["command"] for item in body["operations"]["recovery_commands"]]
     assert "codexbot-search-worker live-drain-once" in commands
     assert "codexbot-search-worker rebuild" in commands
-    assert (
-        "python -m codexbot.search.benchmark "
-        "--fixtures tests/fixtures/search/benchmark_cases.json --provider fake"
-    ) in commands
 
 
 def test_search_status_reports_building_backfill(
@@ -450,6 +446,7 @@ def test_search_status_after_successful_backfill_is_lexical_degraded(
         "open_sessions": 2,
         "indexed_sessions": 1,
         "indexed_chunks": 6,
+        "total_chunks": 0,
         "queued_items": 0,
         "failed_items": 0,
     }

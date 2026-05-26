@@ -371,10 +371,17 @@ def test_generation_metadata_carries_rebuildable_identity() -> None:
 
 
 def _imported_modules(path: Path) -> set[str]:
+    """Top-level imports only.
+
+    The boundary tests care about what gets loaded when the request-path
+    module imports — i.e. cost paid on every web request. Lazy imports
+    nested inside a function or method only fire when that path runs
+    (cleanup-on-DELETE, etc.) and are deliberately exempted.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     modules: set[str] = set()
 
-    for node in ast.walk(tree):
+    for node in tree.body:
         if isinstance(node, ast.Import):
             modules.update(alias.name for alias in node.names)
             continue
