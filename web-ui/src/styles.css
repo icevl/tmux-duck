@@ -3016,16 +3016,49 @@ button.primary.send-button {
   color: var(--text-0);
 }
 
+.files-filter-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin: 8px 10px 0;
+}
+
 .files-filter {
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  margin: 8px 10px 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-0);
   color: var(--text-2);
+  min-width: 0;
+}
+
+.files-tool-button {
+  flex: 0 0 auto;
+  width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-0);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.files-tool-button:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--text-0);
+  border-color: var(--border-strong);
+}
+
+.files-tool-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .files-filter input {
@@ -3247,6 +3280,49 @@ button.primary.send-button {
   color: var(--text-0);
 }
 
+.files-viewer-edit,
+.files-viewer-save {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-0);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.files-viewer-edit:hover:not(:disabled),
+.files-viewer-save:hover:not(:disabled) {
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+}
+
+.files-viewer-save {
+  background: var(--duck-yellow-soft);
+  border-color: var(--duck-yellow);
+  color: var(--text-0);
+  font-weight: 600;
+}
+
+.files-viewer-save:hover:not(:disabled) {
+  background: var(--duck-yellow);
+  color: var(--bg-0);
+}
+
+.files-viewer-save:disabled,
+.files-viewer-edit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.files-viewer-save-error {
+  padding: 6px 12px;
+  background: rgba(255, 107, 138, 0.08);
+  color: var(--danger, #ff6b8a);
+  border-bottom: 1px solid rgba(255, 107, 138, 0.32);
+  font-size: 12.5px;
+}
+
 .files-viewer-markdown {
   padding: 12px 16px;
   font-size: 13px;
@@ -3278,6 +3354,21 @@ button.primary.send-button {
   white-space: pre;
   color: var(--text-0);
   background: var(--bg-0);
+}
+
+/* CodeMirror viewer fills its parent and keeps the dark palette consistent
+   with the rest of the panel. */
+.code-viewer {
+  height: 100%;
+  font-size: 12.5px;
+}
+
+.code-viewer .cm-editor {
+  height: 100%;
+}
+
+.code-viewer .cm-scroller {
+  font-family: var(--font-mono);
 }
 
 /* Office panel — sprite-based agent visualization, mirrors diff-panel layout. */

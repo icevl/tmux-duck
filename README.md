@@ -419,4 +419,4 @@ Bypass in a pinch with `git push --no-verify`.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)

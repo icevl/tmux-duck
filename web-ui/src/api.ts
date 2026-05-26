@@ -667,6 +667,12 @@ export const api = {
       )}/files/content?path=${encodeURIComponent(path)}`,
     ),
 
+  saveSessionFileContent: (windowId: string, path: string, content: string) =>
+    request<{ path: string; size: number }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/files/content`,
+      { method: "PUT", json: { path, content } },
+    ),
+
   searchSessionFiles: (windowId: string, q: string) =>
     request<{
       matches: { name: string; type: "file" | "dir"; path: string }[];
