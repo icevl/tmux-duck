@@ -151,14 +151,16 @@ async def pause_controller_loop(idle_tracker: IdleTracker | None = None) -> None
 
 
 async def live_queue_loop(*, poll_interval_seconds: float = 1.0) -> None:
-    """Run live queue draining without blocking web startup. Skips ticks
-    while the pause flag is set so we don't add database churn during
-    active user work."""
-    flag = pause_flag_path()
+    """Run live queue draining without blocking web startup.
+
+    Unlike the worker-subprocess gating (which guards an expensive CPU-bound
+    backfill), live drains are short LanceDB merges — ~100-200 ms per batch.
+    They never need to wait for the agent to be idle: keeping the queue
+    drained as it grows is more important than the negligible CPU contention.
+    """
     while True:
         try:
-            if not flag.exists():
-                await asyncio.to_thread(drain_live_queue_once)
+            await asyncio.to_thread(drain_live_queue_once)
         except Exception:
             logger.exception("search live queue loop failed")
         await asyncio.sleep(poll_interval_seconds)
