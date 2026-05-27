@@ -22,8 +22,19 @@ dependencies = [
     "qrcode>=7.4.0",
     "lancedb>=0.21.0",
     "sentence-transformers>=2.7.0",
+    "torch==2.6.0; sys_platform == 'linux'",
     "transformers>=4.51.0",
 ]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu124", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
 
 [project.scripts]
 codexbot = "codexbot.main:main"

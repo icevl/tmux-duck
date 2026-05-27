@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import json
 import logging
+import threading
 import time
 from datetime import UTC, datetime
 from typing import Sequence
@@ -17,6 +18,7 @@ from typing import Sequence
 from .backfill import materialize_initial_backfill, new_generation_id
 from .contracts import (
     SearchBackfillDocument,
+    SearchCounters,
     SearchRoutingMetadata,
     SearchRowIdentity,
     SearchWorkerStatus,
@@ -37,6 +39,7 @@ from .state import activate_generation, read_generation_metadata, write_worker_s
 logger = logging.getLogger(__name__)
 LIVE_BATCH_SIZE = 32
 LIVE_FLUSH_INTERVAL_SECONDS = 60.0
+INDEX_HEARTBEAT_INTERVAL_SECONDS = 15.0
 _last_live_flush_at: datetime | None = None
 
 
@@ -45,21 +48,77 @@ def _now_iso() -> str:
 
 
 def _failed_error_summary(exc: BaseException) -> str:
-    return f"{type(exc).__name__}: search backfill failed"
+    return sanitize_error(exc)
+
+
+def _running_status(
+    current_task: str,
+    *,
+    counters: SearchCounters | None = None,
+) -> SearchWorkerStatus:
+    return SearchWorkerStatus(
+        status="running",
+        current_task=current_task,
+        heartbeat_at=_now_iso(),
+        counters=counters,
+    )
 
 
 def _run_generation_task(current_task: str) -> None:
     """Materialize and activate a fresh generation for a local worker task."""
-    write_worker_status(
-        SearchWorkerStatus(
-            status="running",
-            current_task=current_task,
-            heartbeat_at=_now_iso(),
-        )
-    )
+    write_worker_status(_running_status(current_task))
     try:
         manifest = asyncio.run(materialize_initial_backfill())
-        materialize_generation_index(manifest.generation.generation_id)
+        last_heartbeat_at = 0.0
+        indexed_chunks_state = 0
+        progress_lock = threading.Lock()
+        heartbeat_stop = threading.Event()
+
+        def write_index_progress(indexed_chunks: int) -> None:
+            write_worker_status(
+                _running_status(
+                    current_task,
+                    counters=manifest.counters.model_copy(
+                        update={"indexed_chunks": indexed_chunks}
+                    ),
+                )
+            )
+
+        def report_index_progress(indexed_chunks: int) -> None:
+            nonlocal last_heartbeat_at
+            nonlocal indexed_chunks_state
+            with progress_lock:
+                indexed_chunks_state = indexed_chunks
+            now = time.monotonic()
+            if (
+                indexed_chunks < manifest.document_count
+                and now - last_heartbeat_at < INDEX_HEARTBEAT_INTERVAL_SECONDS
+            ):
+                return
+            last_heartbeat_at = now
+            write_index_progress(indexed_chunks)
+
+        def heartbeat_loop() -> None:
+            while not heartbeat_stop.wait(INDEX_HEARTBEAT_INTERVAL_SECONDS):
+                with progress_lock:
+                    indexed_chunks = indexed_chunks_state
+                write_index_progress(indexed_chunks)
+
+        write_index_progress(0)
+        heartbeat_thread = threading.Thread(
+            target=heartbeat_loop,
+            name="codexbot-search-index-heartbeat",
+            daemon=True,
+        )
+        heartbeat_thread.start()
+        try:
+            materialize_generation_index(
+                manifest.generation.generation_id,
+                progress_callback=report_index_progress,
+            )
+        finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=1.0)
         activate_generation(manifest)
     except Exception as exc:
         logger.exception("search_generation_task_failed task=%s", current_task)

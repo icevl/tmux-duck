@@ -9,6 +9,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 from typing import Any
 
 from codexbot.session import ParsedTranscriptSession, SessionManager, session_manager
@@ -100,6 +101,26 @@ def _atomic_write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
         except OSError:
             pass
         raise
+
+
+@dataclass(frozen=True)
+class _GenerationDocumentsCacheEntry:
+    mtime_ns: int
+    size: int
+    documents: list[SearchBackfillDocument]
+
+
+_generation_documents_cache: dict[str, _GenerationDocumentsCacheEntry] = {}
+_generation_documents_cache_lock = RLock()
+
+
+def clear_generation_documents_cache(generation_id: str | None = None) -> None:
+    """Invalidate parsed generation document cache."""
+    with _generation_documents_cache_lock:
+        if generation_id is None:
+            _generation_documents_cache.clear()
+        else:
+            _generation_documents_cache.pop(generation_id, None)
 
 
 async def _window_for_id(
@@ -299,14 +320,35 @@ def read_generation_documents(generation_id: str) -> list[SearchBackfillDocument
     """Read valid generation documents, ignoring corrupt historical lines."""
     path = generation_documents_path(generation_id)
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        stat = path.stat()
     except OSError:
         return []
+
+    with _generation_documents_cache_lock:
+        cached = _generation_documents_cache.get(generation_id)
+        if (
+            cached is not None
+            and cached.mtime_ns == stat.st_mtime_ns
+            and cached.size == stat.st_size
+        ):
+            return cached.documents
+
     documents = []
-    for line in lines:
-        document = parse_document(line)
-        if document is not None:
-            documents.append(document)
+    try:
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                document = parse_document(line)
+                if document is not None:
+                    documents.append(document)
+    except OSError:
+        return []
+
+    with _generation_documents_cache_lock:
+        _generation_documents_cache[generation_id] = _GenerationDocumentsCacheEntry(
+            mtime_ns=stat.st_mtime_ns,
+            size=stat.st_size,
+            documents=documents,
+        )
     return documents
 
 
@@ -333,6 +375,7 @@ def upsert_generation_documents(
         generation_documents_path(generation_id),
         [document.model_dump(mode="json") for document in ordered],
     )
+    clear_generation_documents_cache(generation_id)
 
     manifest = read_generation_manifest(generation_id)
     if manifest is not None:
@@ -415,6 +458,7 @@ def filter_stale_documents(
 
 __all__ = [
     "LiveQueueProducer",
+    "clear_generation_documents_cache",
     "filter_stale_documents",
     "read_generation_documents",
     "replay_open_session_queue",

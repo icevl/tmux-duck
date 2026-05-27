@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -22,7 +24,11 @@ class FakeEmbedder:
     model_id = "fake/qwen"
     vector_dimension = 1024
 
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(texts)
         return [
             [float(index + 1)] * self.vector_dimension for index, _ in enumerate(texts)
         ]
@@ -46,6 +52,7 @@ class FakeMerge:
 
     def execute(self, rows: list[dict[str, Any]]) -> None:
         self.table.executed_rows = rows
+        self.table.executed_batches.append(rows)
         for row in rows:
             self.table.rows[row[self.key]] = row
 
@@ -54,6 +61,8 @@ class FakeTable:
     def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
         self.rows = {row["row_id"]: row for row in rows or []}
         self.executed_rows: list[dict[str, Any]] = []
+        self.executed_batches: list[list[dict[str, Any]]] = []
+        self.added_batches: list[list[dict[str, Any]]] = []
         self.merge_key: str | None = None
         self.fts_created = False
         self.scalar_created = False
@@ -70,6 +79,11 @@ class FakeTable:
     def create_scalar_index(self, _field: str) -> None:
         self.scalar_created = True
 
+    def add(self, rows: list[dict[str, Any]]) -> None:
+        self.added_batches.append(rows)
+        for row in rows:
+            self.rows[row["row_id"]] = row
+
 
 class FakeConnection:
     def __init__(self) -> None:
@@ -81,7 +95,12 @@ class FakeConnection:
     def open_table(self, name: str) -> FakeTable:
         return self.tables[name]
 
-    def create_table(self, name: str, data: list[dict[str, Any]]) -> FakeTable:
+    def create_table(
+        self,
+        name: str,
+        data: list[dict[str, Any]],
+        schema: object | None = None,
+    ) -> FakeTable:
         table = FakeTable(data)
         self.tables[name] = table
         return table
@@ -93,13 +112,15 @@ def _doc(
     window_id: str = "@1",
     cwd: str = "/repo",
     status: str | None = "active",
+    transcript_offset: int = 10,
+    transcript_index: int = 1,
 ) -> SearchBackfillDocument:
     provenance = TranscriptProvenance(
         runtime="codex",
         session_id="session-1",
         transcript_source="/tmp/session-1.jsonl",
-        transcript_offset=10,
-        transcript_index=1,
+        transcript_offset=transcript_offset,
+        transcript_index=transcript_index,
         role="assistant",
         content_type="text",
         tool_name=None,
@@ -122,7 +143,7 @@ def _doc(
         ),
         text=text,
         timestamp=provenance.timestamp,
-        source_order=10,
+        source_order=transcript_offset,
         chunk_index=0,
         chunk_count=1,
     )
@@ -186,6 +207,91 @@ def test_embedding_index_and_worker_imports_are_lazy(
     assert not (heavy & {name.split(".", 1)[0] for name in sys.modules})
 
 
+def test_embedding_config_supports_device_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from codexbot.search.embedding import embedding_config_from_env
+
+    monkeypatch.setenv("CODEXBOT_SEARCH_DEVICE", "0")
+    assert embedding_config_from_env().device == "cuda:0"
+
+    monkeypatch.setenv("CODEXBOT_SEARCH_DEVICE", "cuda:1")
+    assert embedding_config_from_env().device == "cuda:1"
+
+
+def test_sentence_transformer_provider_passes_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from codexbot.search.embedding import (
+        EmbeddingConfig,
+        SentenceTransformerEmbeddingProvider,
+    )
+
+    module = ModuleType("sentence_transformers")
+    seen: dict[str, Any] = {}
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_id: str, **kwargs: object) -> None:
+            seen["model_id"] = model_id
+            seen["kwargs"] = kwargs
+
+        def encode(self, texts: list[str], **kwargs: object) -> list[list[float]]:
+            seen["encode"] = kwargs
+            return [[1.0, 2.0, 3.0] for _ in texts]
+
+    module.SentenceTransformer = FakeSentenceTransformer  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "sentence_transformers", module)
+    provider = SentenceTransformerEmbeddingProvider(
+        EmbeddingConfig(
+            model_id="fake/qwen",
+            vector_dimension=3,
+            batch_size=4,
+            local_files_only=True,
+            device="cuda:0",
+        )
+    )
+
+    assert provider.embed_documents(["a"]) == [[1.0, 2.0, 3.0]]
+    assert seen["model_id"] == "fake/qwen"
+    assert seen["kwargs"] == {"local_files_only": True, "device": "cuda:0"}
+    assert seen["encode"]["batch_size"] == 4
+
+
+def test_embedding_provider_is_cached_per_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from codexbot.search.embedding import (
+        clear_embedding_provider_cache,
+        get_embedding_provider,
+    )
+
+    module = ModuleType("sentence_transformers")
+    constructed: list[str] = []
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_id: str, **_kwargs: object) -> None:
+            constructed.append(model_id)
+
+        def encode(self, texts: list[str], **_kwargs: object) -> list[list[float]]:
+            return [[1.0, 0.0, 0.0] for _ in texts]
+
+    module.SentenceTransformer = FakeSentenceTransformer  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "sentence_transformers", module)
+    monkeypatch.setenv("CODEXBOT_SEARCH_MODEL_ID", "fake/cached")
+    monkeypatch.setenv("CODEXBOT_SEARCH_VECTOR_DIM", "3")
+    monkeypatch.setenv("CODEXBOT_SEARCH_BATCH_SIZE", "2")
+    clear_embedding_provider_cache()
+
+    first = get_embedding_provider()
+    second = get_embedding_provider()
+
+    assert first is second
+    assert first.embed_query("one") == [1.0, 0.0, 0.0]
+    assert second.embed_query("two") == [1.0, 0.0, 0.0]
+    assert constructed == ["fake/cached"]
+    clear_embedding_provider_cache()
+
+
 def test_rows_for_documents_uses_fake_embedder_and_stable_identity() -> None:
     from codexbot.search.index import row_id_for_identity, rows_for_documents
 
@@ -202,7 +308,7 @@ def test_rows_for_documents_uses_fake_embedder_and_stable_identity() -> None:
     assert row["window_id"] == "@1"
     assert row["cwd"] == "/repo"
     assert row["pinned"] is True
-    assert row["identity"] == doc.identity.model_dump(mode="json")
+    assert json.loads(row["identity"]) == doc.identity.model_dump(mode="json")
 
 
 def test_materialize_generation_index_upserts_by_row_id(
@@ -244,3 +350,43 @@ def test_materialize_generation_index_upserts_by_row_id(
     assert table.rows[row_id]["cwd"] == "/repo/new"
     assert metadata.completed is True
     assert read_index_metadata("gen-a") == metadata
+
+
+def test_materialize_generation_index_batches_documents_and_reports_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.index import materialize_generation_index
+    from codexbot.search.state import read_index_metadata
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    connection = FakeConnection()
+    embedder = FakeEmbedder()
+    progress: list[int] = []
+    documents = [
+        _doc(
+            text=f"document {index}",
+            transcript_offset=index,
+            transcript_index=index,
+        )
+        for index in range(5)
+    ]
+
+    metadata = materialize_generation_index(
+        "gen-batch",
+        documents=documents,
+        provider=embedder,
+        connection=connection,
+        batch_size=2,
+        progress_callback=progress.append,
+    )
+
+    table = connection.tables["chunks"]
+    assert [len(call) for call in embedder.calls] == [2, 2, 1]
+    assert [len(batch) for batch in table.executed_batches] == [2, 1]
+    assert table.added_batches == []
+    assert progress == [2, 4, 5]
+    assert len(table.rows) == 5
+    assert table.fts_created is True
+    assert table.scalar_created is True
+    assert metadata.completed is True
+    assert read_index_metadata("gen-batch") == metadata

@@ -200,6 +200,12 @@ def test_stale_running_worker_without_generation_is_unavailable(
             status="running",
             current_task="initial_backfill",
             heartbeat_at="2026-05-21T21:01:00Z",
+            counters=SearchCounters(
+                open_sessions=2,
+                indexed_sessions=1,
+                indexed_chunks=11,
+                failed_items=0,
+            ),
         )
     )
 
@@ -209,6 +215,7 @@ def test_stale_running_worker_without_generation_is_unavailable(
     assert body["available"] is False
     assert "heartbeat is stale" in (body["reason"] or "")
     assert body["operations"]["worker"]["stale"] is True
+    assert body["operations"]["progress"]["indexed_chunks"] == 11
 
 
 def test_stale_running_worker_with_generation_stays_degraded_available(
@@ -327,7 +334,10 @@ def test_initial_backfill_worker_materializes_generation_and_status(
     assert main(["initial-backfill"]) == 0
 
     async_materialize.assert_awaited_once()
-    materialize_index.assert_called_once_with("gen-test")
+    materialize_index.assert_called_once()
+    args, kwargs = materialize_index.call_args
+    assert args == ("gen-test",)
+    assert callable(kwargs["progress_callback"])
     activate_generation.assert_called_once_with(manifest)
     status = read_worker_status()
     assert status is not None
@@ -364,11 +374,55 @@ def test_rebuild_worker_activates_fresh_generation(
     assert main(["rebuild"]) == 0
 
     async_materialize.assert_awaited_once()
-    materialize_index.assert_called_once_with("gen-new")
+    materialize_index.assert_called_once()
+    args, kwargs = materialize_index.call_args
+    assert args == ("gen-new",)
+    assert callable(kwargs["progress_callback"])
     active = read_generation_metadata()
     assert active is not None
     assert active.generation_id == "gen-new"
     assert active.active is True
+
+
+def test_rebuild_worker_updates_status_during_index_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search import worker
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    manifest = _manifest("gen-progress", indexed_chunks=8)
+    _write_generation_files("gen-progress", manifest)
+    statuses = []
+    real_write_status = worker.write_worker_status
+
+    async_materialize = AsyncMock(return_value=manifest)
+
+    def capture_status(status) -> None:
+        statuses.append(status)
+        real_write_status(status)
+
+    def materialize_index(_generation_id: str, **kwargs: object) -> None:
+        progress_callback = kwargs["progress_callback"]
+        assert callable(progress_callback)
+        progress_callback(3)
+        progress_callback(8)
+
+    monkeypatch.setattr(worker, "materialize_initial_backfill", async_materialize)
+    monkeypatch.setattr(worker, "materialize_generation_index", materialize_index)
+    monkeypatch.setattr(worker, "write_worker_status", capture_status)
+
+    assert worker.main(["rebuild"]) == 0
+
+    running_counts = [
+        status.counters.indexed_chunks
+        for status in statuses
+        if status.status == "running" and status.counters is not None
+    ]
+    assert 0 in running_counts
+    assert 3 in running_counts
+    assert 8 in running_counts
+    assert statuses[-1].status == "completed"
+    assert statuses[-1].counters == manifest.counters
 
 
 def test_smoke_search_index_reports_model_dimension_and_path(

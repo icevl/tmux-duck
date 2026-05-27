@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from threading import Lock
 from typing import Protocol
 
 
@@ -39,6 +40,18 @@ class EmbeddingConfig:
     vector_dimension: int
     batch_size: int
     local_files_only: bool
+    device: str | None = None
+
+
+def _normalize_device(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    if value.isdecimal():
+        return f"cuda:{value}"
+    return value
 
 
 def embedding_config_from_env() -> EmbeddingConfig:
@@ -53,6 +66,7 @@ def embedding_config_from_env() -> EmbeddingConfig:
         ),
         local_files_only=os.getenv("CODEXBOT_SEARCH_LOCAL_FILES_ONLY", "false").lower()
         in {"1", "true", "yes"},
+        device=_normalize_device(os.getenv("CODEXBOT_SEARCH_DEVICE")),
     )
 
 
@@ -64,15 +78,20 @@ class SentenceTransformerEmbeddingProvider:
         self.model_id = self.config.model_id
         self.vector_dimension = self.config.vector_dimension
         self._model: object | None = None
+        self._model_lock = Lock()
 
     def _load_model(self) -> object:
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
+            with self._model_lock:
+                if self._model is None:
+                    from sentence_transformers import SentenceTransformer
 
-            kwargs = {}
-            if self.config.local_files_only:
-                kwargs["local_files_only"] = True
-            self._model = SentenceTransformer(self.model_id, **kwargs)
+                    kwargs = {}
+                    if self.config.local_files_only:
+                        kwargs["local_files_only"] = True
+                    if self.config.device is not None:
+                        kwargs["device"] = self.config.device
+                    self._model = SentenceTransformer(self.model_id, **kwargs)
         return self._model
 
     def _encode(self, texts: list[str]) -> list[list[float]]:
@@ -100,19 +119,43 @@ class SentenceTransformerEmbeddingProvider:
 
 
 _provider_override: EmbeddingProvider | None = None
+_provider_cache: dict[EmbeddingConfig, EmbeddingProvider] = {}
+_provider_cache_lock = Lock()
+
+
+def clear_embedding_provider_cache() -> None:
+    """Drop cached model providers.
+
+    Tests use this to isolate env-var changes. Production keeps one provider
+    hot so each search request does not reload the SentenceTransformer model.
+    """
+    with _provider_cache_lock:
+        _provider_cache.clear()
 
 
 def set_embedding_provider_for_tests(provider: EmbeddingProvider | None) -> None:
     """Inject a deterministic provider for unit tests."""
     global _provider_override
     _provider_override = provider
+    clear_embedding_provider_cache()
 
 
 def get_embedding_provider() -> EmbeddingProvider:
     """Return the configured local embedding provider."""
     if _provider_override is not None:
         return _provider_override
-    return SentenceTransformerEmbeddingProvider()
+    config = embedding_config_from_env()
+    with _provider_cache_lock:
+        provider = _provider_cache.get(config)
+        if provider is None:
+            provider = SentenceTransformerEmbeddingProvider(config)
+            _provider_cache[config] = provider
+        return provider
+
+
+def warm_embedding_provider() -> None:
+    """Load and warm the configured provider for future query latency."""
+    get_embedding_provider().embed_query("warm up Codi local session search")
 
 
 __all__ = [
@@ -122,7 +165,9 @@ __all__ = [
     "EmbeddingProvider",
     "QUERY_INSTRUCTION",
     "SentenceTransformerEmbeddingProvider",
+    "clear_embedding_provider_cache",
     "embedding_config_from_env",
     "get_embedding_provider",
     "set_embedding_provider_for_tests",
+    "warm_embedding_provider",
 ]

@@ -458,3 +458,26 @@ async def test_stale_source_helper_hides_closed_session_documents(
     assert stale_sources == {"/tmp/closed.jsonl"}
     assert list_stale_sources() == {"/tmp/closed.jsonl"}
     assert [doc.text for doc in routeable] == ["open"]
+
+
+def test_generation_documents_cache_reuses_and_invalidates_after_upsert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.live import read_generation_documents, upsert_generation_documents
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    first = _doc(text="cached first", transcript_source="/tmp/cache.jsonl")
+    second = first.model_copy(update={"text": "cached updated"})
+
+    upsert_generation_documents("gen-cache", [first])
+    first_read = read_generation_documents("gen-cache")
+    second_read = read_generation_documents("gen-cache")
+
+    assert first_read is second_read
+    assert [document.text for document in first_read] == ["cached first"]
+
+    upsert_generation_documents("gen-cache", [second])
+    third_read = read_generation_documents("gen-cache")
+
+    assert third_read is not first_read
+    assert [document.text for document in third_read] == ["cached updated"]

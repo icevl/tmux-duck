@@ -365,7 +365,11 @@ def get_status(open_session_count: int | None = None) -> SearchStatusResponse:
         )
 
     queue_reason = _queue_issue_reason(queue_snapshot)
-    counters = _counters(open_session_count, queue_snapshot=queue_snapshot)
+    counters = _counters(
+        open_session_count,
+        worker_status.counters if worker_status is not None else None,
+        queue_snapshot,
+    )
     if generation is None:
         stale_reason = (
             _stale_reason(worker_status)

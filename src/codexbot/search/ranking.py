@@ -338,6 +338,7 @@ def lexical_candidates(
     documents: list[SearchBackfillDocument],
     req: SearchRequest,
     *,
+    limit: int | None = None,
     now: datetime | None = None,
 ) -> list[RankedCandidate]:
     """Return ranked lexical candidates over a small local document corpus."""
@@ -348,6 +349,15 @@ def lexical_candidates(
     ]
     if not scored:
         return []
+    if limit is not None and len(scored) > limit:
+        scored = sorted(
+            scored,
+            key=lambda item: (
+                -item.score,
+                item.document.source_order,
+                item.document.chunk_index,
+            ),
+        )[:limit]
 
     max_score = max(candidate.score for candidate in scored) or 1.0
     normalized: list[RankedCandidate] = []

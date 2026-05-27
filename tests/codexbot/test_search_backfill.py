@@ -201,6 +201,55 @@ async def test_backfill_enumerates_current_windows_and_skips_unresolved(
 
 
 @pytest.mark.asyncio
+async def test_backfill_dedupes_same_transcript_bound_to_multiple_windows(
+    mgr: SessionManager, tmp_path: Path
+) -> None:
+    from codexbot.search.backfill import collect_open_session_documents
+
+    transcript = tmp_path / "shared.jsonl"
+    _write_jsonl(transcript, _user_entry(_text("shared prompt")))
+    session = CodexSession("shared-session", "", 1, str(transcript))
+    mgr.window_states.update(
+        {
+            "@1": WindowState(
+                session_id="shared-session",
+                cwd="/repo/one",
+                window_name="one",
+                runtime="codex",
+            ),
+            "@2": WindowState(
+                session_id="shared-session",
+                cwd="/repo/two",
+                window_name="two",
+                runtime="codex",
+            ),
+        }
+    )
+    tmux = FakeTmuxManager(
+        [
+            TmuxWindow("@1", "one", "/repo/one", "codex"),
+            TmuxWindow("@2", "two", "/repo/two", "codex"),
+        ]
+    )
+
+    with patch.object(
+        mgr,
+        "resolve_session_for_window",
+        new=AsyncMock(return_value=session),
+    ):
+        result = await collect_open_session_documents(
+            session_manager=mgr,
+            tmux_manager=tmux,
+        )
+
+    assert result.counters.open_sessions == 2
+    assert result.counters.indexed_sessions == 2
+    assert result.counters.indexed_chunks == 1
+    assert len(result.documents) == 1
+    assert result.documents[0].routing.window_id == "@2"
+
+
+@pytest.mark.asyncio
 async def test_backfill_indexes_all_text_bearing_parser_entry_types(
     mgr: SessionManager, tmp_path: Path
 ) -> None:

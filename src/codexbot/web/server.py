@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import socket
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Optional
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, Optional
 import uvicorn
 
 from ..config import config
+from ..search.embedding import warm_embedding_provider
 from ..search.live import LiveQueueProducer, replay_open_session_queue
 from ..search import supervisor as search_supervisor
 from ..session_monitor import NewMessage, SessionMonitor
@@ -65,6 +67,7 @@ class WebServerHandle:
         search_task: asyncio.Task[None] | None = None,
         search_replay_task: asyncio.Task[int] | None = None,
         search_live_task: asyncio.Task[None] | None = None,
+        search_warm_task: asyncio.Task[None] | None = None,
         search_producer: LiveQueueProducer | None = None,
         interactive_monitor: InteractivePromptMonitor | None = None,
     ) -> None:
@@ -76,6 +79,7 @@ class WebServerHandle:
         self.search_task = search_task
         self.search_replay_task = search_replay_task
         self.search_live_task = search_live_task
+        self.search_warm_task = search_warm_task
         self.search_producer = search_producer
         self.interactive_monitor = interactive_monitor
         self.listener: Listener | None = None
@@ -83,6 +87,24 @@ class WebServerHandle:
 
 
 _handle: Optional[WebServerHandle] = None
+
+
+def _search_warmup_enabled() -> bool:
+    return os.getenv("CODEXBOT_SEARCH_WARM_PROVIDER", "true").lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+
+
+async def _warm_search_provider() -> None:
+    try:
+        await asyncio.to_thread(warm_embedding_provider)
+        logger.info("Search embedding provider warmed")
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Search embedding provider warmup skipped: %s", exc)
 
 
 async def start_web_server(
@@ -173,6 +195,11 @@ async def start_web_server(
     search_live_task = asyncio.create_task(
         search_supervisor.live_queue_loop(), name="codexbot-search-live-worker"
     )
+    search_warm_task: asyncio.Task[None] | None = None
+    if _search_warmup_enabled():
+        search_warm_task = asyncio.create_task(
+            _warm_search_provider(), name="codexbot-search-provider-warmup"
+        )
     update_task: asyncio.Task[None] | None = None
     if config.auto_update_enabled:
         update_task = asyncio.create_task(
@@ -197,6 +224,7 @@ async def start_web_server(
         search_task=search_task,
         search_replay_task=search_replay_task,
         search_live_task=search_live_task,
+        search_warm_task=search_warm_task,
         search_producer=search_producer,
         interactive_monitor=interactive_monitor,
     )
@@ -246,6 +274,12 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
         handle.search_live_task.cancel()
         try:
             await handle.search_live_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+    if handle.search_warm_task is not None:
+        handle.search_warm_task.cancel()
+        try:
+            await handle.search_warm_task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
     if handle.search_replay_task is not None:

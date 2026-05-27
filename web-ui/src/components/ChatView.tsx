@@ -234,7 +234,13 @@ function messageSearchKey(m: SessionMessage): string | null {
 }
 
 function searchTargetCoordinateKey(target: SearchHitTarget): string | null {
-  const offset = target.transcript_offset;
+  const rawOffset = target.transcript_offset;
+  const offset =
+    typeof rawOffset === "number" &&
+    Number.isFinite(rawOffset) &&
+    rawOffset >= 0
+      ? rawOffset
+      : target.source_order;
   if (typeof offset !== "number" || !Number.isFinite(offset) || offset < 0) {
     return null;
   }
@@ -1345,7 +1351,7 @@ export function ChatView({
       return;
     }
 
-    const offset = searchTarget.transcript_offset;
+    const offset = searchTarget.transcript_offset ?? searchTarget.source_order;
     if (typeof offset !== "number" || !Number.isFinite(offset) || offset < 0) {
       onSearchTargetFallback();
       return;
