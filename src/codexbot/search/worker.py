@@ -10,22 +10,29 @@ import argparse
 import asyncio
 import json
 import logging
-import threading
+import shutil
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Sequence
 
 from .backfill import materialize_initial_backfill, new_generation_id
 from .contracts import (
     SearchBackfillDocument,
+    SearchBackfillManifest,
     SearchCounters,
     SearchRoutingMetadata,
     SearchRowIdentity,
     SearchWorkerStatus,
     TranscriptProvenance,
 )
-from .index import materialize_generation_index, upsert_index_documents
-from .live import upsert_generation_documents
+from .index import (
+    existing_row_ids,
+    materialize_generation_index,
+    row_id_for_identity,
+    upsert_index_documents,
+)
+from .live import read_generation_documents, upsert_generation_documents
 from .queue import (
     clear_queue_errors,
     complete_items,
@@ -35,12 +42,64 @@ from .queue import (
     record_queue_error,
     sanitize_error,
 )
-from .state import activate_generation, read_generation_metadata, write_worker_status
+from .state import (
+    activate_generation,
+    generations_dir,
+    read_generation_manifest,
+    read_generation_metadata,
+    search_dir,
+    write_worker_status,
+)
+
+PAUSE_POLL_SLEEP_SECONDS = 1.0
+PAUSE_FLAG_FILENAME = "pause"
+
+
+def _pause_flag_path() -> Path:
+    return search_dir() / PAUSE_FLAG_FILENAME
+
+
+def _find_resumable_generation() -> SearchBackfillManifest | None:
+    """Pick the freshest generation that finished its discover step but
+    didn't get a state.json marker. If a previous run was killed during
+    embedding its manifest + documents.jsonl + partial LanceDB sit on
+    disk untouched, and we can pick up where it left off."""
+    root = generations_dir()
+    if not root.exists():
+        return None
+    candidates: list[tuple[str, SearchBackfillManifest]] = []
+    for entry in sorted(root.iterdir(), reverse=True):
+        if not entry.is_dir():
+            continue
+        manifest = read_generation_manifest(entry.name)
+        if manifest is None or not manifest.completed:
+            continue
+        candidates.append((entry.name, manifest))
+    if not candidates:
+        return None
+    return candidates[0][1]
+
+
+def _purge_other_generations(keep_generation_id: str) -> None:
+    """After a successful activate_generation, delete every generation
+    directory except the one we just activated. Previous runs accumulated
+    one dir per kill; this keeps the search/ tree clean."""
+    root = generations_dir()
+    if not root.exists():
+        return
+    for entry in root.iterdir():
+        if entry.name == keep_generation_id or not entry.is_dir():
+            continue
+        try:
+            shutil.rmtree(entry)
+            logger.info("purged orphan search generation %s", entry.name)
+        except OSError as exc:
+            logger.warning("could not purge %s: %s", entry, exc)
+
 
 logger = logging.getLogger(__name__)
 LIVE_BATCH_SIZE = 32
 LIVE_FLUSH_INTERVAL_SECONDS = 60.0
-INDEX_HEARTBEAT_INTERVAL_SECONDS = 15.0
 _last_live_flush_at: datetime | None = None
 
 
@@ -69,59 +128,99 @@ def _run_generation_task(current_task: str) -> None:
     """Materialize and activate a fresh generation for a local worker task."""
     write_worker_status(_running_status(current_task))
     try:
-        manifest = asyncio.run(materialize_initial_backfill())
-        last_heartbeat_at = 0.0
-        indexed_chunks_state = 0
-        progress_lock = threading.Lock()
-        heartbeat_stop = threading.Event()
+        # Resume the previous run if we find a manifest-but-no-state.json
+        # generation on disk. That happens whenever the worker was killed
+        # mid-embedding; without resume every restart re-embeds from
+        # zero into a brand-new generation_id.
+        resumable = _find_resumable_generation()
+        if resumable is not None:
+            manifest = resumable
+            documents = read_generation_documents(manifest.generation.generation_id)
+            already_indexed = existing_row_ids(manifest.generation.generation_id)
+            pending = [
+                doc
+                for doc in documents
+                if row_id_for_identity(doc.identity) not in already_indexed
+            ]
+            existing_count = len(documents) - len(pending)
+            logger.info(
+                "search_worker_resuming generation=%s already=%d remaining=%d",
+                manifest.generation.generation_id,
+                existing_count,
+                len(pending),
+            )
+        else:
+            manifest = asyncio.run(materialize_initial_backfill())
+            pending = None
+            existing_count = 0
 
-        def write_index_progress(indexed_chunks: int) -> None:
+        # Snapshot counters so the UI sees discovered totals before embedding
+        # starts, then tick indexed_chunks as each embedding batch lands.
+        # The fresh heartbeat on every callback also keeps the bot-side
+        # status publisher from flipping the footer to "stale" while a
+        # multi-minute embedding pass is in flight.
+        base = manifest.counters
+        total_chunks = manifest.document_count
+
+        def _write_progress(processed: int, total: int, *, paused: bool) -> None:
+            counters = SearchCounters(
+                open_sessions=base.open_sessions,
+                indexed_sessions=base.indexed_sessions if processed >= total > 0 else 0,
+                indexed_chunks=processed,
+                total_chunks=total or total_chunks,
+                queued_items=base.queued_items,
+                failed_items=base.failed_items,
+            )
             write_worker_status(
-                _running_status(
-                    current_task,
-                    counters=manifest.counters.model_copy(
-                        update={"indexed_chunks": indexed_chunks}
-                    ),
+                SearchWorkerStatus(
+                    status="running",
+                    current_task=current_task,
+                    heartbeat_at=_now_iso(),
+                    counters=counters,
+                    paused=paused,
                 )
             )
 
-        def report_index_progress(indexed_chunks: int) -> None:
-            nonlocal last_heartbeat_at
-            nonlocal indexed_chunks_state
-            with progress_lock:
-                indexed_chunks_state = indexed_chunks
-            now = time.monotonic()
-            if (
-                indexed_chunks < manifest.document_count
-                and now - last_heartbeat_at < INDEX_HEARTBEAT_INTERVAL_SECONDS
-            ):
-                return
-            last_heartbeat_at = now
-            write_index_progress(indexed_chunks)
+        def progress(processed_local: int, _total_local: int) -> None:
+            # Park here while the supervisor's pause flag is up so the
+            # embedding doesn't compete with the user's active tmux work.
+            # We refresh the heartbeat each loop so request-path code
+            # doesn't decide we've died.
+            #
+            # `processed_local` is the count for the current pending list;
+            # add `existing_count` so the UI shows the absolute progress
+            # across the full generation (resume-friendly).
+            absolute_processed = existing_count + processed_local
+            flag = _pause_flag_path()
+            paused_already_logged = False
+            while flag.exists():
+                if not paused_already_logged:
+                    logger.info(
+                        "search_worker_paused processed=%d total=%d",
+                        absolute_processed,
+                        total_chunks,
+                    )
+                    paused_already_logged = True
+                _write_progress(absolute_processed, total_chunks, paused=True)
+                time.sleep(PAUSE_POLL_SLEEP_SECONDS)
+            _write_progress(absolute_processed, total_chunks, paused=False)
 
-        def heartbeat_loop() -> None:
-            while not heartbeat_stop.wait(INDEX_HEARTBEAT_INTERVAL_SECONDS):
-                with progress_lock:
-                    indexed_chunks = indexed_chunks_state
-                write_index_progress(indexed_chunks)
-
-        write_index_progress(0)
-        heartbeat_thread = threading.Thread(
-            target=heartbeat_loop,
-            name="codexbot-search-index-heartbeat",
-            daemon=True,
-        )
-        heartbeat_thread.start()
-        try:
+        progress(0, len(pending) if pending is not None else total_chunks)
+        if pending is not None and not pending:
+            # Resume found a fully-embedded generation; just activate.
+            pass
+        else:
             materialize_generation_index(
                 manifest.generation.generation_id,
-                progress_callback=report_index_progress,
+                documents=pending,  # None = read from jsonl (cold start)
+                progress_cb=progress,
             )
-        finally:
-            heartbeat_stop.set()
-            heartbeat_thread.join(timeout=1.0)
         activate_generation(manifest)
-        clear_queue_errors()
+        _purge_other_generations(manifest.generation.generation_id)
+        try:
+            clear_queue_errors()
+        except Exception:  # noqa: BLE001
+            logger.exception("search_clear_queue_errors_failed")
     except Exception as exc:
         logger.exception("search_generation_task_failed task=%s", current_task)
         write_worker_status(
@@ -233,6 +332,31 @@ def _seconds_since_flush(now: datetime) -> float:
     return max(0.0, (now - _last_live_flush_at).total_seconds())
 
 
+_live_drain_count: int = 0
+# Compact the active LanceDB table every N successful drains. Each
+# merge_insert creates a new version; without periodic compaction the
+# version count grows linearly and merge eventually fails with a
+# DataFusion "Spill has sent an error" because the join across hundreds
+# of fragments can't spill to disk fast enough. 30 keeps total versions
+# well under 100 between sweeps and stays cheap.
+LIVE_COMPACT_EVERY = 30
+
+
+def _compact_active_generation(generation_id: str) -> None:
+    """Vacuum the active LanceDB table — compact fragments, prune old
+    versions. Best-effort: errors are logged and swallowed because a failed
+    compaction shouldn't block the live drain loop."""
+    from datetime import timedelta
+
+    from .index import connect_lancedb
+
+    try:
+        table = connect_lancedb(generation_id).open_table("chunks")
+        table.optimize(cleanup_older_than=timedelta(seconds=0))
+    except Exception:  # noqa: BLE001
+        logger.exception("search_live_compact_failed gen=%s", generation_id)
+
+
 def drain_live_queue_once(
     *,
     batch_size: int = LIVE_BATCH_SIZE,
@@ -284,8 +408,18 @@ def drain_live_queue_once(
         return 0
 
     complete_items(queue_ids)
-    clear_queue_errors()
+    # A successful drain means whatever was sitting in queue_errors is
+    # stale; clearing it stops the footer from surfacing yesterday's
+    # transient Spill error after we've actually recovered.
+    try:
+        clear_queue_errors()
+    except Exception:  # noqa: BLE001
+        logger.exception("search_clear_queue_errors_failed")
     _last_live_flush_at = current_time
+    global _live_drain_count
+    _live_drain_count += 1
+    if _live_drain_count % LIVE_COMPACT_EVERY == 0:
+        _compact_active_generation(generation.generation_id)
     return len(items)
 
 

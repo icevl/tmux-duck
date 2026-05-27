@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  Brain,
   ChevronDown,
-  Clock3,
+  ChevronRight,
   Filter,
   Loader2,
   Pin,
-  Search,
+  TerminalSquare,
   X,
 } from "lucide-react";
 import {
@@ -23,7 +22,7 @@ import {
 const ICON = 16;
 const MIN_QUERY_LENGTH = 2;
 const DEFAULT_LIMIT = 10;
-const DEFAULT_HITS_PER_SESSION = 3;
+const DEFAULT_HITS_PER_SESSION = 50;
 
 type RuntimeFilter = "all" | "codex" | "claude";
 type RoleFilter = "all" | "user" | "agent" | "tool";
@@ -42,6 +41,11 @@ export interface SearchHitTarget {
 
 interface Props {
   sessions: SessionSummary[];
+  status: SearchStatusResponse | null;
+  // False when the backend feature flag is off; we keep the input visible
+  // (still useful for triggering result panels) but hide filter affordances.
+  searchEnabled: boolean;
+  onStatusUpdate: (status: SearchStatusResponse) => void;
   onOpenResult: (windowId: string) => void;
   onOpenHit?: (target: SearchHitTarget) => void;
   onHasActiveQueryChange: (active: boolean) => void;
@@ -66,64 +70,6 @@ const recentOptions: Array<{ value: RecentFilter; label: string }> = [
   { value: "24h", label: "24h" },
   { value: "7d", label: "7d" },
 ];
-
-function statusLabel(status: SearchStatusResponse | null): string {
-  if (!status) return "Unavailable";
-  switch (status.state) {
-    case "ready":
-      return "Ready";
-    case "building":
-    case "partial":
-      return "Indexing";
-    case "stale":
-      return "Stale";
-    case "degraded":
-      return "Degraded";
-    case "missing":
-      return "Missing";
-    case "unavailable":
-      return "Unavailable";
-  }
-}
-
-function statusTone(status: SearchStatusResponse | null): string {
-  if (!status || !status.available || status.state === "unavailable") {
-    return "danger";
-  }
-  if (
-    status.state === "building" ||
-    status.state === "partial" ||
-    status.state === "stale" ||
-    status.state === "degraded" ||
-    status.state === "missing"
-  ) {
-    return "warn";
-  }
-  return "ok";
-}
-
-function cwdBase(cwd: string): string {
-  const parts = cwd.split("/").filter(Boolean);
-  return parts.at(-1) ?? cwd;
-}
-
-function formatRelative(ts: number | null): string {
-  if (!ts) return "";
-  const sec = Math.floor(Date.now() / 1000 - ts);
-  if (sec < 5) return "just now";
-  if (sec < 60) return `${sec}s ago`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  return `${Math.floor(sec / 86400)}d ago`;
-}
-
-function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null) return "unknown";
-  if (seconds < 60) return `${Math.floor(seconds)}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-  return `${Math.floor(seconds / 86400)}d`;
-}
 
 function recentSeconds(filter: RecentFilter): number | null {
   switch (filter) {
@@ -152,14 +98,6 @@ function rolePayload(filter: RoleFilter): {
     case "all":
       return { role: null, content_type: null };
   }
-}
-
-function hitLabel(hit: SearchHit): string {
-  if (hit.provenance.tool_name) return hit.provenance.tool_name;
-  if (hit.provenance.content_type === "tool_use") return "Tool";
-  if (hit.provenance.role === "assistant") return "Agent";
-  if (hit.provenance.role === "user") return "User";
-  return hit.provenance.role || "System";
 }
 
 function renderSnippet(snippet: string, highlights: SearchHighlight[]) {
@@ -258,6 +196,9 @@ function statusPanel(
 
 export function SessionSearch({
   sessions,
+  status,
+  searchEnabled,
+  onStatusUpdate,
   onOpenResult,
   onOpenHit,
   onHasActiveQueryChange,
@@ -268,12 +209,56 @@ export function SessionSearch({
   const [role, setRole] = useState<RoleFilter>("all");
   const [pinned, setPinned] = useState(false);
   const [recent, setRecent] = useState<RecentFilter>("any");
-  const [status, setStatus] = useState<SearchStatusResponse | null>(null);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const filtersRef = useRef<HTMLDivElement | null>(null);
   const requestSeq = useRef(0);
+
+  const filtersActive =
+    runtime !== "all" || role !== "all" || recent !== "any" || pinned;
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      const el = filtersRef.current;
+      if (el && !el.contains(e.target as Node)) setFiltersOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFiltersOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [filtersOpen]);
+
+  const resetFilters = () => {
+    setRuntime("all");
+    setRole("all");
+    setPinned(false);
+    setRecent("any");
+  };
+
+  // Keep the filter-related identifiers referenced so the build doesn't strip
+  // them while the filter button itself is commented out. Re-enabling is a
+  // one-block uncomment in JSX below.
+  void [
+    Filter,
+    Pin,
+    runtimeOptions,
+    roleOptions,
+    recentOptions,
+    searchEnabled,
+    filtersActive,
+    resetFilters,
+  ];
 
   const trimmedQuery = query.trim();
   const active = trimmedQuery.length >= MIN_QUERY_LENGTH;
@@ -288,25 +273,6 @@ export function SessionSearch({
     }, 260);
     return () => window.clearTimeout(timer);
   }, [trimmedQuery]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      api.getSearchStatus()
-        .then((next) => {
-          if (!cancelled) setStatus(next);
-        })
-        .catch((err: Error) => {
-          if (!cancelled) setError(err.message);
-        });
-    };
-    load();
-    const interval = window.setInterval(load, 10000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, []);
 
   useEffect(() => {
     if (debouncedQuery.length < MIN_QUERY_LENGTH) {
@@ -333,7 +299,7 @@ export function SessionSearch({
       .then((next) => {
         if (seq !== requestSeq.current) return;
         setResponse(next);
-        setStatus(next.status);
+        onStatusUpdate(next.status);
       })
       .catch((err: Error) => {
         if (seq !== requestSeq.current) return;
@@ -343,7 +309,7 @@ export function SessionSearch({
       .finally(() => {
         if (seq === requestSeq.current) setLoading(false);
       });
-  }, [debouncedQuery, pinned, recent, role, runtime]);
+  }, [debouncedQuery, pinned, recent, role, runtime, onStatusUpdate]);
 
   const sessionById = useMemo(
     () => new Map(sessions.map((session) => [session.window_id, session])),
@@ -351,9 +317,11 @@ export function SessionSearch({
   );
 
   const panel = statusPanel(active, loading, error, response, status);
-  const effectiveStatus = response?.status ?? status;
-  const operations = effectiveStatus?.operations ?? null;
-  const searchDetailsId = "session-search-status-details";
+  // The backend marks state="degraded" both for "no vector index" (real
+  // lexical-only fallback) and for "vector index exists but the live queue
+  // is behind". The second case is misleading to call "Semantic not ready" —
+  // semantic IS ready, the queue just hasn't merged the freshest events yet.
+  // Only fire the warning when the vector index truly isn't there.
   const showLexicalNotice =
     response?.status.available === true &&
     response.status.index === null &&
@@ -376,206 +344,133 @@ export function SessionSearch({
 
   return (
     <div className={`session-search${active ? " active" : ""}`}>
-      <label className="session-search-input-wrap">
-        <Search size={ICON} aria-hidden="true" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search open sessions"
-          aria-label="Search open sessions"
-        />
-        {query && (
+      <div className="session-search-bar">
+        <label className="session-search-input-wrap">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search open sessions"
+            aria-label="Search open sessions"
+          />
+          {query && (
+            <button
+              type="button"
+              className="session-search-clear"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              title="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </label>
+        {/* Filter button hidden for now — keep the popover logic wired so we
+            can flip it back on without re-implementing.
+        {searchEnabled && (
+        <div
+          className={`search-filters-anchor${filtersOpen ? " open" : ""}`}
+          ref={filtersRef}
+        >
           <button
             type="button"
-            className="session-search-clear"
-            onClick={() => setQuery("")}
-            aria-label="Clear search"
-            title="Clear search"
+            className={`search-filters-trigger${filtersActive ? " active" : ""}${
+              filtersOpen ? " open" : ""
+            }`}
+            aria-expanded={filtersOpen}
+            aria-haspopup="true"
+            aria-label={
+              filtersActive ? "Filters (active)" : "Filters"
+            }
+            title={filtersActive ? "Filters active" : "Filters"}
+            onClick={() => setFiltersOpen((current) => !current)}
           >
-            <X size={14} />
+            <Filter size={14} />
+            {filtersActive && (
+              <span className="search-filters-badge" aria-hidden="true" />
+            )}
           </button>
-        )}
-      </label>
-
-      <div className="session-search-meta">
-        <span className={`search-status ${statusTone(effectiveStatus)}`}>
-          {loading ? <Loader2 size={12} className="activity-spinner" /> : null}
-          {statusLabel(effectiveStatus)}
-        </span>
-        <span className="search-scope">Open sessions only</span>
-        {effectiveStatus?.counters && (
-          <span className="search-counts">
-            {effectiveStatus.counters.indexed_sessions}/
-            {effectiveStatus.counters.open_sessions} indexed
-          </span>
-        )}
-        <button
-          type="button"
-          className="search-details-toggle"
-          aria-expanded={detailsOpen}
-          aria-controls={searchDetailsId}
-          onClick={() => setDetailsOpen((current) => !current)}
-        >
-          <ChevronDown
-            size={12}
-            className={detailsOpen ? "expanded" : ""}
-            aria-hidden="true"
-          />
-          {detailsOpen ? "Hide details" : "Show details"}
-        </button>
-      </div>
-
-      {detailsOpen && (
-        <div
-          id={searchDetailsId}
-          className="search-status-details"
-          aria-label="Search status details"
-        >
-          {operations ? (
-            <>
-              <div className="search-detail-row">
-                <span>Worker heartbeat</span>
-                <strong>
-                  {operations.worker.status ?? "inactive"}
-                  {operations.worker.stale ? " stale" : ""}
-                </strong>
-                <small>
-                  {operations.worker.heartbeat_at
-                    ? `${formatDuration(
-                        operations.worker.heartbeat_age_seconds,
-                      )} ago`
-                    : "no heartbeat"}
-                </small>
+          {filtersOpen && (
+            <div
+              className="search-filters-popover"
+              role="dialog"
+              aria-label="Search filters"
+            >
+              <div className="search-filters-popover-header">
+                <span>Filters</span>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    className="search-filters-reset"
+                    onClick={resetFilters}
+                  >
+                    Reset
+                  </button>
+                )}
               </div>
-              <div className="search-detail-row">
-                <span>Queue lag</span>
-                <strong>
-                  {operations.queue.queued_items + operations.queue.leased_items}
-                  {" queued"}
-                </strong>
-                <small>
-                  {operations.queue.failed_items} failed
-                  {operations.queue.oldest_queued_age_seconds != null
-                    ? `, oldest ${formatDuration(
-                        operations.queue.oldest_queued_age_seconds,
-                      )}`
-                    : ""}
-                </small>
-              </div>
-              <div className="search-detail-row">
-                <span>Backfill</span>
-                <strong>
-                  {operations.progress.indexed_sessions}/
-                  {operations.progress.open_sessions} sessions
-                </strong>
-                <small>{operations.progress.indexed_chunks} chunks</small>
-              </div>
-              {(operations.progress.model_id || operations.progress.table_name) && (
-                <div className="search-detail-row">
-                  <span>Model/index</span>
-                  <strong>{operations.progress.model_id ?? "lexical"}</strong>
-                  <small>
-                    {operations.progress.vector_dimension
-                      ? `${operations.progress.vector_dimension} dims`
-                      : "no vector index"}
-                    {operations.progress.table_name
-                      ? `, ${operations.progress.table_name}`
-                      : ""}
-                  </small>
-                </div>
-              )}
-              {operations.benchmark && (
-                <div className="search-detail-row">
-                  <span>Benchmark</span>
-                  <strong>{operations.benchmark.passed ? "passed" : "failed"}</strong>
-                  <small>
-                    p95 {Math.round(operations.benchmark.query_p95_ms)}ms,
-                    {" "}
-                    {Math.round(operations.benchmark.peak_memory_mb)}MB
-                  </small>
-                </div>
-              )}
-              {operations.recent_errors.length > 0 && (
-                <div className="search-detail-row vertical">
-                  <span>Recent errors</span>
-                  {operations.recent_errors.map((message) => (
-                    <small key={message}>{message}</small>
+              <div className="search-filter-group">
+                <div className="search-filter-group-label">Runtime</div>
+                <div className="search-filter-row">
+                  {runtimeOptions.map((option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      className={`search-filter${
+                        runtime === option.value ? " active" : ""
+                      }`}
+                      onClick={() => setRuntime(option.value)}
+                    >
+                      {option.label}
+                    </button>
                   ))}
                 </div>
-              )}
-              <div className="search-detail-row vertical">
-                <span>Local recovery</span>
-                <small>
-                  Run the suggested command in the Codi project shell. Web UI
-                  recovery controls are intentionally read-only in this phase.
-                </small>
-                {operations.recovery_commands.map((item) => (
-                  <code key={item.command}>{item.command}</code>
-                ))}
               </div>
-            </>
-          ) : (
-            <div className="search-detail-row vertical">
-              <span>Search status</span>
-              <small>
-                Start a search to see session matches. Indexing status is shown
-                here while Codi catches up.
-              </small>
+              <div className="search-filter-group">
+                <div className="search-filter-group-label">Role</div>
+                <div className="search-filter-row">
+                  {roleOptions.map((option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      className={`search-filter${
+                        role === option.value ? " active" : ""
+                      }`}
+                      onClick={() => setRole(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="search-filter-group">
+                <div className="search-filter-group-label">Recent</div>
+                <div className="search-filter-row">
+                  <button
+                    type="button"
+                    className={`search-filter${pinned ? " active" : ""}`}
+                    onClick={() => setPinned((current) => !current)}
+                  >
+                    <Pin size={12} />
+                    Pinned
+                  </button>
+                  {recentOptions.map((option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      className={`search-filter${
+                        recent === option.value ? " active" : ""
+                      }`}
+                      onClick={() => setRecent(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
-      )}
-
-      <div className="session-search-filters" aria-label="Search filters">
-        <div className="search-filter-row">
-          <Filter size={12} aria-hidden="true" />
-          {runtimeOptions.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              className={`search-filter${
-                runtime === option.value ? " active" : ""
-              }`}
-              onClick={() => setRuntime(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <div className="search-filter-row">
-          {roleOptions.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              className={`search-filter${role === option.value ? " active" : ""}`}
-              onClick={() => setRole(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <div className="search-filter-row">
-          <button
-            type="button"
-            className={`search-filter${pinned ? " active" : ""}`}
-            onClick={() => setPinned((current) => !current)}
-          >
-            <Pin size={12} />
-            Pinned
-          </button>
-          {recentOptions.map((option) => (
-            <button
-              type="button"
-              key={option.value}
-              className={`search-filter${
-                recent === option.value ? " active" : ""
-              }`}
-              onClick={() => setRecent(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        )}
+        */}
       </div>
 
       {active && (
@@ -610,70 +505,48 @@ export function SessionSearch({
                   result.routing.name ||
                   session?.name ||
                   result.routing.window_id;
+                const wid = result.routing.window_id;
+                const expanded = !collapsedSessions.has(wid);
                 return (
-                  <div
-                    className="search-result-group"
-                    key={result.routing.window_id}
-                  >
+                  <div className="search-tree-group" key={wid}>
                     <button
                       type="button"
-                      className="search-result-session"
-                      onClick={() => onOpenResult(result.routing.window_id)}
+                      className="search-tree-row session"
+                      onClick={() =>
+                        setCollapsedSessions((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(wid)) next.delete(wid);
+                          else next.add(wid);
+                          return next;
+                        })
+                      }
                     >
-                      <div className="search-result-title">
-                        {result.routing.pinned && <Pin size={12} />}
-                        <span>{title}</span>
-                      </div>
-                      <div className="search-result-meta">
-                        <Brain
-                          size={12}
-                          className={`runtime-icon runtime-icon-${result.routing.runtime}`}
-                        />
-                        <span>{result.routing.runtime}</span>
-                        <span>{cwdBase(result.routing.cwd)}</span>
-                        <span>{result.hit_count} hits</span>
-                        {session?.last_activity && (
-                          <span>
-                            <Clock3 size={11} />
-                            {formatRelative(session.last_activity)}
-                          </span>
+                      <span className="tree-chevron" aria-hidden="true">
+                        {expanded ? (
+                          <ChevronDown size={12} />
+                        ) : (
+                          <ChevronRight size={12} />
                         )}
-                      </div>
+                      </span>
+                      <span className="tree-icon" aria-hidden="true">
+                        <TerminalSquare size={14} />
+                      </span>
+                      <span className="tree-label">{title}</span>
+                      <span className="tree-count">{result.hit_count}</span>
                     </button>
-                    <div className="search-result-hits">
-                      {result.hits.map((hit) => {
-                        const labels =
-                          showLexicalNotice &&
-                          !hit.match_labels.some((label) =>
-                            label.toLowerCase().startsWith("lexical"),
-                          )
-                            ? ["Lexical", ...hit.match_labels]
-                            : hit.match_labels;
-                        return (
-                          <button
-                            type="button"
-                            key={`${hit.source_order}:${hit.identity.chunk_index}`}
-                            className="search-result-hit"
-                            onClick={() => openHit(result, hit)}
-                          >
-                            <div className="search-hit-meta">
-                              <span>{hitLabel(hit)}</span>
-                              {hit.timestamp && <span>{hit.timestamp}</span>}
-                            </div>
-                            <div className="search-hit-snippet">
-                              {renderSnippet(hit.snippet, hit.highlights)}
-                            </div>
-                            {labels.length > 0 && (
-                              <div className="search-hit-labels">
-                                {labels.map((label) => (
-                                  <span key={label}>{label}</span>
-                                ))}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    {expanded &&
+                      result.hits.map((hit) => (
+                        <button
+                          type="button"
+                          key={`${hit.source_order}:${hit.identity.chunk_index}`}
+                          className="search-tree-row hit"
+                          onClick={() => openHit(result, hit)}
+                        >
+                          <span className="tree-snippet">
+                            {renderSnippet(hit.snippet, hit.highlights)}
+                          </span>
+                        </button>
+                      ))}
                   </div>
                 );
               })}

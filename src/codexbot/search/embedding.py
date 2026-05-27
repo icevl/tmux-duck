@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from threading import Lock
-from typing import Protocol
+from typing import Any, Protocol
 
 
 DEFAULT_EMBEDDING_MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
@@ -49,6 +49,8 @@ def _normalize_device(raw: str | None) -> str | None:
     value = raw.strip()
     if not value:
         return None
+    if value.lower() == "auto":
+        return None
     if value.isdecimal():
         return f"cuda:{value}"
     return value
@@ -56,6 +58,10 @@ def _normalize_device(raw: str | None) -> str | None:
 
 def embedding_config_from_env() -> EmbeddingConfig:
     """Read embedding config without importing the model stack."""
+    # The default is cpu: PyTorch MPS on Apple Silicon has hung the worker
+    # mid-load on Qwen3-Embedding. CPU is slower but reliable for the
+    # one-shot backfill. Set "auto" to delegate to SentenceTransformer's
+    # built-in selection, or "mps"/"cuda" explicitly.
     return EmbeddingConfig(
         model_id=os.getenv("CODEXBOT_SEARCH_MODEL_ID", DEFAULT_EMBEDDING_MODEL_ID),
         vector_dimension=int(
@@ -66,7 +72,7 @@ def embedding_config_from_env() -> EmbeddingConfig:
         ),
         local_files_only=os.getenv("CODEXBOT_SEARCH_LOCAL_FILES_ONLY", "false").lower()
         in {"1", "true", "yes"},
-        device=_normalize_device(os.getenv("CODEXBOT_SEARCH_DEVICE")),
+        device=_normalize_device(os.getenv("CODEXBOT_SEARCH_DEVICE", "cpu")),
     )
 
 
@@ -86,11 +92,15 @@ class SentenceTransformerEmbeddingProvider:
                 if self._model is None:
                     from sentence_transformers import SentenceTransformer
 
-                    kwargs = {}
+                    kwargs: dict[str, Any] = {}
                     if self.config.local_files_only:
                         kwargs["local_files_only"] = True
-                    if self.config.device is not None:
+                    if self.config.device:
                         kwargs["device"] = self.config.device
+                    # Float16 halves resident RAM for Qwen3-Embedding-0.6B and
+                    # keeps cosine similarity close enough for the existing
+                    # float32 LanceDB index.
+                    kwargs["model_kwargs"] = {"torch_dtype": "float16"}
                     self._model = SentenceTransformer(self.model_id, **kwargs)
         return self._model
 
@@ -141,7 +151,14 @@ def set_embedding_provider_for_tests(provider: EmbeddingProvider | None) -> None
 
 
 def get_embedding_provider() -> EmbeddingProvider:
-    """Return the configured local embedding provider."""
+    """Return the configured local embedding provider.
+
+    The SentenceTransformer-backed provider holds a ~1GB Qwen3 model in
+    memory once loaded; creating a fresh provider per query forced a
+    cold reload (~60s on CPU) every time. We cache one instance per
+    process and reuse it across requests — first query still pays the
+    load, subsequent queries are millisecond-level.
+    """
     if _provider_override is not None:
         return _provider_override
     config = embedding_config_from_env()

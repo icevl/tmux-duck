@@ -10,10 +10,20 @@ export interface SessionSummary {
   cwd: string;
   runtime: "codex" | "claude" | string;
   session_id: string | null;
-  pane_command: string;
+  pane_command: string | null;
   last_activity: number | null;
   pinned: boolean;
   sort_order: number | null;
+  dormant?: boolean;
+}
+
+export interface ResumeDormantResponse {
+  ok: boolean;
+  window_id: string;
+  name: string;
+  runtime: string;
+  cwd: string;
+  session_id: string;
 }
 
 export interface SessionMessage {
@@ -103,6 +113,9 @@ export type SearchResponseOutcome = "ok" | "not_ready" | "unavailable";
 export type SearchOutcome = "lexical" | "semantic" | "metadata" | "hybrid";
 
 export interface SearchCounters {
+  /** Total chunks discovered by the current backfill before embedding starts.
+   * Used together with indexed_chunks for an "X/Y" progress display. */
+  total_chunks?: number;
   open_sessions: number;
   indexed_sessions: number;
   indexed_chunks: number;
@@ -129,6 +142,9 @@ export interface SearchIndexMetadata {
 }
 
 export interface SearchWorkerHealth {
+  /** True while the worker is sleeping between batches because the
+   * supervisor saw user activity (tmux pane busy / agent generating). */
+  paused?: boolean;
   status: "idle" | "running" | "completed" | "failed" | null;
   current_task: string | null;
   heartbeat_at: string | null;
@@ -150,6 +166,7 @@ export interface SearchQueueHealth {
 }
 
 export interface SearchBackfillProgress {
+  total_chunks?: number;
   open_sessions: number;
   indexed_sessions: number;
   indexed_chunks: number;
@@ -213,7 +230,21 @@ export interface SearchStatusResponse {
   generation: SearchGenerationMetadata | null;
   index: SearchIndexMetadata | null;
   operations: SearchOperationalStatus | null;
+  // True when the backend feature flag (CODEXBOT_SEARCH_ENABLED) is on.
+  // When false the rest of the fields are absent and the UI hides the
+  // search filter affordance and the index footer entirely.
+  enabled?: boolean;
+  // True when the supervisor has paused indexing because tmux work is
+  // active. UI uses this to show a "deferred" footer instead of
+  // misleading degraded/missing/unavailable.
+  deferred?: boolean;
 }
+
+export interface SearchStatusDisabled {
+  enabled: false;
+}
+
+export type SearchStatusPayload = SearchStatusResponse | SearchStatusDisabled;
 
 export interface SearchRoutingMetadata {
   window_id: string;
@@ -368,6 +399,16 @@ export const api = {
       method: "POST",
       json: searchRequest,
     }),
+  wipeSearchIndex: () =>
+    request<{ ok: boolean; killed_pids: number[]; removed: string[] }>(
+      "/api/search/wipe",
+      { method: "POST" },
+    ),
+  resumeDormantSession: (windowId: string) =>
+    request<ResumeDormantResponse>(
+      `/api/sessions/${encodeURIComponent(windowId)}/resume`,
+      { method: "POST" },
+    ),
   createSession: (body: {
     cwd: string;
     runtime: string;
@@ -626,6 +667,12 @@ export const api = {
       )}/files/content?path=${encodeURIComponent(path)}`,
     ),
 
+  saveSessionFileContent: (windowId: string, path: string, content: string) =>
+    request<{ path: string; size: number }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/files/content`,
+      { method: "PUT", json: { path, content } },
+    ),
+
   searchSessionFiles: (windowId: string, q: string) =>
     request<{
       matches: { name: string; type: "file" | "dir"; path: string }[];
@@ -726,4 +773,5 @@ export type WsEvent =
       window_id: string;
       ts: number;
       seq?: number;
-    };
+    }
+  | (SearchStatusResponse & { type: "search_status"; ts: number; seq?: number });

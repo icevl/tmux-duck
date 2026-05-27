@@ -31,6 +31,7 @@ from ..slash_commands import slash_command_registry
 from .api import create_app
 from .events import EventBus, session_monitor_listener
 from .interactive_monitor import InteractivePromptMonitor
+from .search_status_publisher import search_status_publisher_loop
 from .streaming import stream_pane_loop
 from .update_checker import poll_loop as update_poll_loop
 
@@ -68,7 +69,10 @@ class WebServerHandle:
         search_replay_task: asyncio.Task[int] | None = None,
         search_live_task: asyncio.Task[None] | None = None,
         search_warm_task: asyncio.Task[None] | None = None,
+        search_status_task: asyncio.Task[None] | None = None,
+        search_pause_task: asyncio.Task[None] | None = None,
         search_producer: LiveQueueProducer | None = None,
+        idle_tracker: "search_supervisor.IdleTracker | None" = None,
         interactive_monitor: InteractivePromptMonitor | None = None,
     ) -> None:
         self.server = server
@@ -80,7 +84,10 @@ class WebServerHandle:
         self.search_replay_task = search_replay_task
         self.search_live_task = search_live_task
         self.search_warm_task = search_warm_task
+        self.search_status_task = search_status_task
+        self.search_pause_task = search_pause_task
         self.search_producer = search_producer
+        self.idle_tracker = idle_tracker
         self.interactive_monitor = interactive_monitor
         self.listener: Listener | None = None
         self.search_listener: Listener | None = None
@@ -130,6 +137,7 @@ async def start_web_server(
 
     search_producer: LiveQueueProducer | None = None
     search_replay_task: asyncio.Task[int] | None = None
+    idle_tracker: search_supervisor.IdleTracker | None = None
     if monitor is not None:
 
         async def _listener(msg: NewMessage) -> None:
@@ -137,13 +145,18 @@ async def start_web_server(
 
         monitor.add_listener(_listener)
         listener_ref = _listener
-        search_producer = LiveQueueProducer()
-        monitor.add_listener(search_producer.listener)
-        search_listener_ref = search_producer.listener
-        search_replay_task = asyncio.create_task(
-            replay_open_session_queue(),
-            name="codexbot-search-live-replay",
-        )
+        if config.search_enabled:
+            search_producer = LiveQueueProducer()
+            monitor.add_listener(search_producer.listener)
+            search_listener_ref = search_producer.listener
+            idle_tracker = search_supervisor.IdleTracker()
+            idle_tracker.attach(monitor)
+            search_replay_task = asyncio.create_task(
+                replay_open_session_queue(),
+                name="codexbot-search-live-replay",
+            )
+        else:
+            search_listener_ref = None
     else:
         listener_ref = None
         search_listener_ref = None
@@ -189,17 +202,32 @@ async def start_web_server(
     stream_task = asyncio.create_task(
         stream_pane_loop(bus), name="codexbot-web-pane-stream"
     )
-    search_task = asyncio.create_task(
-        search_supervisor.start_worker_if_needed(), name="codexbot-search-supervisor"
-    )
-    search_live_task = asyncio.create_task(
-        search_supervisor.live_queue_loop(), name="codexbot-search-live-worker"
-    )
+    search_task: asyncio.Task[None] | None = None
+    search_live_task: asyncio.Task[None] | None = None
     search_warm_task: asyncio.Task[None] | None = None
-    if _search_warmup_enabled():
-        search_warm_task = asyncio.create_task(
-            _warm_search_provider(), name="codexbot-search-provider-warmup"
+    search_status_task: asyncio.Task[None] | None = None
+    search_pause_task: asyncio.Task[None] | None = None
+    if config.search_enabled:
+        # The pause controller subsumes the one-shot supervisor: it
+        # re-tries start_worker_if_needed every couple seconds and writes
+        # the pause flag the worker subprocess polls.
+        search_pause_task = asyncio.create_task(
+            search_supervisor.pause_controller_loop(idle_tracker),
+            name="codexbot-search-pause-controller",
         )
+        search_live_task = asyncio.create_task(
+            search_supervisor.live_queue_loop(), name="codexbot-search-live-worker"
+        )
+        search_status_task = asyncio.create_task(
+            search_status_publisher_loop(bus),
+            name="codexbot-search-status-publisher",
+        )
+        if _search_warmup_enabled():
+            search_warm_task = asyncio.create_task(
+                _warm_search_provider(), name="codexbot-search-provider-warmup"
+            )
+    else:
+        logger.info("Search disabled via CODEXBOT_SEARCH_ENABLED")
     update_task: asyncio.Task[None] | None = None
     if config.auto_update_enabled:
         update_task = asyncio.create_task(
@@ -225,7 +253,10 @@ async def start_web_server(
         search_replay_task=search_replay_task,
         search_live_task=search_live_task,
         search_warm_task=search_warm_task,
+        search_status_task=search_status_task,
+        search_pause_task=search_pause_task,
         search_producer=search_producer,
+        idle_tracker=idle_tracker,
         interactive_monitor=interactive_monitor,
     )
     handle.listener = listener_ref
@@ -245,6 +276,8 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
         monitor.remove_listener(handle.listener)
     if monitor is not None and handle.search_listener is not None:
         monitor.remove_listener(handle.search_listener)
+    if monitor is not None and handle.idle_tracker is not None:
+        handle.idle_tracker.detach(monitor)
     slash_command_registry.set_event_publisher(None)
     skill_hint_registry.set_event_publisher(None)
     await handle.bus.close()
@@ -280,6 +313,18 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
         handle.search_warm_task.cancel()
         try:
             await handle.search_warm_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+    if handle.search_status_task is not None:
+        handle.search_status_task.cancel()
+        try:
+            await handle.search_status_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+    if handle.search_pause_task is not None:
+        handle.search_pause_task.cancel()
+        try:
+            await handle.search_pause_task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
     if handle.search_replay_task is not None:

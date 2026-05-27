@@ -19,7 +19,7 @@ from .contracts import (
 )
 
 _QUOTED_RE = re.compile(r'"([^"]+)"')
-_TOKEN_RE = re.compile(r"[A-Za-z0-9_./:@+#-]+")
+_TOKEN_RE = re.compile(r"[\w./:@+#-]+")
 _PATH_RE = re.compile(r"(?:^|[\s`'\"])(?:[A-Za-z]:)?/?[\w.-]+(?:/[\w.@+-]+)+")
 _STACK_RE = re.compile(r"\b(?:Traceback|File \"[^\"]+\", line \d+|Error:|Exception)\b")
 _TICKET_RE = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
@@ -52,13 +52,24 @@ def _parse_iso(value: str | None) -> datetime | None:
     return parsed.astimezone(UTC)
 
 
+_MIN_LEX_TOKEN_LEN = 3
+"""Drop tokens shorter than this from lexical matching.
+
+Russian "не", "до", "за", English "is", "of", etc. carry no signal but
+match nearly every document — letting them through inflates lexical_score
+for unrelated text and floods the result panel. 3-char minimum preserves
+useful tokens like "fix", "bug", "API" while killing the worst stop-word
+noise.
+"""
+
+
 def _query_parts(query: str) -> tuple[list[str], list[str]]:
     quoted = [part.strip() for part in _QUOTED_RE.findall(query) if part.strip()]
     without_quotes = _QUOTED_RE.sub(" ", query)
     tokens = [
         token.strip()
         for token in _TOKEN_RE.findall(without_quotes)
-        if token.strip() and len(token.strip()) > 1
+        if token.strip() and len(token.strip()) >= _MIN_LEX_TOKEN_LEN
     ]
     return quoted, tokens
 

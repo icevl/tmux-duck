@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, Users, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Users, X } from "lucide-react";
 import { WsEvent } from "../api";
 import { api } from "../api";
 import {
@@ -140,6 +140,8 @@ interface Props {
   busy: boolean;
   open: boolean;
   onClose: () => void;
+  row?: "top" | "bottom";
+  onToggleRow?: () => void;
   subscribeWs: (l: (e: WsEvent) => void) => () => void;
   showToast?: (text: string, kind?: "info" | "error") => void;
 }
@@ -151,6 +153,8 @@ export function OfficePanel({
   showToast,
   open,
   onClose,
+  row,
+  onToggleRow,
   subscribeWs,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -784,6 +788,23 @@ export function OfficePanel({
         >
           <Pencil size={ICON} />
         </button>
+        {onToggleRow && (
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onToggleRow}
+            title={row === "bottom" ? "Move to top row" : "Move to bottom row"}
+            aria-label={
+              row === "bottom" ? "Move to top row" : "Move to bottom row"
+            }
+          >
+            {row === "bottom" ? (
+              <ArrowUp size={ICON} />
+            ) : (
+              <ArrowDown size={ICON} />
+            )}
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"

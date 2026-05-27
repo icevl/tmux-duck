@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GitCommit, X } from "lucide-react";
+import { ArrowDown, ArrowUp, GitCommit, X } from "lucide-react";
 import { api, WsEvent } from "../api";
 
 const ICON = 16;
@@ -13,6 +13,8 @@ interface Props {
   windowId: string;
   open: boolean;
   onClose: () => void;
+  row?: "top" | "bottom";
+  onToggleRow?: () => void;
   subscribeWs?: (listener: (e: WsEvent) => void) => () => void;
 }
 
@@ -34,7 +36,14 @@ const EMPTY: DiffState = {
   untracked: [],
 };
 
-export function DiffPanel({ windowId, open, onClose, subscribeWs }: Props) {
+export function DiffPanel({
+  windowId,
+  open,
+  onClose,
+  row,
+  onToggleRow,
+  subscribeWs,
+}: Props) {
   const [state, setState] = useState<DiffState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   // Ref instead of state so updates inside the polling closure don't
@@ -122,6 +131,23 @@ export function DiffPanel({ windowId, open, onClose, subscribeWs }: Props) {
             <span className="diff-stat-files">not a git repo</span>
           )}
         </div>
+        {onToggleRow && (
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onToggleRow}
+            title={row === "bottom" ? "Move to top row" : "Move to bottom row"}
+            aria-label={
+              row === "bottom" ? "Move to top row" : "Move to bottom row"
+            }
+          >
+            {row === "bottom" ? (
+              <ArrowUp size={ICON} />
+            ) : (
+              <ArrowDown size={ICON} />
+            )}
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"

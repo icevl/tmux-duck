@@ -247,6 +247,7 @@ def test_active_generation_status_reads_manifest_counters_and_degrades_to_lexica
         "open_sessions": 5,
         "indexed_sessions": 2,
         "indexed_chunks": 9,
+        "total_chunks": 0,
         "queued_items": 0,
         "failed_items": 0,
     }

@@ -658,6 +658,33 @@ def parse_document(raw: str) -> SearchBackfillDocument | None:
         return None
 
 
+def delete_queue_items_by_window(window_id: str) -> int:
+    """Remove queue items whose document was enqueued for a tmux window
+    that has since been killed. Scans every queued row's JSON because
+    window_id is buried inside `document_json`; acceptable since session
+    deletion is rare. Returns the number of rows removed."""
+    if not window_id:
+        return 0
+    target_ids: list[str] = []
+    with _connect() as conn:
+        cur = conn.execute("SELECT queue_id, document_json FROM queue_items")
+        for queue_id, document_json in cur:
+            try:
+                doc = json.loads(document_json)
+            except (TypeError, ValueError):
+                continue
+            routing = doc.get("routing") if isinstance(doc, dict) else None
+            if isinstance(routing, dict) and routing.get("window_id") == window_id:
+                target_ids.append(queue_id)
+        if target_ids:
+            conn.executemany(
+                "DELETE FROM queue_items WHERE queue_id = ?",
+                [(qid,) for qid in target_ids],
+            )
+            conn.commit()
+    return len(target_ids)
+
+
 __all__ = [
     "DEFAULT_LEASE_SECONDS",
     "DEFAULT_MAX_ATTEMPTS",
@@ -666,6 +693,7 @@ __all__ = [
     "TranscriptWatermark",
     "clear_queue_errors",
     "complete_items",
+    "delete_queue_items_by_window",
     "enqueue_document",
     "enqueue_documents",
     "fail_item",

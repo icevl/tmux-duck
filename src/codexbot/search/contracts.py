@@ -123,6 +123,10 @@ class SearchCounters(BaseModel):
     open_sessions: int = Field(default=0, ge=0)
     indexed_sessions: int = Field(default=0, ge=0)
     indexed_chunks: int = Field(default=0, ge=0)
+    # Total chunks the current backfill/rebuild discovered, written before
+    # embedding starts so the UI can render a ratio while indexed_chunks
+    # ticks up. Zero outside of an active backfill.
+    total_chunks: int = Field(default=0, ge=0)
     queued_items: int = Field(default=0, ge=0)
     failed_items: int = Field(default=0, ge=0)
 
@@ -147,6 +151,9 @@ class SearchWorkerStatus(BaseModel):
     heartbeat_at: str = Field(min_length=1, max_length=128)
     recent_error: str | None = Field(default=None, max_length=2000)
     counters: SearchCounters | None = None
+    # True when the worker has detected the supervisor's pause flag and
+    # is sleeping between batches to yield resources to active tmux work.
+    paused: bool = False
 
 
 class SearchWorkerHealth(BaseModel):
@@ -159,6 +166,7 @@ class SearchWorkerHealth(BaseModel):
     stale: bool = False
     stale_after_seconds: int = Field(default=120, ge=1)
     recent_error: str | None = Field(default=None, max_length=500)
+    paused: bool = False
 
 
 class SearchQueueHealth(BaseModel):
@@ -180,6 +188,8 @@ class SearchBackfillProgress(BaseModel):
     open_sessions: int = Field(default=0, ge=0)
     indexed_sessions: int = Field(default=0, ge=0)
     indexed_chunks: int = Field(default=0, ge=0)
+    # Discovered chunks for the active backfill. Zero outside one.
+    total_chunks: int = Field(default=0, ge=0)
     queued_items: int = Field(default=0, ge=0)
     failed_items: int = Field(default=0, ge=0)
     generation_id: str | None = Field(default=None, max_length=255)
@@ -317,7 +327,7 @@ class SearchSessionResult(BaseModel):
     """Search hits grouped under the current routeable open session."""
 
     routing: SearchRoutingMetadata
-    hits: list[SearchHit] = Field(default_factory=list, max_length=10)
+    hits: list[SearchHit] = Field(default_factory=list, max_length=100)
     hit_count: int = Field(default=0, ge=0)
     score: float | None = None
 
@@ -327,7 +337,7 @@ class SearchRequest(BaseModel):
 
     query: str = Field(min_length=1, max_length=500)
     limit: int = Field(default=10, ge=1, le=50)
-    hits_per_session: int = Field(default=3, ge=1, le=10)
+    hits_per_session: int = Field(default=3, ge=1, le=100)
     runtime: str | None = Field(default=None, min_length=1, max_length=64)
     cwd: str | None = Field(default=None, min_length=1, max_length=4096)
     role: str | None = Field(default=None, min_length=1, max_length=64)
@@ -349,7 +359,7 @@ class SearchResponse(BaseModel):
     total_results: int = Field(default=0, ge=0)
     total_sessions: int = Field(default=0, ge=0)
     limit: int = Field(ge=1, le=50)
-    hits_per_session: int = Field(ge=1, le=10)
+    hits_per_session: int = Field(ge=1, le=100)
     outcome: SearchResponseOutcome
 
 

@@ -253,7 +253,11 @@ def test_sentence_transformer_provider_passes_device(
 
     assert provider.embed_documents(["a"]) == [[1.0, 2.0, 3.0]]
     assert seen["model_id"] == "fake/qwen"
-    assert seen["kwargs"] == {"local_files_only": True, "device": "cuda:0"}
+    assert seen["kwargs"] == {
+        "local_files_only": True,
+        "device": "cuda:0",
+        "model_kwargs": {"torch_dtype": "float16"},
+    }
     assert seen["encode"]["batch_size"] == 4
 
 
