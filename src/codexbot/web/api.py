@@ -600,9 +600,12 @@ def create_app(
         req: SearchRequest, _user: str = Depends(require_auth)
     ) -> dict[str, Any]:
         open_session_count = await _search_open_session_count()
-        return search_client.search(
-            req, open_session_count=open_session_count
-        ).model_dump(mode="json")
+        response = await asyncio.to_thread(
+            search_client.search,
+            req,
+            open_session_count=open_session_count,
+        )
+        return response.model_dump(mode="json")
 
     # -----------------------------------------------------------------------
     # Sessions

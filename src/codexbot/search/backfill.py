@@ -194,6 +194,32 @@ def _safe_error_summary(window_id: str, exc: BaseException) -> str:
     return f"{window_id}: {type(exc).__name__}"
 
 
+def _identity_key(document: SearchBackfillDocument) -> str:
+    return json.dumps(
+        document.identity.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def dedupe_documents_by_identity(
+    documents: Iterable[SearchBackfillDocument],
+) -> list[SearchBackfillDocument]:
+    """Collapse duplicate transcript chunk identities before writing a generation."""
+    unique: dict[str, SearchBackfillDocument] = {}
+    for document in documents:
+        unique[_identity_key(document)] = document
+    return sorted(
+        unique.values(),
+        key=lambda doc: (
+            getattr(doc.provenance, "transcript_source", ""),
+            getattr(doc, "source_order", 0),
+            getattr(doc, "chunk_index", 0),
+        ),
+    )
+
+
 async def collect_open_session_documents(
     *,
     session_manager: SessionManager = session_manager,
@@ -235,6 +261,7 @@ async def collect_open_session_documents(
             indexed_sessions += 1
             documents.extend(session_documents)
 
+    documents = dedupe_documents_by_identity(documents)
     counters = SearchCounters(
         open_sessions=len(windows),
         indexed_sessions=indexed_sessions,

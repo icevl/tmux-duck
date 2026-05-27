@@ -191,4 +191,4 @@ def test_search_mobile_styles_and_highlight_contract() -> None:
     assert ".search-results" in mobile
     assert "max-height: calc(100dvh - 270px)" in mobile
     assert ".search-hit-snippet" in mobile
-    assert "-webkit-line-clamp: 2" in mobile
+    assert "-webkit-line-clamp: 4" in mobile

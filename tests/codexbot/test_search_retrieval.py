@@ -305,7 +305,7 @@ def test_semantic_paraphrase_can_retrieve_without_lexical_overlap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from codexbot.search.client import search
-    from codexbot.search.index import row_id_for_identity
+    from codexbot.search.index import SemanticSearchCandidate, row_id_for_identity
 
     target = _doc(
         text="persistent shell survives attach mode and browser tab reload",
@@ -317,8 +317,10 @@ def test_semantic_paraphrase_can_retrieve_without_lexical_overlap(
     target_row_id = row_id_for_identity(target.identity)
 
     monkeypatch.setattr(
-        "codexbot.search.retrieval.semantic_scores_for_query",
-        lambda *_args, **_kwargs: {target_row_id: 0.96},
+        "codexbot.search.retrieval.semantic_candidates_for_query",
+        lambda *_args, **_kwargs: [
+            SemanticSearchCandidate(row_id=target_row_id, document=target, score=0.96)
+        ],
     )
 
     body = search(SearchRequest(query="keep console alive")).model_dump(mode="json")
@@ -334,7 +336,7 @@ def test_hybrid_hit_label_when_lexical_and_semantic_match(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from codexbot.search.client import search
-    from codexbot.search.index import row_id_for_identity
+    from codexbot.search.index import SemanticSearchCandidate, row_id_for_identity
 
     target = _doc(
         text="inspect src/codexbot/web/api.py for search route validation",
@@ -342,10 +344,13 @@ def test_hybrid_hit_label_when_lexical_and_semantic_match(
     )
     _activate_generation(tmp_path, monkeypatch, [target])
     _write_ready_index(monkeypatch)
+    target_row_id = row_id_for_identity(target.identity)
 
     monkeypatch.setattr(
-        "codexbot.search.retrieval.semantic_scores_for_query",
-        lambda *_args, **_kwargs: {row_id_for_identity(target.identity): 0.91},
+        "codexbot.search.retrieval.semantic_candidates_for_query",
+        lambda *_args, **_kwargs: [
+            SemanticSearchCandidate(row_id=target_row_id, document=target, score=0.91)
+        ],
     )
 
     body = search(SearchRequest(query="src/codexbot/web/api.py")).model_dump(
@@ -370,11 +375,11 @@ def test_semantic_exception_returns_sanitized_lexical_degraded_results(
     _activate_generation(tmp_path, monkeypatch, [target])
     _write_ready_index(monkeypatch)
 
-    def fail_semantic(*_args: object, **_kwargs: object) -> dict[str, float]:
+    def fail_semantic(*_args: object, **_kwargs: object) -> list[object]:
         raise RuntimeError("WEB_UI_PASSWORD=secret /tmp/private/session.jsonl")
 
     monkeypatch.setattr(
-        "codexbot.search.retrieval.semantic_scores_for_query",
+        "codexbot.search.retrieval.semantic_candidates_for_query",
         fail_semantic,
     )
 
@@ -404,11 +409,11 @@ def test_semantic_failure_returns_safe_lexical_degraded_results(
     )
     _write_ready_index(monkeypatch)
 
-    def fail_semantic(*_args: object, **_kwargs: object) -> dict[str, float]:
+    def fail_semantic(*_args: object, **_kwargs: object) -> list[object]:
         raise RuntimeError("WEB_UI_PASSWORD=secret /tmp/private/session.jsonl")
 
     monkeypatch.setattr(
-        "codexbot.search.retrieval.semantic_scores_for_query",
+        "codexbot.search.retrieval.semantic_candidates_for_query",
         fail_semantic,
     )
 
@@ -435,8 +440,8 @@ def test_ready_index_no_matches_differs_from_missing_index(
     )
     _write_ready_index(monkeypatch)
     monkeypatch.setattr(
-        "codexbot.search.retrieval.semantic_scores_for_query",
-        lambda *_args, **_kwargs: {},
+        "codexbot.search.retrieval.semantic_candidates_for_query",
+        lambda *_args, **_kwargs: [],
     )
 
     status = get_status().model_dump(mode="json")
@@ -446,3 +451,40 @@ def test_ready_index_no_matches_differs_from_missing_index(
     assert status["available"] is True
     assert body["outcome"] == "ok"
     assert body["results"] == []
+
+
+def test_hybrid_retrieval_uses_bounded_candidate_limits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import search
+
+    _activate_generation(
+        tmp_path,
+        monkeypatch,
+        [_doc(text="callback failure in worker output", window_id="@91")],
+    )
+    _write_ready_index(monkeypatch)
+    seen: dict[str, int | None] = {}
+
+    def fake_semantic(*_args: object, **kwargs: object) -> list[object]:
+        value = kwargs.get("limit")
+        seen["semantic_limit"] = value if isinstance(value, int) else None
+        return []
+
+    def fake_lexical(*_args: object, **kwargs: object) -> list[object]:
+        value = kwargs.get("limit")
+        seen["lexical_limit"] = value if isinstance(value, int) else None
+        return []
+
+    monkeypatch.setattr(
+        "codexbot.search.retrieval.semantic_candidates_for_query",
+        fake_semantic,
+    )
+    monkeypatch.setattr(
+        "codexbot.search.retrieval.lexical_candidates",
+        fake_lexical,
+    )
+
+    search(SearchRequest(query="callback failure", limit=50, hits_per_session=10))
+
+    assert seen == {"semantic_limit": 500, "lexical_limit": 500}
