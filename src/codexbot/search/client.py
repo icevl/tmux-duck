@@ -36,18 +36,38 @@ LEXICAL_DEGRADED_STATUS_REASON = (
     "semantic index is unavailable; lexical search is available"
 )
 DEFAULT_WORKER_STALE_SECONDS = 120
+DEFAULT_QUEUE_LAG_DEGRADED_SECONDS = 90
+DEFAULT_QUEUE_ERROR_TTL_SECONDS = 300
 
 
-def _worker_stale_seconds() -> int:
-    raw = os.getenv(
-        "CODEXBOT_SEARCH_WORKER_STALE_SECONDS",
-        str(DEFAULT_WORKER_STALE_SECONDS),
-    )
+def _positive_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default))
     try:
         value = int(raw)
     except ValueError:
-        return DEFAULT_WORKER_STALE_SECONDS
+        return default
     return max(1, value)
+
+
+def _worker_stale_seconds() -> int:
+    return _positive_int_env(
+        "CODEXBOT_SEARCH_WORKER_STALE_SECONDS",
+        DEFAULT_WORKER_STALE_SECONDS,
+    )
+
+
+def _queue_lag_degraded_seconds() -> int:
+    return _positive_int_env(
+        "CODEXBOT_SEARCH_QUEUE_LAG_DEGRADED_SECONDS",
+        DEFAULT_QUEUE_LAG_DEGRADED_SECONDS,
+    )
+
+
+def _queue_error_ttl_seconds() -> int:
+    return _positive_int_env(
+        "CODEXBOT_SEARCH_QUEUE_ERROR_TTL_SECONDS",
+        DEFAULT_QUEUE_ERROR_TTL_SECONDS,
+    )
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -115,9 +135,19 @@ def _safe_queue_snapshot() -> SearchQueueSnapshot | None:
     try:
         from .queue import get_queue_snapshot
 
-        return get_queue_snapshot()
+        return get_queue_snapshot(error_ttl_seconds=_queue_error_ttl_seconds())
     except Exception:
         return None
+
+
+def _queue_lagged(snapshot: SearchQueueSnapshot) -> bool:
+    queued = snapshot.queued_items + snapshot.leased_items
+    oldest_age = snapshot.oldest_queued_age_seconds
+    return bool(
+        queued > 0
+        and oldest_age is not None
+        and oldest_age >= _queue_lag_degraded_seconds()
+    )
 
 
 def _queue_issue_reason(snapshot: SearchQueueSnapshot | None) -> str | None:
@@ -128,11 +158,11 @@ def _queue_issue_reason(snapshot: SearchQueueSnapshot | None) -> str | None:
         if snapshot.recent_error:
             reason = f"{reason}: {snapshot.recent_error}"
         return reason
+    if snapshot.stale_sources:
+        return f"search index has {snapshot.stale_sources} stale source(s)"
     queued = snapshot.queued_items + snapshot.leased_items
-    if queued:
+    if queued and _queue_lagged(snapshot):
         return f"search queue is behind by {queued} item(s)"
-    if snapshot.recent_error:
-        return f"search queue degraded: {snapshot.recent_error}"
     return None
 
 
@@ -165,12 +195,10 @@ def _worker_health(worker_status: SearchWorkerStatus | None) -> SearchWorkerHeal
 def _queue_health(snapshot: SearchQueueSnapshot | None) -> SearchQueueHealth:
     if snapshot is None:
         return SearchQueueHealth()
-    queued = snapshot.queued_items + snapshot.leased_items
     lagging = bool(
-        queued > 0
-        or snapshot.failed_items > 0
+        snapshot.failed_items > 0
         or snapshot.stale_sources > 0
-        or snapshot.recent_error
+        or _queue_lagged(snapshot)
     )
     return SearchQueueHealth(
         queued_items=snapshot.queued_items,

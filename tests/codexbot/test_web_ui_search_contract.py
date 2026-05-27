@@ -53,7 +53,10 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
         "Indexing",
         "Results may be incomplete.",
         "Degraded",
-        "Semantic search is not ready. Showing lexical results.",
+        "Live updates pending",
+        "Search index is ready. Latest messages are still being indexed.",
+        "Lexical fallback",
+        "Semantic index is unavailable. Showing lexical results.",
         "Show details",
         "Hide details",
         "Search status details",
@@ -72,6 +75,7 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
         degraded_start : search_source.index("response?.results.map", degraded_start)
     ]
     assert 'className="search-state-panel warn compact"' in degraded_branch
+    assert "response.status.index === null" in degraded_branch
     assert "window.confirm" not in search_source
     assert "acknowledge" not in search_source.lower()
 
