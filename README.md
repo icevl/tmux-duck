@@ -74,18 +74,49 @@ Sessions are global to the running TmuxDuck instance: a window created in the we
 - Persistent state for thread bindings, window display names, read offsets, pinned sessions
 - macOS launchd installer and a Docker Compose setup, both for set-and-forget operation
 
-### Search operations
+### Search (opt-in)
 
-- Open-session search uses local derived state under `CODEXBOT_DIR/search`; chat, terminal, Telegram, WebSocket delivery, and session listing continue to work when search is degraded.
-- Default semantic model: `Qwen/Qwen3-Embedding-0.6B`, vector dimension `1024`, batch size `16`.
-- Overrides: `CODEXBOT_SEARCH_MODEL_ID`, `CODEXBOT_SEARCH_VECTOR_DIM`, `CODEXBOT_SEARCH_BATCH_SIZE`, `CODEXBOT_SEARCH_LOCAL_FILES_ONLY`, and `CODEXBOT_SEARCH_WORKER_STALE_SECONDS`.
-- Degraded behavior is explicit: no completed generation means no results while indexing/backfill status is shown; a completed generation without a semantic index means lexical degraded search; semantic/model/LanceDB failure falls back to lexical degraded search when generation documents exist.
-- Recovery/validation commands are local and read-only from the browser:
-  - `codexbot-search-worker smoke-search-index`
-  - `codexbot-search-worker live-drain-once`
-  - `codexbot-search-worker rebuild`
-  - `codexbot-search-benchmark --fixtures tests/fixtures/search/benchmark_cases.json --provider fake`
-- Real-model validation is opt-in on the target host: `codexbot-search-benchmark --fixtures tests/fixtures/search/benchmark_cases.json --provider local --model Qwen/Qwen3-Embedding-0.6B`.
+Disabled by default. Set `CODEXBOT_SEARCH_ENABLED=true` to turn it on; everything below only matters once you do.
+
+**What you get**
+
+- A search input in the sidebar that scans every open session's transcript.
+- Hybrid retrieval: exact lexical match always wins, semantic (cosine via Qwen3-Embedding-0.6B) supplements queries of 3+ tokens to find paraphrases. Single-token queries stay lexical-only so they don't surface topic-adjacent noise.
+- Results render as a compact tree — terminal-icon row per session with hit count, snippet rows underneath; click a snippet to jump straight to that message.
+- A status footer along the bottom of the sidebar shows index state (`ready`, `indexing X/Y chunks`, `deferred`, `degraded`) with a small details panel exposing worker heartbeat, queue lag, model, and recent errors.
+- A red **Wipe index** button in that details panel terminates the worker, clears `~/.codexbot/search/` (queue + embeddings + status), and lets the pause-controller spawn a fresh backfill — handy after you delete old sessions and don't want the stale queue churning.
+
+**First-run cost**
+
+On first start the worker downloads ~1.2 GB for `Qwen/Qwen3-Embedding-0.6B` (cached under `~/.cache/huggingface/`) and embeds every open session. CPU is the default device: PyTorch MPS on Apple Silicon has hung the worker mid-load on this model, so the safe default is CPU even though embedding is slower. Set `CODEXBOT_SEARCH_DEVICE=mps` (or `cuda`, or `auto`) to override.
+
+**Idle-aware indexing**
+
+Backfill and live-queue drain pause whenever a tmux pane is running an agent or build process — search shouldn't compete with the agent for CPU. The status footer shows `deferred · waiting for tmux to be idle` when the supervisor is holding back; once the workload settles, indexing resumes automatically. Don't be alarmed by a `queued` count rising during active work — it drains as soon as you walk away.
+
+**Degraded modes**
+
+- No completed generation → no results, footer says `indexing`.
+- Completed generation without a vector index → lexical-only fallback with a `Degraded — Semantic search is not ready` banner.
+- LanceDB / model failure mid-query → automatic fallback to lexical on the existing generation; reason surfaces in the footer details.
+
+**Recovery and validation**
+
+Local CLI commands, also surfaced in the footer's "Manual operations" block:
+
+- `codexbot-search-worker smoke-search-index`
+- `codexbot-search-worker live-drain-once`
+- `codexbot-search-worker rebuild`
+- `codexbot-search-benchmark --fixtures tests/fixtures/search/benchmark_cases.json --provider fake`
+
+Real-model validation against the configured embedding model is opt-in on the target host:
+
+```bash
+codexbot-search-benchmark \
+  --fixtures tests/fixtures/search/benchmark_cases.json \
+  --provider local \
+  --model Qwen/Qwen3-Embedding-0.6B
+```
 
 ---
 
@@ -233,6 +264,20 @@ Open the web UI at `http://127.0.0.1:8787` and/or message your Telegram bot.
 >
 > TmuxDuck enforces a single running instance per `CODEXBOT_DIR` using `codexbot.lock` to avoid duplicate event delivery.
 
+### Search
+
+All variables below are inert until `CODEXBOT_SEARCH_ENABLED=true`. With search disabled the worker never starts, no model is downloaded, and the sidebar search affordances stay hidden.
+
+| Variable                              | Default                       | Description                                                                  |
+| ------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------- |
+| `CODEXBOT_SEARCH_ENABLED`             | `false`                       | Master switch. `true` boots the local indexing worker on next start          |
+| `CODEXBOT_SEARCH_DEVICE`              | `cpu`                         | Embedding device: `cpu`, `mps`, `cuda`, or `auto`. MPS hangs the worker mid-load on Qwen3 — keep CPU unless you've tested |
+| `CODEXBOT_SEARCH_MODEL_ID`            | `Qwen/Qwen3-Embedding-0.6B`   | HuggingFace model id used for both backfill and query embedding              |
+| `CODEXBOT_SEARCH_VECTOR_DIM`          | `1024`                        | Vector dimension; must match the model                                       |
+| `CODEXBOT_SEARCH_BATCH_SIZE`          | `16`                          | Sentence-transformers internal batch size during embedding                   |
+| `CODEXBOT_SEARCH_LOCAL_FILES_ONLY`    | `false`                       | Skip HuggingFace network calls — only useful after the model is fully cached |
+| `CODEXBOT_SEARCH_WORKER_STALE_SECONDS`| `300`                         | After this many seconds without a heartbeat, the worker is treated as dead   |
+
 ---
 
 ## Usage
@@ -374,4 +419,4 @@ Bypass in a pinch with `git push --no-verify`.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)

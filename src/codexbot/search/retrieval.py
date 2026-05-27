@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from time import perf_counter
 
 from .contracts import (
@@ -103,6 +104,15 @@ def _log_timing(
     )
 
 
+# Single-word queries against a multilingual embedding model surface
+# "topic-adjacent" docs (a query like "фикс" pulls in every code-editing
+# message because they all cluster together in vector space). For <=2-token
+# queries the lexical path is more accurate; semantic activates only once
+# the query has enough words to disambiguate intent.
+_TOKEN_GATE_RE = re.compile(r"[\w./:@+#-]+")
+_MIN_TOKENS_FOR_SEMANTIC = 3
+
+
 def search_generation_lexical(
     req: SearchRequest,
     *,
@@ -174,11 +184,15 @@ def _hybrid_candidates(
 
     stale_sources = list_stale_sources()
     semantic_started = perf_counter()
-    semantic_candidates = semantic_candidates_for_query(
-        generation.generation_id,
-        query=req.query,
-        limit=semantic_limit,
-    )
+    token_count = len(_TOKEN_GATE_RE.findall(req.query))
+    if token_count >= _MIN_TOKENS_FOR_SEMANTIC:
+        semantic_candidates = semantic_candidates_for_query(
+            generation.generation_id,
+            query=req.query,
+            limit=semantic_limit,
+        )
+    else:
+        semantic_candidates = []
     timings["semantic"] = perf_counter() - semantic_started
     candidates_by_row_id: dict[str, RankedCandidate] = {}
     semantic_scores: dict[str, float] = {}
@@ -257,7 +271,17 @@ def _hybrid_candidates(
             candidate,
         )
     timings["document_count"] = float(document_count)
-    return list(candidates_by_row_id.values())
+    candidates = list(candidates_by_row_id.values())
+
+    # When any candidate has an exact lexical hit, drop pure-semantic ones.
+    # Otherwise topic-adjacent noise (tool-call summaries, unrelated code
+    # reads) outranks the literal phrase the user typed because the embed
+    # model groups them by surrounding conversation context, not by the
+    # snippet text itself. "I remember seeing this phrase" queries should
+    # return that phrase, not its neighbors.
+    if any(c.lexical_score > 0 for c in candidates):
+        candidates = [c for c in candidates if c.lexical_score > 0]
+    return candidates
 
 
 def search_generation(

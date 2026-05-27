@@ -398,9 +398,7 @@ def test_stale_queue_errors_expire_from_status(
     _activate_ready_search_generation(tmp_path)
     record_queue_error("old transient queue error")
     with sqlite3.connect(queue_db_path()) as conn:
-        conn.execute(
-            "UPDATE queue_errors SET created_at = '2026-05-22T10:00:00Z'"
-        )
+        conn.execute("UPDATE queue_errors SET created_at = '2026-05-22T10:00:00Z'")
 
     body = get_status(open_session_count=1).model_dump(mode="json")
 
@@ -607,7 +605,10 @@ async def test_stale_source_helper_hides_closed_session_documents(
 def test_generation_documents_cache_reuses_and_invalidates_after_upsert(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from codexbot.search.live import read_generation_documents, upsert_generation_documents
+    from codexbot.search.live import (
+        read_generation_documents,
+        upsert_generation_documents,
+    )
 
     monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
     first = _doc(text="cached first", transcript_source="/tmp/cache.jsonl")

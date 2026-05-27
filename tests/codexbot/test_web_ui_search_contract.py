@@ -26,6 +26,8 @@ def _function_body(source: str, name: str) -> str:
 def test_session_search_uses_bounded_backend_search_only() -> None:
     api_source = _read("web-ui/src/api.ts")
     search_source = _read("web-ui/src/components/SessionSearch.tsx")
+    footer_source = _read("web-ui/src/components/SearchStatusFooter.tsx")
+    search_ui_source = search_source + footer_source
 
     assert "getSearchStatus: () =>" in api_source
     assert "searchSessions:" in api_source
@@ -34,19 +36,19 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
 
     assert "const MIN_QUERY_LENGTH = 2" in search_source
     assert "const DEFAULT_LIMIT = 10" in search_source
-    assert "const DEFAULT_HITS_PER_SESSION = 3" in search_source
+    assert "const DEFAULT_HITS_PER_SESSION = 50" in search_source
     assert "window.setTimeout" in search_source
-    assert "window.setInterval(load, 10000)" in search_source
     assert "setDebouncedQuery(trimmedQuery)" in search_source
-    assert "api.getSearchStatus()" in search_source
     assert ".searchSessions({" in search_source
     assert "limit: DEFAULT_LIMIT" in search_source
     assert "hits_per_session: DEFAULT_HITS_PER_SESSION" in search_source
     assert "api.getMessages" not in search_source
 
+    # Status polling/footer copy moved to Sidebar + SearchStatusFooter; only
+    # the inline state-panel copy that SessionSearch still renders is asserted
+    # here.
     for copy in [
         "Search open sessions",
-        "Open sessions only",
         "Searching...",
         "No matches",
         "Try different terms or filters.",
@@ -68,7 +70,7 @@ def test_session_search_uses_bounded_backend_search_only() -> None:
         "Search unavailable",
         "Keep working and try again after indexing recovers.",
     ]:
-        assert copy in search_source
+        assert copy in search_ui_source
 
     degraded_start = search_source.index("showLexicalNotice")
     degraded_branch = search_source[
@@ -108,7 +110,7 @@ def test_session_search_routes_by_window_id_and_preserves_local_query() -> None:
     assert "setQuery" not in open_hit
     assert "setResponse" not in open_hit
 
-    assert "onClick={() => onOpenResult(result.routing.window_id)}" in search_source
+    assert "onOpenResult(result.routing.window_id)" in search_source
     assert 'onClick={() => setQuery("")}' in search_source
 
 
@@ -120,7 +122,7 @@ def test_sidebar_search_keeps_session_ordering_and_pinned_list() -> None:
     )
     assert "<SessionSearch" in sidebar_source
     assert "onHasActiveQueryChange={handleSearchActiveChange}" in sidebar_source
-    assert "searchActive ? null : ordered.length === 0" in sidebar_source
+    assert 'searchActive ? { display: "none" } : undefined' in sidebar_source
 
     for existing_list_contract in [
         "ordered.map((s) =>",
@@ -171,9 +173,12 @@ def test_app_and_chatview_search_hit_navigation_contract() -> None:
 def test_search_mobile_styles_and_highlight_contract() -> None:
     styles = _read("web-ui/src/styles.css")
 
+    # `.search-details-toggle` was replaced by the bottom `.search-status-footer`
+    # widget, which lives in SearchStatusFooter rather than inside the search
+    # results panel. The remaining selectors are still load-bearing.
     for selector in [
         ".session-search",
-        ".search-details-toggle",
+        ".search-status-footer",
         ".search-status-details",
         ".search-detail-row",
         ".search-result-hit",
@@ -189,7 +194,6 @@ def test_search_mobile_styles_and_highlight_contract() -> None:
     assert ".session-search" in mobile
     assert ".session-search-input-wrap input" in mobile
     assert "font-size: 16px" in mobile
-    assert ".search-details-toggle" in mobile
     assert ".search-status-details" in mobile
     assert ".search-filter-row" in mobile
     assert ".search-results" in mobile

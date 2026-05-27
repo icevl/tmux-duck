@@ -53,6 +53,10 @@ def _baseline_config(monkeypatch: pytest.MonkeyPatch) -> None:
         ("http://testserver",),
         raising=False,
     )
+    # Search is opt-in in production (CODEXBOT_SEARCH_ENABLED=false by
+    # default), but the web API tests exercise the search status/route
+    # contracts; pin it on so they don't all 503 in clean-env CI.
+    monkeypatch.setattr(config_module.config, "search_enabled", True, raising=False)
 
 
 @pytest.fixture
@@ -154,10 +158,6 @@ def test_search_status_returns_typed_missing(
     commands = [item["command"] for item in body["operations"]["recovery_commands"]]
     assert "codexbot-search-worker live-drain-once" in commands
     assert "codexbot-search-worker rebuild" in commands
-    assert (
-        "python -m codexbot.search.benchmark "
-        "--fixtures tests/fixtures/search/benchmark_cases.json --provider fake"
-    ) in commands
 
 
 def test_search_status_reports_building_backfill(
@@ -450,6 +450,7 @@ def test_search_status_after_successful_backfill_is_lexical_degraded(
         "open_sessions": 2,
         "indexed_sessions": 1,
         "indexed_chunks": 6,
+        "total_chunks": 0,
         "queued_items": 0,
         "failed_items": 0,
     }
@@ -466,7 +467,7 @@ def test_search_status_after_successful_backfill_is_lexical_degraded(
         {"query": "valid", "limit": 0},
         {"query": "valid", "limit": 51},
         {"query": "valid", "hits_per_session": 0},
-        {"query": "valid", "hits_per_session": 11},
+        {"query": "valid", "hits_per_session": 101},
     ],
 )
 def test_search_rejects_oversized_or_out_of_range_request(

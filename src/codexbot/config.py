@@ -125,6 +125,14 @@ class Config:
         self.auto_update_enabled: bool = os.getenv(
             "CODEXBOT_AUTO_UPDATE", "true"
         ).strip().lower() not in ("false", "0", "no", "off")
+        # Local semantic search (index transcripts via Qwen embedding +
+        # LanceDB). Off by default — the first run downloads ~1.2 GB of model
+        # weights and warm CPU indexing takes a few minutes per backfill.
+        # When disabled, the search worker doesn't launch, status publisher
+        # idles, and the web UI hides the search filter affordance entirely.
+        self.search_enabled: bool = os.getenv(
+            "CODEXBOT_SEARCH_ENABLED", "false"
+        ).strip().lower() in ("1", "true", "yes", "on")
         self.web_ui_host: str = (
             os.getenv("WEB_UI_HOST", "127.0.0.1").strip() or "127.0.0.1"
         )

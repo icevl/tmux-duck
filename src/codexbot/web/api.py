@@ -134,6 +134,13 @@ class SwitchBranchRequest(BaseModel):
     branch: str = Field(min_length=1, max_length=255)
 
 
+class WriteFileRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+    # Cap matches the read-side preview limit (1 MB) so the editor can't
+    # commit something larger than it can render back.
+    content: str = Field(max_length=1_000_000)
+
+
 class ChooseOptionRequest(BaseModel):
     option_index: int = Field(ge=0, le=99)
     total: int = Field(ge=1, le=100)
@@ -580,6 +587,35 @@ def create_app(
             "totp_required": auth.totp_enabled,
         }
 
+    def _drop_search_artifacts_for_window(window_id: str) -> None:
+        """Remove the killed session's chunks from the active index and
+        from any still-queued live updates. Best-effort — runs synchronously
+        from a threadpool so the user-facing DELETE returns promptly even
+        if the LanceDB call is slow on a large table."""
+        from ..search.index import delete_session_rows
+        from ..search.queue import delete_queue_items_by_window
+        from ..search.state import read_generation_metadata
+
+        try:
+            queued_removed = delete_queue_items_by_window(window_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("search queue cleanup failed window=%s", window_id)
+            queued_removed = 0
+        active = read_generation_metadata()
+        rows_removed = 0
+        if active is not None:
+            try:
+                rows_removed = delete_session_rows(active.generation_id, window_id)
+            except Exception:  # noqa: BLE001
+                logger.exception("search row cleanup failed window=%s", window_id)
+        if queued_removed or rows_removed:
+            logger.info(
+                "search cleanup window=%s rows=%d queued=%d",
+                window_id,
+                rows_removed,
+                queued_removed,
+            )
+
     async def _search_open_session_count() -> int | None:
         try:
             windows = await tmux_manager.list_windows()
@@ -588,17 +624,106 @@ def create_app(
             return None
         return len(windows)
 
+    def _kill_search_worker_subprocesses() -> list[int]:
+        """SIGTERM, then SIGKILL, any `codexbot.search.worker` child process.
+
+        We don't track the worker PID inside the bot process (the supervisor
+        spawns it and drops the handle), so we discover it via `pgrep`. The
+        pause controller respawns a fresh worker on its next tick once the
+        wipe finishes and there's no active generation on disk.
+        """
+        import signal
+        import subprocess
+
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-f", "codexbot.search.worker"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+                timeout=2.0,
+            )
+        except subprocess.CalledProcessError:
+            return []  # exit 1 = no matches
+        except (subprocess.SubprocessError, OSError) as exc:
+            logger.warning("search wipe could not pgrep workers: %s", exc)
+            return []
+
+        self_pid = os.getpid()
+        pids: list[int] = []
+        for line in out.splitlines():
+            try:
+                pid = int(line.strip())
+            except ValueError:
+                continue
+            if pid == self_pid:
+                continue
+            try:
+                os.kill(pid, signal.SIGTERM)
+                pids.append(pid)
+            except ProcessLookupError:
+                continue
+            except OSError as exc:
+                logger.warning("SIGTERM pid=%d failed: %s", pid, exc)
+
+        if pids:
+            # Wait briefly for clean shutdown, then escalate to SIGKILL on
+            # anything that didn't exit. The worker holds a SQLite WAL — a
+            # clean SIGTERM lets it flush; SIGKILL is the safety net.
+            time.sleep(1.0)
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        return pids
+
+    def _wipe_search_dir_contents(path: Path) -> list[str]:
+        """Remove every entry under the search dir but keep the dir itself.
+
+        Returns the names of removed entries for the API response. Errors
+        are swallowed per-entry — best effort, since a partial wipe is still
+        better than no wipe (the worker will rebuild whatever's missing).
+        """
+        import shutil
+
+        if not path.exists():
+            return []
+        removed: list[str] = []
+        for entry in path.iterdir():
+            try:
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+                removed.append(entry.name)
+            except OSError as exc:
+                logger.warning("search wipe could not remove %s: %s", entry, exc)
+        return removed
+
     @app.get("/api/search/status")
     async def search_status(_user: str = Depends(require_auth)) -> dict[str, Any]:
+        if not config.search_enabled:
+            return {"enabled": False}
+        from ..search.supervisor import pause_flag_path
+
         open_session_count = await _search_open_session_count()
-        return search_client.get_status(
+        payload = search_client.get_status(
             open_session_count=open_session_count
         ).model_dump(mode="json")
+        payload["enabled"] = True
+        # The supervisor sets this file while a tmux pane has an active
+        # agent or build process. Frontend uses it to render a "deferred"
+        # footer instead of "degraded/missing", since nothing is actually
+        # broken — we're just holding off until the workload settles.
+        payload["deferred"] = pause_flag_path().exists()
+        return payload
 
     @app.post("/api/search")
     async def search(
         req: SearchRequest, _user: str = Depends(require_auth)
     ) -> dict[str, Any]:
+        if not config.search_enabled:
+            raise HTTPException(status_code=503, detail="search is disabled")
         open_session_count = await _search_open_session_count()
         response = await asyncio.to_thread(
             search_client.search,
@@ -606,6 +731,18 @@ def create_app(
             open_session_count=open_session_count,
         )
         return response.model_dump(mode="json")
+
+    @app.post("/api/search/wipe")
+    async def search_wipe(_user: str = Depends(require_auth)) -> dict[str, Any]:
+        if not config.search_enabled:
+            raise HTTPException(status_code=503, detail="search is disabled")
+
+        from ..search.state import search_dir
+
+        killed = await asyncio.to_thread(_kill_search_worker_subprocesses)
+        removed = await asyncio.to_thread(_wipe_search_dir_contents, search_dir())
+        logger.info("search_wipe killed_pids=%s removed=%s", killed, removed)
+        return {"ok": True, "killed_pids": killed, "removed": removed}
 
     # -----------------------------------------------------------------------
     # Sessions
@@ -641,6 +778,37 @@ def create_app(
                     "last_activity": last_activity,
                     "pinned": bool(ws.pinned),
                     "sort_order": ws.sort_order,
+                    "dormant": False,
+                }
+            )
+        # Dormant entries (preserved across reboot) ride along in the same list
+        # so the sidebar can show them with a "sleeping" affordance and the
+        # client can hit /resume to spawn the underlying tmux window on demand.
+        for dormant_key, ws in session_manager.window_states.items():
+            if not session_manager.is_dormant_key(dormant_key):
+                continue
+            runtime_name = ws.runtime or "codex"
+            display_name = (
+                session_manager.get_display_name(dormant_key) or ws.window_name or ""
+            )
+            last_activity = (
+                session_manager._session_mtime_index.get(ws.session_id)
+                if ws.session_id
+                else None
+            )
+            result.append(
+                {
+                    "window_id": dormant_key,
+                    "name": display_name,
+                    "tmux_name": ws.window_name or "",
+                    "cwd": ws.cwd or "",
+                    "runtime": runtime_name,
+                    "session_id": ws.session_id or None,
+                    "pane_command": None,
+                    "last_activity": last_activity,
+                    "pinned": bool(ws.pinned),
+                    "sort_order": ws.sort_order,
+                    "dormant": True,
                 }
             )
         # Pinned sessions float to the top; manual order wins inside each
@@ -728,6 +896,17 @@ def create_app(
     async def kill_session(
         window_id: str, _user: str = Depends(require_auth)
     ) -> dict[str, Any]:
+        # Dormant entries have no live tmux window — just drop the saved
+        # state and skip the kill-window step.
+        if session_manager.is_dormant_key(window_id):
+            if window_id not in session_manager.window_states:
+                raise HTTPException(404, detail="dormant session not found")
+            session_manager.window_states.pop(window_id, None)
+            session_manager.window_display_names.pop(window_id, None)
+            session_manager._save_state()
+            await bus.publish_sessions_changed()
+            return {"ok": True}
+
         ok = await tmux_manager.kill_window(window_id)
         if not ok:
             raise HTTPException(404, detail="window not found")
@@ -738,8 +917,78 @@ def create_app(
         session_manager.window_states.pop(window_id, None)
         session_manager.window_display_names.pop(window_id, None)
         session_manager._save_state()
+        if config.search_enabled:
+            await asyncio.to_thread(_drop_search_artifacts_for_window, window_id)
+            # Refresh stale-source bookkeeping so lexical search stops returning
+            # hits from the just-killed window and the status counter reflects
+            # the new indexed_sessions total in the next /search/status call.
+            try:
+                from ..search.live import refresh_stale_sources
+
+                await refresh_stale_sources()
+            except Exception:  # noqa: BLE001
+                logger.exception("search stale-source refresh failed")
         await bus.publish_sessions_changed()
         return {"ok": True}
+
+    @app.post("/api/sessions/{window_id}/resume")
+    async def resume_dormant_session(
+        window_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        """Spawn a tmux window for a dormant (post-reboot) session.
+
+        Restores the saved cwd/runtime/session_id by creating a new tmux
+        window with the appropriate `--resume <session_id>` invocation,
+        then rebinds the stored WindowState onto the new live window_id so
+        the rest of the session machinery (history, transcript, search) just
+        sees a normal window.
+        """
+        if not session_manager.is_dormant_key(window_id):
+            raise HTTPException(400, detail="session is not dormant")
+        ws = session_manager.window_states.get(window_id)
+        if ws is None:
+            raise HTTPException(404, detail="dormant session not found")
+        if not ws.session_id or not ws.cwd:
+            raise HTTPException(
+                409,
+                detail="dormant session is missing session_id or cwd; cannot resume",
+            )
+        runtime = get_runtime(ws.runtime or "codex")
+        path = Path(ws.cwd).expanduser()
+        if not path.exists() or not path.is_dir():
+            raise HTTPException(400, detail=f"session cwd no longer exists: {ws.cwd}")
+
+        success, message, wname, new_wid = await tmux_manager.create_window(
+            str(path),
+            window_name=ws.window_name or None,
+            resume_session_id=ws.session_id,
+            runtime=runtime,
+        )
+        if not success:
+            raise HTTPException(400, detail=message)
+
+        # Carry the saved state over to the freshly-created window_id. The
+        # tmux side might already have stamped a fresh empty WindowState
+        # under the new id (created when get_window_state was called during
+        # create_window) — drop it before rebinding so the resumed entry's
+        # pinned/sort_order/display_name win.
+        session_manager.window_states.pop(new_wid, None)
+        ok = session_manager.rebind_dormant_to_live(window_id, new_wid)
+        if not ok:
+            raise HTTPException(500, detail="failed to rebind dormant state")
+        if wname:
+            session_manager.window_states[new_wid].window_name = wname
+        session_manager._save_state()
+
+        await bus.publish_sessions_changed()
+        return {
+            "ok": True,
+            "window_id": new_wid,
+            "name": session_manager.get_display_name(new_wid) or wname or new_wid,
+            "runtime": runtime.name,
+            "cwd": str(path),
+            "session_id": ws.session_id,
+        }
 
     @app.patch("/api/sessions/order")
     async def reorder_sessions(
@@ -1189,6 +1438,35 @@ def create_app(
         # Dirs first, then files; both alphabetical (case-insensitive).
         entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
         return {"path": path, "entries": entries}
+
+    @app.put("/api/sessions/{window_id}/files/content")
+    async def write_file(
+        window_id: str,
+        req: WriteFileRequest,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        cwd = await _resolve_window_cwd(window_id)
+        if not cwd:
+            raise HTTPException(404, detail="window not found")
+        target = _resolve_files_path(cwd, req.path)
+        if target.exists() and target.is_dir():
+            raise HTTPException(400, detail="path is a directory")
+        encoded = req.content.encode("utf-8")
+        if len(encoded) > _FILE_PREVIEW_MAX_BYTES:
+            raise HTTPException(413, detail="content too large")
+
+        def _atomic_write() -> int:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_name(target.name + ".codexbot.tmp")
+            tmp.write_bytes(encoded)
+            tmp.replace(target)
+            return target.stat().st_size
+
+        try:
+            size = await asyncio.to_thread(_atomic_write)
+        except OSError as exc:
+            raise HTTPException(500, detail=f"write failed: {exc}") from exc
+        return {"path": req.path, "size": size}
 
     @app.get("/api/sessions/{window_id}/files/content")
     async def read_file(

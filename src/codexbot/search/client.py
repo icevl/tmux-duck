@@ -110,6 +110,18 @@ def _counters(
     values = existing.model_dump() if existing is not None else {}
     if open_session_count is not None:
         values["open_sessions"] = open_session_count
+    # `indexed_sessions` in the manifest is frozen at backfill time. Subtract
+    # the live stale-source count so deleting a session in the UI immediately
+    # drops the footer counter instead of showing phantom indexed sessions.
+    indexed = int(values.get("indexed_sessions", 0))
+    if indexed:
+        try:
+            from .queue import list_stale_sources
+
+            stale = len(list_stale_sources())
+        except Exception:  # noqa: BLE001
+            stale = 0
+        values["indexed_sessions"] = max(0, indexed - stale)
     if queue_snapshot is not None and has_queue_values:
         existing_failed = int(values.get("failed_items", 0))
         values["queued_items"] = (
@@ -189,6 +201,7 @@ def _worker_health(worker_status: SearchWorkerStatus | None) -> SearchWorkerHeal
         recent_error=_sanitize_error(worker_status.recent_error)
         if worker_status is not None
         else None,
+        paused=bool(worker_status is not None and worker_status.paused),
     )
 
 
@@ -228,6 +241,7 @@ def _progress(
         open_sessions=counters.open_sessions if counters is not None else 0,
         indexed_sessions=counters.indexed_sessions if counters is not None else 0,
         indexed_chunks=counters.indexed_chunks if counters is not None else 0,
+        total_chunks=counters.total_chunks if counters is not None else 0,
         queued_items=counters.queued_items if counters is not None else 0,
         failed_items=counters.failed_items if counters is not None else 0,
         generation_id=generation_id,
@@ -262,25 +276,27 @@ def _recent_errors(
 
 
 def _recovery_commands() -> list[SearchRecoveryCommand]:
+    """Operator-facing maintenance commands. The web UI only renders these
+    when the index is actually in trouble, so they should each describe a
+    concrete user-facing action — not internal validation tools."""
     return [
         SearchRecoveryCommand(
             label="Drain live queue",
             command="codexbot-search-worker live-drain-once",
-            description="Flush currently queued live search updates once.",
+            description=(
+                "Forces one immediate flush of pending session updates into "
+                "the active index. Useful when the queue grew during a "
+                "restart and you don't want to wait for the next tick."
+            ),
         ),
         SearchRecoveryCommand(
             label="Rebuild index",
             command="codexbot-search-worker rebuild",
-            description="Rebuild the local open-session search index.",
-        ),
-        SearchRecoveryCommand(
-            label="Run benchmark",
-            command=(
-                "python -m codexbot.search.benchmark "
-                "--fixtures tests/fixtures/search/benchmark_cases.json "
-                "--provider fake"
+            description=(
+                "Throws away the current index and re-embeds every open "
+                "session from scratch. Use when results look stale, the "
+                "model was changed, or the database file is corrupt."
             ),
-            description="Validate local search scoring without loading the model.",
         ),
     ]
 

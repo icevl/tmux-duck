@@ -6,6 +6,7 @@ import {
   GripVertical,
   Loader2,
   LogOut,
+  Moon,
   MoreVertical,
   Pencil,
   Pin,
@@ -16,8 +17,9 @@ import {
 } from "lucide-react";
 import { TunioPlayer } from "tunio-player";
 import "tunio-player/styles.css";
-import { SessionSummary } from "../api";
+import { api, SearchStatusResponse, SessionSummary, WsEvent } from "../api";
 import { DuckLogo } from "./DuckLogo";
+import { SearchStatusFooter } from "./SearchStatusFooter";
 import { SessionSearch, type SearchHitTarget } from "./SessionSearch";
 
 const ICON = 16;
@@ -58,6 +60,7 @@ interface Props {
   onDelete: (session: SessionSummary) => void;
   onReorder: (windowIds: string[]) => void | Promise<void>;
   onOpenSearchHit?: (target: SearchHitTarget) => void;
+  subscribeWs: (listener: (e: WsEvent) => void) => () => void;
   notificationsSupported: boolean;
   notificationsEnabled: boolean;
   notificationPermission: NotificationPermission | "unsupported";
@@ -101,6 +104,7 @@ export function Sidebar({
   onDelete,
   onReorder,
   onOpenSearchHit,
+  subscribeWs,
   notificationsSupported,
   notificationsEnabled,
   notificationPermission,
@@ -121,11 +125,51 @@ export function Sidebar({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [searchActive, setSearchActive] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<SearchStatusResponse | null>(
+    null,
+  );
+  // null = not yet known (initial fetch in flight); true/false = backend
+  // CODEXBOT_SEARCH_ENABLED.
+  const [searchEnabled, setSearchEnabled] = useState<boolean | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const handleSearchActiveChange = useCallback((active: boolean) => {
     setSearchActive(active);
   }, []);
+
+  const handleSearchStatusUpdate = useCallback((next: SearchStatusResponse) => {
+    setSearchStatus(next);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getSearchStatus()
+      .then((next) => {
+        if (cancelled) return;
+        if (next.enabled === false) {
+          setSearchEnabled(false);
+          setSearchStatus(null);
+        } else {
+          setSearchEnabled(true);
+          setSearchStatus(next);
+        }
+      })
+      .catch(() => {
+        // Footer falls back to "search idle" when nothing has landed yet.
+      });
+    const unsub = subscribeWs((event) => {
+      if (event.type === "search_status") {
+        const { type: _type, ts: _ts, seq: _seq, ...rest } = event;
+        setSearchEnabled(true);
+        setSearchStatus(rest as SearchStatusResponse);
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [subscribeWs]);
 
   // Close the popover on outside click / Escape / scroll inside the list.
   useEffect(() => {
@@ -227,18 +271,32 @@ export function Sidebar({
       </div>
       <SessionSearch
         sessions={sessions}
+        status={searchStatus}
+        searchEnabled={searchEnabled !== false}
+        onStatusUpdate={handleSearchStatusUpdate}
         onOpenResult={onSelect}
         onOpenHit={onOpenSearchHit}
         onHasActiveQueryChange={handleSearchActiveChange}
       />
-      <div className="session-list">
-        {searchActive ? null : ordered.length === 0 ? (
+      <div
+        className="session-list"
+        style={searchActive ? { display: "none" } : undefined}
+      >
+        {ordered.length === 0 ? (
           sessionsLoaded ? (
             <div className="session-list-empty">No sessions yet.</div>
           ) : (
-            <div className="session-list-empty session-list-loading">
-              <div className="empty-state-spinner small" />
-              <span>Loading…</span>
+            <div
+              className="session-list-skeleton"
+              role="status"
+              aria-label="Loading sessions"
+            >
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div className="session-skeleton-row" key={i}>
+                  <div className="skeleton-line skeleton-line-name" />
+                  <div className="skeleton-line skeleton-line-meta" />
+                </div>
+              ))}
             </div>
           )
         ) : (
@@ -252,9 +310,11 @@ export function Sidebar({
                 className={`session-item${
                   s.window_id === activeId ? " active" : ""
                 }${s.pinned ? " pinned" : ""}${
+                  s.dormant ? " dormant" : ""
+                }${
                   draggingId === s.window_id ? " dragging" : ""
                 }${dragOverId === s.window_id ? " drag-over" : ""}`}
-                draggable
+                draggable={!s.dormant}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";
                   e.dataTransfer.setData("text/plain", s.window_id);
@@ -290,15 +350,26 @@ export function Sidebar({
                   setDraggingId(null);
                   setDragOverId(null);
                 }}
-                onClick={() => onSelect(s.window_id)}
+                onClick={async () => {
+                  if (s.dormant) {
+                    try {
+                      const res = await api.resumeDormantSession(s.window_id);
+                      onSelect(res.window_id);
+                    } catch (err) {
+                      console.error("resume dormant session failed:", err);
+                    }
+                    return;
+                  }
+                  onSelect(s.window_id);
+                }}
               >
                 <div className="session-row">
                   <span
                     className="session-drag-handle"
-                    title="Drag to reorder"
+                    title={s.dormant ? "Dormant — click to resume" : "Drag to reorder"}
                     aria-hidden="true"
                   >
-                    <GripVertical size={14} />
+                    {s.dormant ? <Moon size={14} /> : <GripVertical size={14} />}
                   </span>
                   <div className="session-text">
                     <div className="session-name">
@@ -392,6 +463,7 @@ export function Sidebar({
           })
         )}
       </div>
+      {searchEnabled !== false && <SearchStatusFooter status={searchStatus} />}
     </aside>
   );
 }
