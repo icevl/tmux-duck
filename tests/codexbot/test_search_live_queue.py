@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -115,6 +116,59 @@ def _source_with_path(path: str) -> ParsedTranscriptSession:
         transcript_source=path,
         entries=source.entries,
         pending_tools=source.pending_tools,
+    )
+
+
+def _activate_ready_search_generation(tmp_path: Path) -> None:
+    from codexbot.search.contracts import (
+        SearchBackfillManifest,
+        SearchCounters,
+        SearchIndexMetadata,
+    )
+    from codexbot.search.state import (
+        activate_generation,
+        generation_documents_path,
+        write_generation_manifest,
+        write_index_metadata,
+    )
+
+    generation_id = "gen-ready"
+    doc = _doc(text="ready indexed document")
+    path = generation_documents_path(generation_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"{doc.model_dump_json()}\n",
+        encoding="utf-8",
+    )
+    manifest = SearchBackfillManifest(
+        generation={
+            "schema_version": 1,
+            "generation_id": generation_id,
+            "created_at": "2026-05-22T10:00:00Z",
+            "active": False,
+        },
+        counters=SearchCounters(
+            open_sessions=1,
+            indexed_sessions=1,
+            indexed_chunks=1,
+            failed_items=0,
+        ),
+        document_count=1,
+        completed=True,
+        errors=[],
+    )
+    write_generation_manifest(manifest)
+    activate_generation(manifest)
+    write_index_metadata(
+        SearchIndexMetadata(
+            schema_version=1,
+            generation_id=generation_id,
+            model_id="fake/model",
+            vector_dimension=3,
+            table_name="chunks",
+            created_at="2026-05-22T10:00:00Z",
+            completed=True,
+        )
     )
 
 
@@ -263,6 +317,96 @@ def test_search_status_includes_queue_lag_and_failures(
     assert body["counters"]["open_sessions"] == 2
     assert body["counters"]["failed_items"] == 1
     assert "queue" in body["reason"]
+
+
+def test_ready_index_with_fresh_live_queue_stays_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import get_status
+    from codexbot.search.queue import enqueue_document
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    _activate_ready_search_generation(tmp_path)
+    enqueue_document(_doc(text="fresh live update", offset=20))
+
+    body = get_status(open_session_count=1).model_dump(mode="json")
+
+    assert body["state"] == "ready"
+    assert body["available"] is True
+    assert body["reason"] is None
+    assert body["operations"]["queue"]["queued_items"] == 1
+    assert body["operations"]["queue"]["lagging"] is False
+
+
+def test_ready_index_with_old_live_queue_is_degraded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import get_status
+    from codexbot.search.queue import enqueue_document
+    from codexbot.search.state import queue_db_path
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEXBOT_SEARCH_QUEUE_LAG_DEGRADED_SECONDS", "30")
+    _activate_ready_search_generation(tmp_path)
+    enqueue_document(_doc(text="old live update", offset=21))
+    with sqlite3.connect(queue_db_path()) as conn:
+        conn.execute(
+            """
+            UPDATE queue_items
+            SET created_at = '2026-05-22T10:00:00Z',
+                updated_at = '2026-05-22T10:00:00Z'
+            WHERE status = 'queued'
+            """
+        )
+
+    body = get_status(open_session_count=1).model_dump(mode="json")
+
+    assert body["state"] == "degraded"
+    assert body["available"] is True
+    assert "search queue is behind by 1 item" in body["reason"]
+    assert body["operations"]["queue"]["lagging"] is True
+
+
+def test_queue_errors_alone_do_not_degrade_ready_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import get_status
+    from codexbot.search.queue import record_queue_error
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    _activate_ready_search_generation(tmp_path)
+    record_queue_error(RuntimeError("cannot schedule new futures after shutdown"))
+
+    body = get_status(open_session_count=1).model_dump(mode="json")
+
+    assert body["state"] == "ready"
+    assert body["available"] is True
+    assert body["reason"] is None
+    assert body["operations"]["queue"]["recent_error"] is not None
+    assert body["operations"]["queue"]["lagging"] is False
+
+
+def test_stale_queue_errors_expire_from_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.search.client import get_status
+    from codexbot.search.queue import record_queue_error
+    from codexbot.search.state import queue_db_path
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEXBOT_SEARCH_QUEUE_ERROR_TTL_SECONDS", "300")
+    _activate_ready_search_generation(tmp_path)
+    record_queue_error("old transient queue error")
+    with sqlite3.connect(queue_db_path()) as conn:
+        conn.execute(
+            "UPDATE queue_errors SET created_at = '2026-05-22T10:00:00Z'"
+        )
+
+    body = get_status(open_session_count=1).model_dump(mode="json")
+
+    assert body["state"] == "ready"
+    assert body["operations"]["queue"]["recent_error"] is None
+    assert body["operations"]["recent_errors"] == []
 
 
 @pytest.mark.asyncio

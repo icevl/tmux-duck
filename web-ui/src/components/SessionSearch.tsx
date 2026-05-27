@@ -232,6 +232,20 @@ function statusPanel(
       tone: "warn",
     };
   }
+  if (effective?.state === "degraded") {
+    if (effective.index && effective.operations?.queue.lagging) {
+      return {
+        title: "Live updates pending",
+        body: "Search index is ready. Latest messages are still being indexed.",
+        tone: "warn",
+      };
+    }
+    return {
+      title: "Degraded",
+      body: effective.reason ?? "Search is using a fallback path.",
+      tone: "warn",
+    };
+  }
   if (response && response.results.length === 0) {
     return {
       title: "No matches",
@@ -341,7 +355,9 @@ export function SessionSearch({
   const operations = effectiveStatus?.operations ?? null;
   const searchDetailsId = "session-search-status-details";
   const showLexicalNotice =
-    response?.status.state === "degraded" && response.results.length > 0;
+    response?.status.available === true &&
+    response.status.index === null &&
+    response.results.length > 0;
 
   const openHit = (result: SearchSessionResult, hit: SearchHit) => {
     const target: SearchHitTarget = {
@@ -581,9 +597,9 @@ export function SessionSearch({
                 <div className="search-state-panel warn compact">
                   <AlertTriangle size={ICON} />
                   <div>
-                    <div className="search-state-title">Degraded</div>
+                    <div className="search-state-title">Lexical fallback</div>
                     <div className="search-state-body">
-                      Semantic search is not ready. Showing lexical results.
+                      Semantic index is unavailable. Showing lexical results.
                     </div>
                   </div>
                 </div>

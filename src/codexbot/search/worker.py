@@ -27,6 +27,7 @@ from .contracts import (
 from .index import materialize_generation_index, upsert_index_documents
 from .live import upsert_generation_documents
 from .queue import (
+    clear_queue_errors,
     complete_items,
     fail_items,
     lease_ready_items,
@@ -120,6 +121,7 @@ def _run_generation_task(current_task: str) -> None:
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=1.0)
         activate_generation(manifest)
+        clear_queue_errors()
     except Exception as exc:
         logger.exception("search_generation_task_failed task=%s", current_task)
         write_worker_status(
@@ -282,6 +284,7 @@ def drain_live_queue_once(
         return 0
 
     complete_items(queue_ids)
+    clear_queue_errors()
     _last_live_flush_at = current_time
     return len(items)
 

@@ -449,9 +449,18 @@ def read_queue_item(queue_id: str) -> SearchQueueItem | None:
     return _row_to_item(row)
 
 
-def get_queue_snapshot(*, now: datetime | None = None) -> SearchQueueSnapshot:
+def get_queue_snapshot(
+    *,
+    now: datetime | None = None,
+    error_ttl_seconds: int | None = None,
+) -> SearchQueueSnapshot:
     """Return a safe queue status summary without transcript payloads."""
     now_dt = now or datetime.now(UTC)
+    error_cutoff = None
+    if error_ttl_seconds is not None:
+        error_cutoff = _now_iso(
+            now_dt.astimezone(UTC) - timedelta(seconds=error_ttl_seconds)
+        )
     with _connect() as conn:
         counts = {
             row["status"]: int(row["count"])
@@ -464,18 +473,30 @@ def get_queue_snapshot(*, now: datetime | None = None) -> SearchQueueSnapshot:
             SELECT created_at
             FROM queue_items
             WHERE status = 'queued'
-            ORDER BY created_at ASC
-            LIMIT 1
+                ORDER BY created_at ASC
+                LIMIT 1
             """
         ).fetchone()
-        error_row = conn.execute(
-            """
-            SELECT error
-            FROM queue_errors
-            ORDER BY id DESC
-            LIMIT 1
-            """
-        ).fetchone()
+        if error_cutoff is None:
+            error_row = conn.execute(
+                """
+                SELECT error
+                FROM queue_errors
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        else:
+            error_row = conn.execute(
+                """
+                SELECT error
+                FROM queue_errors
+                WHERE created_at >= ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (error_cutoff,),
+            ).fetchone()
         failed_row = conn.execute(
             """
             SELECT last_error
@@ -497,10 +518,10 @@ def get_queue_snapshot(*, now: datetime | None = None) -> SearchQueueSnapshot:
         else None
     )
     recent_error = None
-    if error_row is not None:
-        recent_error = error_row["error"]
-    elif failed_row is not None:
+    if failed_row is not None:
         recent_error = failed_row["last_error"]
+    elif error_row is not None:
+        recent_error = error_row["error"]
 
     return SearchQueueSnapshot(
         queued_items=counts.get("queued", 0),
@@ -523,6 +544,13 @@ def record_queue_error(error: BaseException | str) -> str:
             (safe_error, now),
         )
     return safe_error
+
+
+def clear_queue_errors() -> int:
+    """Clear transient queue-level errors after a successful queue/index pass."""
+    with _connect() as conn:
+        cursor = conn.execute("DELETE FROM queue_errors")
+        return int(cursor.rowcount if cursor.rowcount is not None else 0)
 
 
 def read_watermark(runtime: str, transcript_source: str) -> TranscriptWatermark | None:
@@ -636,6 +664,7 @@ __all__ = [
     "QUEUE_SCHEMA_VERSION",
     "SearchQueueItem",
     "TranscriptWatermark",
+    "clear_queue_errors",
     "complete_items",
     "enqueue_document",
     "enqueue_documents",

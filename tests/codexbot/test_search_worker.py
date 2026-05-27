@@ -494,23 +494,30 @@ async def test_supervisor_starts_initial_backfill_only_when_no_active_generation
 def test_live_drain_flushes_at_32_ready_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from codexbot.search.queue import enqueue_documents, get_queue_snapshot
+    from codexbot.search.queue import (
+        enqueue_documents,
+        get_queue_snapshot,
+        record_queue_error,
+    )
     from codexbot.search.worker import drain_live_queue_once
 
     monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
     _activate_empty_generation(tmp_path)
     upsert_index = Mock()
     monkeypatch.setattr("codexbot.search.worker.upsert_index_documents", upsert_index)
+    record_queue_error("transient queue error")
     enqueue_documents([_document(i) for i in range(31)])
 
     assert drain_live_queue_once(batch_size=32) == 0
     assert get_queue_snapshot().queued_items == 31
+    assert get_queue_snapshot().recent_error is not None
 
     enqueue_documents([_document(31)])
 
     assert drain_live_queue_once(batch_size=32) == 32
     upsert_index.assert_called_once()
     assert get_queue_snapshot().queued_items == 0
+    assert get_queue_snapshot().recent_error is None
     assert len(_read_docs("gen-live")) == 32
 
 
