@@ -269,15 +269,17 @@ export function Sidebar({
           <span>New session</span>
         </button>
       </div>
-      <SessionSearch
-        sessions={sessions}
-        status={searchStatus}
-        searchEnabled={searchEnabled !== false}
-        onStatusUpdate={handleSearchStatusUpdate}
-        onOpenResult={onSelect}
-        onOpenHit={onOpenSearchHit}
-        onHasActiveQueryChange={handleSearchActiveChange}
-      />
+      {searchEnabled !== false && (
+        <SessionSearch
+          sessions={sessions}
+          status={searchStatus}
+          searchEnabled={searchEnabled === true}
+          onStatusUpdate={handleSearchStatusUpdate}
+          onOpenResult={onSelect}
+          onOpenHit={onOpenSearchHit}
+          onHasActiveQueryChange={handleSearchActiveChange}
+        />
+      )}
       <div
         className="session-list"
         style={searchActive ? { display: "none" } : undefined}

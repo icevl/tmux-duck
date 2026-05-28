@@ -20,23 +20,18 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "pyotp>=2.9.0",
     "qrcode>=7.4.0",
-    "lancedb>=0.21.0",
+    "lancedb>=0.32.0",
     "sentence-transformers>=2.7.0",
-    "torch==2.6.0; sys_platform == 'linux'",
     "transformers>=4.51.0",
-]
-
-[tool.uv]
-# sentence-transformers lists torch as an unconditional dependency, but on
-# macOS the cu124 wheels we lock for Linux do not resolve. Constrain the
-# transitive dep to Linux so `uv sync` succeeds on darwin; the embedding
-# model is loaded lazily, so macOS dev/runtime is unaffected unless the
-# search worker actually runs (which it doesn't on macOS deployments).
-override-dependencies = [
-    "torch; sys_platform == 'linux'",
+    "torch>=2.6.0",
 ]
 
 [tool.uv.sources]
+# Linux uses the cu124 wheels for GPU embedding; macOS falls back to the
+# default PyPI CPU wheels. No override-dependencies block here, because
+# sentence-transformers genuinely needs torch importable wherever the
+# search worker runs (including macOS dev boxes with
+# CODEXBOT_SEARCH_ENABLED=true).
 torch = [
     { index = "pytorch-cu124", marker = "sys_platform == 'linux'" },
 ]
