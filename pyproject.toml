@@ -26,6 +26,16 @@ dependencies = [
     "transformers>=4.51.0",
 ]
 
+[tool.uv]
+# sentence-transformers lists torch as an unconditional dependency, but on
+# macOS the cu124 wheels we lock for Linux do not resolve. Constrain the
+# transitive dep to Linux so `uv sync` succeeds on darwin; the embedding
+# model is loaded lazily, so macOS dev/runtime is unaffected unless the
+# search worker actually runs (which it doesn't on macOS deployments).
+override-dependencies = [
+    "torch; sys_platform == 'linux'",
+]
+
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cu124", marker = "sys_platform == 'linux'" },
