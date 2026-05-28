@@ -343,15 +343,6 @@ export function TerminalPanel({
             Shell
           </button>
         </div>
-        <span className={`term-status term-status-${status}`}>
-          {status === "open"
-            ? "live"
-            : status === "connecting"
-            ? "…"
-            : status === "reconnecting"
-            ? "retry"
-            : "off"}
-        </span>
         {onToggleRow && (
           <button
             type="button"
