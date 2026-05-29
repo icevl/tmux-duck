@@ -92,12 +92,18 @@ async def test_slow_subscriber_dropped() -> None:
     q = bus.subscribe()
     await bus.publish({"type": "a"})
     await bus.publish({"type": "b"})
-    # Third publish hits a full queue → subscriber should be dropped.
+    # Third publish hits a full queue → subscriber dropped from the fan-out
+    # AND woken with the shutdown sentinel so the /api/ws handler (parked on
+    # queue.get()) can unblock, exit, and let the browser reconnect.
     await bus.publish({"type": "c"})
-    # Still receive the two queued events.
-    assert (await q.get())["type"] == "a"
-    assert (await q.get())["type"] == "b"
-    # And no further deliveries.
+    assert q not in bus._subscribers  # noqa: SLF001 - white-box check
+    # The shutdown sentinel was force-enqueued, draining one queued event to
+    # make room; the subscriber drains to the sentinel and then stops.
+    drained: list[str] = []
+    while not q.empty():
+        drained.append((q.get_nowait())["type"])
+    assert EventBus.SHUTDOWN_EVENT_TYPE in drained
+    # And no further deliveries after the drop.
     await bus.publish({"type": "d"})
     assert q.empty()
 

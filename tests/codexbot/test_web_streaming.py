@@ -1,6 +1,13 @@
 """Tests for the live pane streaming extractor."""
 
-from codexbot.web.streaming import _extract_stream_body
+import asyncio
+import types
+
+import pytest
+
+from codexbot.web import streaming as streaming_mod
+from codexbot.web.events import EventBus
+from codexbot.web.streaming import _extract_stream_body, stream_pane_loop
 
 
 def test_extract_drops_chrome_and_status() -> None:
@@ -49,3 +56,76 @@ def test_extract_no_user_echo_keeps_whole_body() -> None:
     body = _extract_stream_body(pane)
     assert "First assistant line" in body
     assert "second line" in body
+
+
+def _install_fake_pane(monkeypatch, *, runtime: str, pane: str) -> None:
+    """Wire stream_pane_loop's session/tmux deps to a single fake window."""
+    ws = types.SimpleNamespace(session_id="sess-1", runtime=runtime)
+    fake_session_manager = types.SimpleNamespace(
+        window_states={"@1": ws},
+    )
+    monkeypatch.setattr(streaming_mod, "session_manager", fake_session_manager)
+
+    async def fake_find_window_by_id(window_id):
+        return types.SimpleNamespace(window_id=window_id)
+
+    async def fake_capture_pane(window_id):
+        return pane
+
+    fake_tmux = types.SimpleNamespace(
+        find_window_by_id=fake_find_window_by_id,
+        capture_pane=fake_capture_pane,
+    )
+    monkeypatch.setattr(streaming_mod, "tmux_manager", fake_tmux)
+
+
+async def _run_loop_once(bus: EventBus) -> list[dict]:
+    """Run the pane loop briefly, then cancel; return published events."""
+    q = bus.subscribe()
+    task = asyncio.create_task(stream_pane_loop(bus, poll_interval=0.01))
+    await asyncio.sleep(0.06)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    events = []
+    while not q.empty():
+        events.append(q.get_nowait())
+    return events
+
+
+@pytest.mark.asyncio
+async def test_interactive_prompt_pane_does_not_stream(monkeypatch) -> None:
+    # A Codex AskUserQuestion prompt in the pane: its footer carries
+    # "esc to interrupt" but the agent is idle-waiting, so the loop must NOT
+    # publish a 'stream' event (which would re-arm the busy watchdog forever).
+    pane = (
+        "Question 1/1\n"
+        "  Which option?\n"
+        "  ◯ Option A\n"
+        "  ◉ Option B\n"
+        "  tab to add notes | enter to submit answer | esc to interrupt\n"
+    )
+    bus = EventBus()
+    _install_fake_pane(monkeypatch, runtime="codex", pane=pane)
+    events = await _run_loop_once(bus)
+    assert all(e["type"] != "stream" for e in events)
+
+
+@pytest.mark.asyncio
+async def test_working_pane_streams(monkeypatch) -> None:
+    # Positive control: a genuinely working pane still streams.
+    pane = (
+        "> do the thing\n"
+        "\n"
+        "Working on it, here is some output.\n"
+        "·  Working… (esc to interrupt)\n"
+        "────────────────────────────────────────────\n"
+        "  ❯\n"
+        "────────────────────────────────────────────\n"
+    )
+    bus = EventBus()
+    _install_fake_pane(monkeypatch, runtime="codex", pane=pane)
+    events = await _run_loop_once(bus)
+    assert any(e["type"] == "stream" for e in events)

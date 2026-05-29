@@ -382,9 +382,13 @@ def _parse_status_line_without_chrome(lines: list[str]) -> str | None:
             continue
         if not _RE_ESC_TO_INTERRUPT.search(line):
             continue
+        # A live status line always starts with a spinner/bullet glyph. Without
+        # one, an "esc to interrupt" line is an interactive-prompt footer (e.g.
+        # AskUserQuestion's "tab to add notes | … | esc to interrupt"), not the
+        # agent generating — so it must not register as an active status.
         if line[0] in STATUS_PREFIX_CHARS:
             return line[1:].strip()
-        return line
+        return None
     return None
 
 

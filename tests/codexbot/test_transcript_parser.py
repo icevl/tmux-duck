@@ -656,10 +656,13 @@ class TestParseEntries:
             }
         ]
         result, pending = TranscriptParser.parse_entries(entries)
-        assert len(result) == 1
+        # A Codex assistant response_item is the turn's final text, so it now
+        # also yields a trailing completion entry (the end-of-turn marker).
+        assert len(result) == 2
         assert result[0].role == "assistant"
         assert result[0].content_type == "text"
         assert result[0].text == "Hello from modern format"
+        assert result[1].content_type == "completion"
         assert pending == {}
 
     def test_parse_function_call_and_output_modern_format(self):
@@ -760,3 +763,120 @@ class TestParseEntries:
         assert tool_entry.tool_input["_source"] == "item_completed_plan"
         assert tool_entry.tool_input["_defer_until_completion"] is True
         assert pending == {}
+
+
+class TestTurnCompletionSignals:
+    """Per-runtime end-of-turn detection (verified against real transcripts).
+
+    Claude: the authoritative marker is one `system`/`turn_duration` record per
+    turn (not assistant `stop_reason`, which over-counts).
+    Codex (gpt-5.x): no task_complete/turn_complete event exists; the single
+    final assistant `response_item/message` is the marker, and `turn_aborted`
+    finalizes an interrupted turn.
+    """
+
+    def _completions(self, result):
+        return [e for e in result if e.content_type == "completion"]
+
+    def test_claude_turn_duration_yields_one_completion(self):
+        entries = [
+            {
+                "type": "assistant",
+                "timestamp": "2026-05-29T08:00:00Z",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [{"type": "text", "text": "All done."}],
+                },
+            },
+            {
+                "type": "system",
+                "subtype": "turn_duration",
+                "timestamp": "2026-05-29T08:00:01Z",
+                "durationMs": 4200,
+            },
+        ]
+        result, _ = TranscriptParser.parse_entries(entries)
+        # The assistant text renders; exactly one completion, from turn_duration.
+        texts = [e for e in result if e.content_type == "text"]
+        assert [e.text for e in texts] == ["All done."]
+        assert len(self._completions(result)) == 1
+
+    def test_claude_end_turn_alone_does_not_complete(self):
+        # Two consecutive end_turn assistant messages (intermediate stops) must
+        # NOT each fire a completion — only turn_duration does.
+        entries = [
+            {
+                "type": "assistant",
+                "timestamp": "2026-05-29T08:00:00Z",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [{"type": "text", "text": "part one"}],
+                },
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-05-29T08:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "stop_sequence",
+                    "content": [{"type": "text", "text": "part two"}],
+                },
+            },
+        ]
+        result, _ = TranscriptParser.parse_entries(entries)
+        assert self._completions(result) == []
+
+    def test_codex_final_response_item_yields_completion(self):
+        entries = [
+            {
+                "type": "event_msg",
+                "timestamp": "2026-05-29T08:00:00Z",
+                "payload": {"type": "agent_message", "message": "Final answer"},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-05-29T08:00:01Z",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "Final answer"}],
+                },
+            },
+        ]
+        result, _ = TranscriptParser.parse_entries(entries)
+        # agent_message is dropped (duplicate); the response_item carries the
+        # text and the trailing completion → exactly one text bubble + one
+        # completion, in order.
+        texts = [e for e in result if e.content_type == "text"]
+        assert [e.text for e in texts] == ["Final answer"]
+        assert len(self._completions(result)) == 1
+        assert result[-1].content_type == "completion"
+
+    def test_codex_turn_aborted_yields_completion(self):
+        entries = [
+            {
+                "type": "event_msg",
+                "timestamp": "2026-05-29T08:00:00Z",
+                "payload": {"type": "turn_aborted", "reason": "interrupted"},
+            },
+        ]
+        result, _ = TranscriptParser.parse_entries(entries)
+        assert len(self._completions(result)) == 1
+
+    def test_codex_user_message_not_completed(self):
+        # A user response_item must never carry a completion block.
+        entries = [
+            {
+                "type": "response_item",
+                "timestamp": "2026-05-29T08:00:00Z",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "hi"}],
+                },
+            },
+        ]
+        result, _ = TranscriptParser.parse_entries(entries)
+        assert self._completions(result) == []

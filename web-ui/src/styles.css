@@ -4158,3 +4158,153 @@ button.primary.send-button {
     flex-direction: column;
   }
 }
+
+/* ── Subagents overlay panel ─────────────────────────────────────────────
+   Self-contained right-side drawer (not part of the side-panel grid), so it
+   works identically on desktop and mobile. Surfaces Claude subagent (Agent /
+   Workflow) transcripts the main chat never shows. */
+.subagents-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 100vw);
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  z-index: 140;
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+}
+
+.subagents-panel.open {
+  transform: translateX(0);
+}
+
+.subagents-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 52px;
+  height: 52px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.subagents-title {
+  font-weight: 600;
+  color: var(--text-0);
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagents-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding: 8px;
+}
+
+.subagents-empty {
+  color: var(--text-2);
+  font-size: 13px;
+  padding: 24px 16px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.subagents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subagent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-0);
+}
+
+.subagent-row:hover {
+  border-color: var(--accent, var(--text-2));
+}
+
+.subagent-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.subagent-type {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.subagent-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subagent-run {
+  font-size: 11px;
+  color: var(--text-2);
+  font-family: ui-monospace, monospace;
+}
+
+.subagent-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 4px;
+}
+
+.subagent-dot.completed {
+  background: var(--ok, #3fb950);
+}
+
+.subagent-dot.running {
+  background: var(--warn, #f0883e);
+  animation: subagent-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes subagent-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.subagent-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.subagents-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

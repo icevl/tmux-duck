@@ -1130,6 +1130,37 @@ def create_app(
             "history_version": history.history_version,
         }
 
+    @app.get("/api/sessions/{window_id}/subagents")
+    async def list_subagents(
+        window_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        """List the Claude subagent (Agent / Workflow) runs spawned by this
+        window's session. Empty for Codex or sessions with no subagents."""
+        from ..subagents import discover_subagents
+
+        session = await session_manager.resolve_session_for_window(window_id)
+        if not session or not session.file_path:
+            return {"subagents": []}
+        subs = await asyncio.to_thread(discover_subagents, Path(session.file_path))
+        return {"subagents": [s.to_dict() for s in subs]}
+
+    @app.get("/api/sessions/{window_id}/subagents/{agent_id}/messages")
+    async def get_subagent_messages(
+        window_id: str, agent_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        """Parsed transcript of a single subagent run (history snapshot)."""
+        from ..subagents import load_subagent_messages
+
+        session = await session_manager.resolve_session_for_window(window_id)
+        if not session or not session.file_path:
+            raise HTTPException(404, detail="session not found")
+        messages = await asyncio.to_thread(
+            load_subagent_messages, Path(session.file_path), agent_id
+        )
+        if messages is None:
+            raise HTTPException(404, detail="subagent not found")
+        return {"messages": messages, "agent_id": agent_id}
+
     async def _resolve_window_cwd(window_id: str) -> str:
         # Prefer the live pane cwd — if the user `cd`d inside the shell,
         # that's the repo we want to reflect. Fall back to the recorded

@@ -434,3 +434,27 @@ class TestExtractBashOutput:
         result = extract_bash_output(pane, "echo hi")
         assert result is not None
         assert not result.endswith("\n")
+
+
+class TestStatusLineInteractiveFooter:
+    """The no-chrome status fallback must not treat an interactive-prompt
+    footer (which carries 'esc to interrupt' but no spinner prefix) as an
+    active status — otherwise the WebUI busy watchdog re-arms forever while
+    the agent idle-waits on an AskUserQuestion prompt."""
+
+    def test_askuserquestion_footer_without_chrome_is_not_status(self):
+        pane = (
+            "Question 1/1\n"
+            "  Which option?\n"
+            "  ◯ Option A\n"
+            "  ◉ Option B\n"
+            "  tab to add notes | enter to submit answer | esc to interrupt\n"
+        )
+        assert parse_status_line(pane) is None
+
+    def test_spinner_footer_without_chrome_still_active(self):
+        # Regression guard: a real working footer (spinner prefix) must still
+        # register even without the chrome separator.
+        for spinner in ("•", "✻", "·"):
+            pane = f"working...\n{spinner} Building project (esc to interrupt)\n"
+            assert parse_status_line(pane) == "Building project (esc to interrupt)"

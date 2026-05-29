@@ -41,6 +41,7 @@ import {
   WsEvent,
 } from "../api";
 import { SkillsModal } from "./SkillsModal";
+import { SubagentsPanel } from "./SubagentsPanel";
 import { Markdown } from "./Markdown";
 import { RuntimeIcon } from "./Sidebar";
 import { DuckLogo } from "./DuckLogo";
@@ -51,6 +52,7 @@ const ICON = 16;
 interface Props {
   session: SessionSummary;
   subscribeWs: (l: (e: WsEvent) => void) => () => void;
+  subscribeReconnect: (l: () => void) => () => void;
   onRequestScreenshot: () => void;
   onRequestKill: () => void;
   onOpenSidebar: () => void;
@@ -603,8 +605,13 @@ function findDuplicateMessageIndex(
       existing.pending &&
       incoming.role === "user" &&
       existing.role === "user" &&
-      existing.text === incoming.text
+      existing.text.trim() === incoming.text.trim()
     ) {
+      // Trimmed compare: the optimistic bubble keeps the exact text sent
+      // (the agent echo may differ by leading/trailing whitespace — JS
+      // trimEnd vs Python strip), so an exact match would miss and leave the
+      // bubble stuck on "· sending…" while the real reply duplicates it. The
+      // `existing.pending` gate keeps two distinct real user turns from merging.
       return i;
     }
     if (messageContentKey(existing) !== incomingKey) continue;
@@ -938,6 +945,7 @@ const BOT_QUICK_COMMANDS = ["/screenshot", "/skillhelp", "/esc"];
 export function ChatView({
   session,
   subscribeWs,
+  subscribeReconnect,
   onRequestScreenshot,
   onRequestKill,
   onOpenSidebar,
@@ -986,6 +994,7 @@ export function ChatView({
   const [dragOver, setDragOver] = useState(false);
   const [keysMenuOpen, setKeysMenuOpen] = useState(false);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [subagentsOpen, setSubagentsOpen] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitIsRepo, setGitIsRepo] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -1828,12 +1837,16 @@ export function ChatView({
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("pageshow", onVisible);
     window.addEventListener("focus", onVisible);
+    // A WS reconnect means events may have been dropped during the gap (the
+    // server never replays them) — backfill the same way as on visibility.
+    const unsubReconnect = subscribeReconnect(() => void catchUp());
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("pageshow", onVisible);
       window.removeEventListener("focus", onVisible);
+      unsubReconnect();
     };
-  }, [storeHistoryCache]);
+  }, [storeHistoryCache, subscribeReconnect]);
 
   // Subscribe to live updates.
   useEffect(() => {
@@ -2486,6 +2499,17 @@ export function ChatView({
               </button>
               <button
                 type="button"
+                className={subagentsOpen ? "active" : ""}
+                onClick={() => {
+                  setChatMenuOpen(false);
+                  setSubagentsOpen((v) => !v);
+                }}
+              >
+                <Bot size={ICON} />
+                <span>Subagents</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setChatMenuOpen(false);
                   onRequestScreenshot();
@@ -3026,6 +3050,12 @@ export function ChatView({
           }}
         />
       )}
+      <SubagentsPanel
+        windowId={session.window_id}
+        open={subagentsOpen}
+        onClose={() => setSubagentsOpen(false)}
+        subscribeWs={subscribeWs}
+      />
     </main>
   );
 }

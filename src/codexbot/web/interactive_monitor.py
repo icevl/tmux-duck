@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 class InteractivePromptMonitor:
     """Periodically scans each window's tmux pane for interactive prompts."""
 
+    # Consecutive empty/no-prompt captures required before we publish
+    # `interactive_prompt_cleared`. A single empty frame (transient capture
+    # failure, or a redraw mid-frame) must not retract a still-open prompt.
+    _CLEAR_MISS_THRESHOLD = 2
+
     def __init__(self, bus: "EventBus", *, poll_interval: float = 1.0) -> None:
         self._bus = bus
         self._poll_interval = poll_interval
@@ -45,6 +50,9 @@ class InteractivePromptMonitor:
         # window_id → fingerprint of last published prompt, so we don't
         # re-emit the same event every tick.
         self._last: dict[str, str] = {}
+        # window_id → consecutive empty/no-prompt capture count, for debounced
+        # clearing. Reset to 0 whenever a prompt is successfully detected.
+        self._miss: dict[str, int] = {}
 
     async def start(self) -> None:
         if self._task and not self._task.done():
@@ -79,6 +87,7 @@ class InteractivePromptMonitor:
             # Skip polling when nobody is listening — also forget last
             # state so a re-attaching client gets a fresh event.
             self._last.clear()
+            self._miss.clear()
             return
 
         from ..session import session_manager
@@ -97,26 +106,22 @@ class InteractivePromptMonitor:
         if state is None:
             return
         pane_text = await tmux_manager.capture_pane(window_id)
-        if not pane_text:
-            self._maybe_clear(window_id)
+        content = (
+            extract_interactive_content(pane_text, runtime=state.runtime)
+            if pane_text
+            else None
+        )
+
+        parsed = parse_options(content.content) if content is not None else None
+        if content is None or parsed is None or not parsed.options:
+            # No usable prompt this tick (empty capture, no prompt, or
+            # unparseable options). Debounce before retracting an open prompt
+            # so a single transient miss can't strand or prematurely clear it.
+            await self._note_miss(window_id)
             return
 
-        content = extract_interactive_content(pane_text, runtime=state.runtime)
-        if content is None:
-            self._maybe_clear(window_id)
-            if window_id in self._last:
-                del self._last[window_id]
-                await self._bus.publish(
-                    {
-                        "type": "interactive_prompt_cleared",
-                        "window_id": window_id,
-                    }
-                )
-            return
-
-        parsed = parse_options(content.content)
-        if parsed is None or not parsed.options:
-            return
+        # Live prompt detected — reset the miss debounce.
+        self._miss.pop(window_id, None)
 
         fingerprint = self._fingerprint(content.name, parsed)
         if self._last.get(window_id) == fingerprint:
@@ -135,10 +140,24 @@ class InteractivePromptMonitor:
             }
         )
 
-    def _maybe_clear(self, window_id: str) -> None:
-        # Helper kept for parity; actual clear event is dispatched in
-        # the caller when fingerprint also drops.
-        return None
+    async def _note_miss(self, window_id: str) -> None:
+        """Record a no-prompt tick; publish `interactive_prompt_cleared` only
+        after `_CLEAR_MISS_THRESHOLD` consecutive misses."""
+        if window_id not in self._last:
+            self._miss.pop(window_id, None)
+            return
+        count = self._miss.get(window_id, 0) + 1
+        if count < self._CLEAR_MISS_THRESHOLD:
+            self._miss[window_id] = count
+            return
+        del self._last[window_id]
+        self._miss.pop(window_id, None)
+        await self._bus.publish(
+            {
+                "type": "interactive_prompt_cleared",
+                "window_id": window_id,
+            }
+        )
 
     @staticmethod
     def _fingerprint(name: str, parsed: ParsedPrompt) -> str:

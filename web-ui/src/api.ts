@@ -39,6 +39,24 @@ export interface SessionMessage {
   tool_use_id?: string | null;
 }
 
+export interface Subagent {
+  agent_id: string;
+  agent_type: string;
+  description: string;
+  spawn_kind: "agent" | "workflow";
+  run_id: string | null;
+  status: "running" | "completed";
+}
+
+export interface SubagentsResponse {
+  subagents: Subagent[];
+}
+
+export interface SubagentMessagesResponse {
+  messages: SessionMessage[];
+  agent_id: string;
+}
+
 export interface SessionMessagesResponse {
   messages: SessionMessage[];
   session_id: string | null;
@@ -474,6 +492,16 @@ export const api = {
       `/api/sessions/${encodeURIComponent(windowId)}/messages?${params.toString()}`,
     );
   },
+  getSubagents: (windowId: string) =>
+    request<SubagentsResponse>(
+      `/api/sessions/${encodeURIComponent(windowId)}/subagents`,
+    ),
+  getSubagentMessages: (windowId: string, agentId: string) =>
+    request<SubagentMessagesResponse>(
+      `/api/sessions/${encodeURIComponent(windowId)}/subagents/${encodeURIComponent(
+        agentId,
+      )}/messages`,
+    ),
   sendText: (windowId: string, text: string, enter = true) =>
     request<{ ok: boolean }>(
       `/api/sessions/${encodeURIComponent(windowId)}/text`,

@@ -143,6 +143,13 @@ function isInputRequiredEvent(event: WsEvent): boolean {
 function notificationKind(event: WsEvent): "completion" | "input" | null {
   if (event.type === "completion") return "completion";
   if (isInputRequiredEvent(event)) return "input";
+  // Codex plan/question prompts live only in the pane (no transcript
+  // tool_use), surfaced as interactive_prompt. Claude already notifies via
+  // the transcript tool_use path above, so gate this to codex to avoid a
+  // double "needs input" notification.
+  if (event.type === "interactive_prompt" && event.runtime === "codex") {
+    return "input";
+  }
   return null;
 }
 
@@ -235,9 +242,25 @@ export function App() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-  // Windows that are currently streaming (agent working). Cleared on
-  // stream_end / completion events.
+  // Windows that are currently streaming (agent working). Cleared on a
+  // `completion` event, an `interactive_prompt` (agent yielded to the user),
+  // or the watchdog fallback.
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
+  // Synchronous mirror of busyIds for reads inside the WS callback. A React
+  // state updater may run after the handler returns, so we can't reliably read
+  // "was this window busy?" from inside a setBusyIds updater — the ref is the
+  // source of truth; setBusyIds just keeps the rendered state in sync.
+  const busyIdsRef = useRef<Set<string>>(new Set());
+  const setBusy = (next: Set<string>) => {
+    busyIdsRef.current = next;
+    setBusyIds(next);
+  };
+  // Windows currently parked on an interactive prompt (plan decision,
+  // permission, AskUserQuestion). This is a third state distinct from
+  // busy/idle: the agent is waiting on the user, so we clear busy AND suppress
+  // activity (a residual pane `stream`) from re-arming it until the prompt
+  // clears. Ref-backed because it's read inside the WS callback.
+  const awaitingInputIds = useRef<Set<string>>(new Set());
   // Windows where the agent finished while the user wasn't looking. Cleared
   // when the user opens that window.
   const [doneIds, setDoneIds] = useState<Set<string>>(() => new Set());
@@ -255,18 +278,14 @@ export function App() {
   useEffect(() => {
     notificationPermissionRef.current = notificationPermission;
   }, [notificationPermission]);
-  // Per-window watchdog timers. WS reconnects don't replay history, so if a
-  // `stream_end` fires while we're offline the busy flag would stick forever.
-  // Each incoming `stream` event resets a 3s timer; on expiry we treat the
-  // turn as ended. The server polls every ~300ms while active so this delay
-  // doesn't flash off during real streaming.
+  // Per-window watchdog timers — a pure safety net for events missed across a
+  // WS reconnect (reconnects don't replay history). Each activity event
+  // re-arms the timer; on expiry we treat the turn as ended. The authoritative
+  // end-of-turn signal is the `completion` event from the JSONL monitor (Codex
+  // final `agent_message`/`turn_aborted`, Claude `system/turn_duration`); the
+  // plan/permission pause is signalled by `interactive_prompt`. 90s comfortably
+  // covers a long-running tool call without dropping busy.
   const busyWatchdogs = useRef<Record<string, number>>({});
-  // Watchdog is a pure safety net for missed events across a WS
-  // reconnect. The authoritative end-of-turn signal is the `completion`
-  // event from the JSONL monitor (Codex `turn_complete` / Claude
-  // `stop_reason=end_turn`). 90s comfortably covers a long-running tool
-  // call without dropping busy; if WS drops and we miss the completion,
-  // we fall back to idle after this timeout.
   const BUSY_WATCHDOG_MS = 90000;
   // We need the current activeId inside the WS callback, but capturing it
   // through the effect's closure would force re-subscribing the stream on
@@ -361,6 +380,7 @@ export function App() {
 
   const streamRef = useRef<EventStream | null>(null);
   const wsListeners = useRef(new Set<(e: WsEvent) => void>());
+  const reconnectListeners = useRef(new Set<() => void>());
 
   const showToast = useCallback((text: string, kind: "info" | "error" = "info") => {
     setToast({ text, kind });
@@ -420,10 +440,17 @@ export function App() {
       return;
     }
 
+    // Interactive prompts re-emit on cursor movement (current_index change)
+    // and on reconnect (new seq each time), so a seq-based key would re-notify
+    // for the same prompt. Key on stable content instead.
     const key =
-      "seq" in event && event.seq
-        ? `${kind}:${event.seq}`
-        : `${kind}:${windowId}:${"ts" in event ? event.ts : 0}`;
+      event.type === "interactive_prompt"
+        ? `${kind}:${windowId}:${event.ui_name}:${event.options
+            .map((o) => o.label)
+            .join("|")}`
+        : "seq" in event && event.seq
+          ? `${kind}:${event.seq}`
+          : `${kind}:${windowId}:${"ts" in event ? event.ts : 0}`;
     if (notifiedEventsRef.current.has(key)) return;
     notifiedEventsRef.current.add(key);
     if (notifiedEventsRef.current.size > 200) {
@@ -493,6 +520,11 @@ export function App() {
     refreshSessions();
     const stream = new EventStream();
     streamRef.current = stream;
+    // On WS reconnect, the server hasn't replayed events missed during the
+    // gap — tell subscribers (ChatView) to backfill history.
+    stream.onReconnect = () => {
+      for (const cb of reconnectListeners.current) cb();
+    };
     const unsub = stream.subscribe((event) => {
       if (event.type === "sessions_changed") {
         refreshSessions();
@@ -512,6 +544,11 @@ export function App() {
         }
 
         // Sidebar busy/done indicators.
+        // Whether to let maybeNotify fire below. Suppressed for a completion
+        // on a window that was never observed busy (a lagging/stray completion
+        // must not pop "TmuxDuck finished" for a background window the user
+        // never saw working).
+        let allowNotify = true;
         const wid =
           "window_id" in event && typeof event.window_id === "string"
             ? event.window_id
@@ -524,15 +561,17 @@ export function App() {
               delete busyWatchdogs.current[wid];
             }
           };
-          const markIdle = (markDone: boolean) => {
+          // Returns whether the window was actually busy when cleared, so we
+          // only mark "done" / notify for turns the user observed running.
+          const markIdle = (markDone: boolean): boolean => {
             clearWatchdog();
-            setBusyIds((prev) => {
-              if (!prev.has(wid)) return prev;
-              const next = new Set(prev);
+            const wasBusy = busyIdsRef.current.has(wid);
+            if (wasBusy) {
+              const next = new Set(busyIdsRef.current);
               next.delete(wid);
-              return next;
-            });
-            if (markDone && wid !== activeIdRef.current) {
+              setBusy(next);
+            }
+            if (markDone && wasBusy && wid !== activeIdRef.current) {
               setDoneIds((prev) => {
                 if (prev.has(wid)) return prev;
                 const next = new Set(prev);
@@ -540,42 +579,57 @@ export function App() {
                 return next;
               });
             }
+            return wasBusy;
           };
 
-          // Activity signals from the JSONL monitor: Codex stream chunks
-          // and any assistant/tool message that the transcript parser
-          // surfaces. All re-arm the same watchdog; only `completion`
-          // (from end_turn / turn_complete) clears busy authoritatively.
-          const isActivity =
-            event.type === "stream" ||
-            (event.type === "message" &&
-              (event.role === "assistant" ||
-                !!event.tool_name ||
-                !!event.tool_use_id));
-          if (isActivity) {
-            setBusyIds((prev) => {
-              if (prev.has(wid)) return prev;
-              const next = new Set(prev);
-              next.add(wid);
-              return next;
-            });
-            setDoneIds((prev) => {
-              if (!prev.has(wid)) return prev;
-              const next = new Set(prev);
-              next.delete(wid);
-              return next;
-            });
-            clearWatchdog();
-            busyWatchdogs.current[wid] = window.setTimeout(
-              () => markIdle(/*markDone*/ true),
-              BUSY_WATCHDOG_MS,
-            );
+          if (event.type === "interactive_prompt") {
+            // The agent yielded to the user (plan decision / permission /
+            // question). Not "done": clear busy and enter awaiting-input,
+            // which suppresses the residual pane `stream` from re-arming busy
+            // while idle-waiting. The notification still fires (kind "input").
+            awaitingInputIds.current.add(wid);
+            markIdle(/*markDone*/ false);
+          } else if (event.type === "interactive_prompt_cleared") {
+            awaitingInputIds.current.delete(wid);
           } else if (event.type === "completion") {
-            markIdle(/*markDone*/ true);
+            // Authoritative end-of-turn. Leaving awaiting-input here too means
+            // a missed interactive_prompt_cleared can't strand the window.
+            awaitingInputIds.current.delete(wid);
+            allowNotify = markIdle(/*markDone*/ true);
+          } else {
+            // Activity signals from the JSONL monitor: Codex/Claude pane
+            // stream chunks and any assistant/tool message. They re-arm the
+            // watchdog — but NOT while parked on an interactive prompt, where
+            // the pane keeps redrawing and would otherwise re-arm busy forever.
+            const isActivity =
+              event.type === "stream" ||
+              (event.type === "message" &&
+                (event.role === "assistant" ||
+                  !!event.tool_name ||
+                  !!event.tool_use_id));
+            if (isActivity && !awaitingInputIds.current.has(wid)) {
+              if (!busyIdsRef.current.has(wid)) {
+                const next = new Set(busyIdsRef.current);
+                next.add(wid);
+                setBusy(next);
+              }
+              setDoneIds((prev) => {
+                if (!prev.has(wid)) return prev;
+                const next = new Set(prev);
+                next.delete(wid);
+                return next;
+              });
+              clearWatchdog();
+              busyWatchdogs.current[wid] = window.setTimeout(
+                () => markIdle(/*markDone*/ true),
+                BUSY_WATCHDOG_MS,
+              );
+            }
           }
+
         }
 
-        maybeNotify(event);
+        if (allowNotify) maybeNotify(event);
         for (const l of wsListeners.current) l(event);
       }
     });
@@ -588,7 +642,8 @@ export function App() {
         window.clearTimeout(t);
       }
       busyWatchdogs.current = {};
-      setBusyIds(new Set());
+      awaitingInputIds.current = new Set();
+      setBusy(new Set());
     };
   }, [auth, refreshSessions, maybeNotify]);
 
@@ -596,6 +651,13 @@ export function App() {
     wsListeners.current.add(listener);
     return () => {
       wsListeners.current.delete(listener);
+    };
+  }, []);
+
+  const subscribeReconnect = useCallback((listener: () => void) => {
+    reconnectListeners.current.add(listener);
+    return () => {
+      reconnectListeners.current.delete(listener);
     };
   }, []);
 
@@ -861,6 +923,7 @@ export function App() {
     <ChatView
       session={activeSession}
       subscribeWs={subscribeWs}
+      subscribeReconnect={subscribeReconnect}
       onRequestScreenshot={() => setScreenshotFor(activeSession.window_id)}
       onRequestKill={() => setKillTarget(activeSession)}
       onOpenSidebar={() => setSidebarOpen(true)}

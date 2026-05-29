@@ -9,6 +9,11 @@ export class EventStream {
   private retryDelay = 1000;
   private retryTimer: number | null = null;
   private closed = false;
+  // Fired on every successful (re)connect AFTER the first. The server never
+  // replays events missed while the socket was down, so the owner uses this to
+  // backfill history. Not fired on the initial connect (loadHistory covers it).
+  onReconnect: (() => void) | null = null;
+  private hasConnected = false;
 
   start() {
     if (this.socket || this.closed) return;
@@ -27,6 +32,10 @@ export class EventStream {
     ws.onclose = () => this.scheduleReconnect();
     ws.onopen = () => {
       this.retryDelay = 1000;
+      if (this.hasConnected) {
+        this.onReconnect?.();
+      }
+      this.hasConnected = true;
     };
     ws.onerror = () => {
       // Browsers normally fire `close` after `error`, but if a connection

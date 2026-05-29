@@ -1361,6 +1361,12 @@ class SessionManager:
 def _messages_from_parsed(parsed_entries: list[Any]) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     for e in parsed_entries:
+        # `completion` entries are an end-of-turn control signal (empty text),
+        # consumed live as a `type:"completion"` WS event — never a chat
+        # bubble. Drop them from the REST history snapshot so they don't render
+        # as empty "· completion" bubbles on reload.
+        if getattr(e, "content_type", None) == "completion":
+            continue
         message: dict[str, Any] = {
             "role": e.role,
             "text": e.text,

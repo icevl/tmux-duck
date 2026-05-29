@@ -90,10 +90,16 @@ class EventBus:
             try:
                 q.put_nowait(event)
             except asyncio.QueueFull:
-                logger.warning("Dropping event for slow subscriber (queue full)")
+                logger.warning("Dropping slow subscriber (queue full)")
                 dead.append(q)
         for q in dead:
             self._subscribers.discard(q)
+            # Don't just orphan the queue: the /api/ws handler is parked on
+            # `queue.get()` and would block forever, so the browser would keep
+            # a live-but-dead socket and silently receive nothing. Push the
+            # shutdown sentinel so the handler wakes, exits, and the client
+            # auto-reconnects (and then catches up missed history).
+            self._put_shutdown(q)
 
     async def publish_sessions_changed(self) -> None:
         await self.publish({"type": "sessions_changed"})
@@ -128,4 +134,14 @@ async def session_monitor_listener(bus: EventBus, msg: NewMessage) -> None:
         if ws.session_id == msg.session_id:
             window_id = wid
             break
+    if window_id is None:
+        # No live window currently maps to this session_id (session resolving,
+        # just resumed under a new id, or a transient race). The event still
+        # publishes with session_id, so ChatView's session_id fallback can
+        # render it for the active session — but window_id-keyed consumers
+        # (e.g. the busy indicator) can't route it. Log for observability.
+        logger.warning(
+            "No window mapped to session %s; event published without window_id",
+            msg.session_id,
+        )
     await bus.publish_message(msg, window_id=window_id)

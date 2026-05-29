@@ -19,7 +19,12 @@ import re
 from typing import TYPE_CHECKING
 
 from ..session import session_manager
-from ..terminal_parser import STATUS_PREFIX_CHARS, parse_status_line, strip_pane_chrome
+from ..terminal_parser import (
+    STATUS_PREFIX_CHARS,
+    extract_interactive_content,
+    parse_status_line,
+    strip_pane_chrome,
+)
 from ..tmux_manager import tmux_manager
 
 if TYPE_CHECKING:
@@ -138,6 +143,27 @@ async def stream_pane_loop(
 
                     pane = await tmux_manager.capture_pane(w.window_id)
                     if not pane:
+                        continue
+
+                    # While the pane shows an interactive prompt (plan decision,
+                    # permission, AskUserQuestion), the agent is idle-waiting for
+                    # the user — NOT generating. Some prompt footers still carry
+                    # an "esc to interrupt" line that parse_status_line would read
+                    # as active, which keeps re-arming the frontend busy watchdog
+                    # forever. Treat a detected prompt as not-streaming so the UI
+                    # can fall into the awaiting-input state (interactive_monitor
+                    # publishes the prompt itself).
+                    if extract_interactive_content(pane, runtime=ws.runtime):
+                        if window_id in active:
+                            active.discard(window_id)
+                            last_body.pop(window_id, None)
+                            await bus.publish(
+                                {
+                                    "type": "stream_end",
+                                    "window_id": window_id,
+                                    "session_id": ws.session_id,
+                                }
+                            )
                         continue
 
                     status = parse_status_line(pane)

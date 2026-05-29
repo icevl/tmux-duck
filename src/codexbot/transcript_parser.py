@@ -168,25 +168,28 @@ class TranscriptParser:
         list, or None when the record should be ignored.
         """
         msg_type = data.get("type")
+
+        # Claude Code emits exactly one `system` record with
+        # `subtype="turn_duration"` per user-prompt turn, written to the MAIN
+        # transcript only (subagent files never contain it) as the file tail
+        # right after the turn's final assistant message. This is the
+        # authoritative end-of-turn marker, so we map it to a synthetic
+        # completion block — the monitor then emits one
+        # `message_type="completion"` NewMessage per turn.
+        #
+        # We deliberately do NOT synthesize completion from an assistant
+        # `stop_reason` ("end_turn"/"stop_sequence"): those fire multiple times
+        # per turn (intermediate stops, and the synthetic "<synthetic>"
+        # API-error entry uses stop_sequence), which previously over-counted
+        # completions and flipped the UI to "done" mid-turn.
+        if msg_type == "system" and data.get("subtype") == "turn_duration":
+            return {
+                "type": "assistant",
+                "timestamp": data.get("timestamp"),
+                "message": {"content": [{"type": "completion"}]},
+            }
+
         if msg_type in ("user", "assistant"):
-            # Claude Code marks turn boundaries via `stop_reason: "end_turn"`
-            # on the final assistant message. Append a synthetic completion
-            # content block so the downstream parser emits a NewMessage
-            # with `message_type="completion"` immediately — instead of
-            # making us wait for the next user message before the bus
-            # learns the turn is done.
-            if msg_type == "assistant":
-                message = data.get("message")
-                if isinstance(message, dict):
-                    stop_reason = message.get("stop_reason")
-                    if stop_reason in ("end_turn", "stop_sequence"):
-                        content = message.get("content")
-                        if isinstance(content, list):
-                            new_message = {
-                                **message,
-                                "content": [*content, {"type": "completion"}],
-                            }
-                            return {**data, "message": new_message}
             return data
 
         timestamp = data.get("timestamp")
@@ -200,12 +203,21 @@ class TranscriptParser:
                 role = payload.get("role")
                 if role not in ("user", "assistant"):
                     return None
+                blocks = cls._extract_response_item_text_blocks(payload)
+                if role == "assistant":
+                    # Current Codex (gpt-5.x) emits no task_complete/turn_complete
+                    # event. Each completed turn has exactly one assistant
+                    # `response_item/message` carrying the final user-visible
+                    # text (1:1 with the turn), so we append a completion block
+                    # here — this is the authoritative Codex end-of-turn marker.
+                    # The duplicate `event_msg/agent_message` that carries the
+                    # same text stays dropped (its branch below returns None), so
+                    # exactly one final-text bubble and one completion render.
+                    blocks = [*blocks, {"type": "completion"}]
                 return {
                     "type": role,
                     "timestamp": timestamp,
-                    "message": {
-                        "content": cls._extract_response_item_text_blocks(payload),
-                    },
+                    "message": {"content": blocks},
                 }
             if payload_type == "function_call":
                 call_id = payload.get("call_id") or payload.get("id") or ""
@@ -283,6 +295,16 @@ class TranscriptParser:
                     },
                 }
             if payload_type in ("task_complete", "turn_complete"):
+                return {
+                    "type": "assistant",
+                    "timestamp": timestamp,
+                    "message": {"content": [{"type": "completion"}]},
+                }
+            if payload_type == "turn_aborted":
+                # User interrupted the turn (Esc). No agent_message or final
+                # assistant response_item follows, so this is the only
+                # end-of-turn signal — emit a completion so the UI and Telegram
+                # finalize the turn instead of waiting out the 90s watchdog.
                 return {
                     "type": "assistant",
                     "timestamp": timestamp,
