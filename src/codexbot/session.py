@@ -72,6 +72,9 @@ class WindowState:
     runtime: str = "codex"
     pinned: bool = False
     sort_order: int | None = None
+    # Set when the window was created by an external connector (Slack, …).
+    # Such windows are hidden from the web/Telegram session lists.
+    connector_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -85,6 +88,8 @@ class WindowState:
             data["pinned"] = True
         if self.sort_order is not None:
             data["sort_order"] = self.sort_order
+        if self.connector_id:
+            data["connector_id"] = self.connector_id
         return data
 
     @classmethod
@@ -104,6 +109,7 @@ class WindowState:
             runtime=data.get("runtime", "codex"),
             pinned=bool(data.get("pinned", False)),
             sort_order=sort_order,
+            connector_id=data.get("connector_id") or None,
         )
 
 

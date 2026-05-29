@@ -88,6 +88,56 @@ export interface DirectoryEntry {
   path: string;
 }
 
+export interface ConnectorInfo {
+  id: string;
+  type: string;
+  name: string;
+  enabled: boolean;
+  running?: boolean;
+  config: Record<string, unknown>;
+  /** key → whether a secret value is currently set (values never sent). */
+  secrets: Record<string, boolean>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConnectorWriteBody {
+  type?: string;
+  name?: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+}
+
+export type ConnectorFieldType =
+  | "text"
+  | "secret"
+  | "textarea"
+  | "runtime"
+  | "directory"
+  | "list"
+  | "bool"
+  | "acl";
+
+export interface AclEntry {
+  user: string;
+  write: boolean;
+}
+
+export interface ConnectorField {
+  key: string;
+  label: string;
+  type: ConnectorFieldType;
+  required: boolean;
+  placeholder: string;
+  help: string;
+}
+
+export interface ConnectorTypeInfo {
+  type: string;
+  label: string;
+  fields: ConnectorField[];
+}
+
 export interface DirectoryListing {
   path: string;
   parent: string | null;
@@ -681,6 +731,27 @@ export const api = {
       `/api/sessions/${encodeURIComponent(windowId)}/files/search?q=${encodeURIComponent(
         q,
       )}`,
+    ),
+
+  listConnectorTypes: () =>
+    request<{ types: ConnectorTypeInfo[] }>("/api/connector-types"),
+  listConnectors: () =>
+    request<{ connectors: ConnectorInfo[] }>("/api/connectors"),
+  createConnector: (body: ConnectorWriteBody) =>
+    request<ConnectorInfo>("/api/connectors", { method: "POST", json: body }),
+  updateConnector: (id: string, body: ConnectorWriteBody) =>
+    request<ConnectorInfo>(`/api/connectors/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      json: body,
+    }),
+  deleteConnector: (id: string) =>
+    request<{ ok: boolean }>(`/api/connectors/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  killConnectorSessions: (id: string) =>
+    request<{ ok: boolean; killed: number }>(
+      `/api/connectors/${encodeURIComponent(id)}/kill-sessions`,
+      { method: "POST" },
     ),
 };
 

@@ -146,6 +146,24 @@ class ChooseOptionRequest(BaseModel):
     total: int = Field(ge=1, le=100)
 
 
+class ConnectorCreateRequest(BaseModel):
+    type: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=120)
+    enabled: bool = False
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConnectorUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    enabled: bool | None = None
+    config: dict[str, Any] | None = None
+
+
+# Config keys whose values are secrets: never echoed back to the client, and
+# preserved on update when the incoming value is left blank.
+_CONNECTOR_SECRET_KEYS = ("bot_token", "app_token")
+
+
 # Cap for the image-upload endpoint. Telegram bot accepts up to 20 MB photos,
 # matching that here keeps the two transports consistent.
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -191,6 +209,61 @@ def _valid_sort_order(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return None
     return value
+
+
+def _describe_tool_call(tool_name: str, tool_input: Any) -> str:
+    """Human-readable summary of a tool call for an approval card."""
+    if not isinstance(tool_input, dict):
+        return tool_name
+    if "command" in tool_input:
+        return str(tool_input.get("command") or "")
+    path = tool_input.get("file_path") or tool_input.get("path") or ""
+    if path:
+        return f"{tool_name}: {path}"
+    try:
+        return f"{tool_name} {json.dumps(tool_input, ensure_ascii=False)[:500]}"
+    except (TypeError, ValueError):
+        return tool_name
+
+
+def _connector_secret_keys(type_name: str) -> tuple[str, ...]:
+    """Secret config keys for a type, from its schema (with a fallback)."""
+    from ..connectors.base import secret_keys_for_type
+
+    return secret_keys_for_type(type_name) or _CONNECTOR_SECRET_KEYS
+
+
+def _serialize_connector(record: Any) -> dict[str, Any]:
+    """Connector row for the client, with secret values stripped."""
+    secret_keys = _connector_secret_keys(record.type)
+    config = dict(record.config)
+    safe_config = {k: v for k, v in config.items() if k not in secret_keys}
+    secrets_set = {k: bool(str(config.get(k) or "").strip()) for k in secret_keys}
+    return {
+        "id": record.id,
+        "type": record.type,
+        "name": record.name,
+        "enabled": record.enabled,
+        "config": safe_config,
+        "secrets": secrets_set,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+    }
+
+
+def _merge_connector_config(
+    existing: dict[str, Any], incoming: dict[str, Any], secret_keys: tuple[str, ...]
+) -> dict[str, Any]:
+    """Merge an incoming config patch, preserving secrets left blank."""
+    merged = {**existing, **incoming}
+    for key in secret_keys:
+        incoming_val = str(incoming.get(key) or "").strip()
+        if not incoming_val:
+            if existing.get(key):
+                merged[key] = existing[key]
+            else:
+                merged.pop(key, None)
+    return merged
 
 
 def _session_summary_sort_key(
@@ -757,6 +830,8 @@ def create_app(
         result: list[dict[str, Any]] = []
         for w in windows:
             ws = session_manager.get_window_state(w.window_id)
+            if ws.connector_id:
+                continue  # connector-owned windows are hidden from this list
             runtime_name = ws.runtime or "codex"
             display_name = (
                 session_manager.get_display_name(w.window_id) or w.window_name
@@ -787,6 +862,8 @@ def create_app(
         for dormant_key, ws in session_manager.window_states.items():
             if not session_manager.is_dormant_key(dormant_key):
                 continue
+            if ws.connector_id:
+                continue  # hide connector-origin dormant sessions too
             runtime_name = ws.runtime or "codex"
             display_name = (
                 session_manager.get_display_name(dormant_key) or ws.window_name or ""
@@ -1644,6 +1721,183 @@ def create_app(
         if not ok:
             raise HTTPException(400, detail=msg)
         return {"ok": True, "message": msg}
+
+    @app.post("/api/connectors/approve-tool")
+    async def connectors_approve_tool(request: Request) -> dict[str, Any]:
+        """Write-gate endpoint called by the Claude PreToolUse hook.
+
+        Authenticated by a shared secret (localhost only). Reads are allowed
+        immediately; writes are routed to the owning connector, which blocks
+        on a human decision (e.g. Slack Approve/Deny) before returning.
+        """
+        from ..connectors import bridge, connector_manager, store
+        from ..connectors.approval import approval_secret
+        from ..connectors.classifier import classify_action
+
+        def _allow() -> dict[str, Any]:
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                }
+            }
+
+        def _deny(reason: str) -> dict[str, Any]:
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            }
+
+        provided = request.headers.get("X-Connector-Secret", "")
+        if not provided or not secrets.compare_digest(provided, approval_secret()):
+            raise HTTPException(403, detail="forbidden")
+
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001
+            payload = {}
+        tool_name = str(payload.get("tool_name") or "")
+        tool_input = payload.get("tool_input") or {}
+        session_id = str(payload.get("session_id") or "")
+
+        if classify_action(tool_name, tool_input) == "read":
+            return _allow()
+
+        window_id = bridge.window_for_session(session_id)
+        if not window_id:
+            return _allow()  # not a connector-managed session
+        mapping = store.find_mapping_by_window(window_id)
+        if mapping is None:
+            return _allow()
+        connector = connector_manager.get_connector(mapping.connector_id)
+        if connector is None:
+            return _allow()
+
+        # Re-classify with the connector's trusted read-only commands (e.g.
+        # custom tools like `rtk`); they bypass the gate.
+        extra_reads = connector.config.get("extra_read_commands") or []
+        if (
+            isinstance(extra_reads, list)
+            and classify_action(
+                tool_name, tool_input, tuple(str(x) for x in extra_reads)
+            )
+            == "read"
+        ):
+            return _allow()
+
+        detail = _describe_tool_call(tool_name, tool_input)
+        approved = await connector.request_write_approval(
+            window_id, f"{tool_name} requires approval", detail
+        )
+        return _allow() if approved else _deny("Denied by reviewer")
+
+    @app.get("/api/connector-types")
+    async def connector_types_endpoint(
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        from ..connectors.base import list_connector_types
+        from ..connectors.manager import _load_connector_implementations
+
+        _load_connector_implementations()  # idempotent; ensures registry filled
+        return {"types": list_connector_types()}
+
+    @app.get("/api/connectors")
+    async def list_connectors_endpoint(
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        from ..connectors import connector_manager, store
+
+        out = []
+        for rec in store.list_connectors():
+            payload = _serialize_connector(rec)
+            payload["running"] = connector_manager.is_running(rec.id)
+            out.append(payload)
+        return {"connectors": out}
+
+    @app.post("/api/connectors")
+    async def create_connector_endpoint(
+        req: ConnectorCreateRequest, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        from ..connectors import connector_manager, store
+
+        rec = store.create_connector(
+            type=req.type, name=req.name, config=req.config, enabled=req.enabled
+        )
+        await connector_manager.reload(rec.id)
+        payload = _serialize_connector(store.get_connector(rec.id) or rec)
+        payload["running"] = connector_manager.is_running(rec.id)
+        return payload
+
+    @app.patch("/api/connectors/{connector_id}")
+    async def update_connector_endpoint(
+        connector_id: str,
+        req: ConnectorUpdateRequest,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        from ..connectors import connector_manager, store
+
+        existing = store.get_connector(connector_id)
+        if existing is None:
+            raise HTTPException(404, detail="connector not found")
+        config = None
+        if req.config is not None:
+            config = _merge_connector_config(
+                existing.config, req.config, _connector_secret_keys(existing.type)
+            )
+        rec = store.update_connector(
+            connector_id, name=req.name, enabled=req.enabled, config=config
+        )
+        if rec is None:
+            raise HTTPException(404, detail="connector not found")
+        await connector_manager.reload(connector_id)
+        payload = _serialize_connector(rec)
+        payload["running"] = connector_manager.is_running(connector_id)
+        return payload
+
+    @app.delete("/api/connectors/{connector_id}")
+    async def delete_connector_endpoint(
+        connector_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        from ..connectors import connector_manager, store
+
+        if not store.delete_connector(connector_id):
+            raise HTTPException(404, detail="connector not found")
+        # reload with the row gone stops the running instance.
+        await connector_manager.reload(connector_id)
+        return {"ok": True}
+
+    @app.post("/api/connectors/{connector_id}/kill-sessions")
+    async def kill_connector_sessions(
+        connector_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        """Tear down every live/dormant agent session owned by a connector."""
+        from ..connectors import store
+
+        mappings = store.list_session_mappings(connector_id)
+        # All windows: those mapped to a thread + any tagged dormant ones.
+        window_ids = {m.window_id for m in mappings}
+        for key, ws in list(session_manager.window_states.items()):
+            if ws.connector_id == connector_id:
+                window_ids.add(key)
+
+        killed = 0
+        for wid in window_ids:
+            try:
+                await tmux_manager.kill_window(wid)
+            except Exception:  # noqa: BLE001
+                pass
+            await _kill_persistent_shell_session(wid)
+            if session_manager.window_states.pop(wid, None) is not None:
+                killed += 1
+            session_manager.window_display_names.pop(wid, None)
+        for m in mappings:
+            store.delete_session_mapping(connector_id, m.external_id)
+        session_manager._save_state()
+        await bus.publish_sessions_changed()
+        return {"ok": True, "killed": killed}
 
     @app.get("/api/sessions/{window_id}/screenshot.png")
     async def screenshot(

@@ -11,6 +11,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Plug,
   Plus,
   Trash2,
   X,
@@ -53,6 +54,7 @@ interface Props {
   doneIds: Set<string>;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onOpenConnectors: () => void;
   onLogout: () => void;
   onClose: () => void;
   onRename: (session: SessionSummary) => void;
@@ -97,6 +99,7 @@ export function Sidebar({
   doneIds,
   onSelect,
   onNew,
+  onOpenConnectors,
   onLogout,
   onClose,
   onRename,
@@ -234,32 +237,6 @@ export function Sidebar({
             aria-label="Close menu"
           >
             <X size={ICON} />
-          </button>
-          <TunioPlayer
-            id={OFFICE_STREAM_ID}
-            theme="dark"
-            buttonOnly
-            buttonOnlyClassName="codi-sidebar-play"
-            buttonOnlySize={28}
-          />
-          <button
-            className={`icon-button notification-toggle${
-              notificationsEnabled ? " active" : ""
-            }`}
-            onClick={onToggleNotifications}
-            title={notificationTitle}
-            aria-label={notificationTitle}
-            disabled={!notificationsSupported}
-          >
-            {notificationsEnabled ? <Bell size={ICON} /> : <BellOff size={ICON} />}
-          </button>
-          <button
-            className="icon-button"
-            onClick={onLogout}
-            title="Sign out"
-            aria-label="Sign out"
-          >
-            <LogOut size={ICON} />
           </button>
         </div>
       </div>
@@ -466,6 +443,42 @@ export function Sidebar({
         )}
       </div>
       {searchEnabled !== false && <SearchStatusFooter status={searchStatus} />}
+      <div className="sidebar-footer">
+        <TunioPlayer
+          id={OFFICE_STREAM_ID}
+          theme="dark"
+          buttonOnly
+          buttonOnlyClassName="codi-sidebar-play"
+          buttonOnlySize={28}
+        />
+        <button
+          className={`icon-button notification-toggle${
+            notificationsEnabled ? " active" : ""
+          }`}
+          onClick={onToggleNotifications}
+          title={notificationTitle}
+          aria-label={notificationTitle}
+          disabled={!notificationsSupported}
+        >
+          {notificationsEnabled ? <Bell size={ICON} /> : <BellOff size={ICON} />}
+        </button>
+        <button
+          className="icon-button"
+          onClick={onOpenConnectors}
+          title="Connectors"
+          aria-label="Connectors"
+        >
+          <Plug size={ICON} />
+        </button>
+        <button
+          className="icon-button"
+          onClick={onLogout}
+          title="Sign out"
+          aria-label="Sign out"
+        >
+          <LogOut size={ICON} />
+        </button>
+      </div>
     </aside>
   );
 }

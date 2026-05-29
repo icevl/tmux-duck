@@ -417,6 +417,9 @@ class TmuxManager:
         resume_session_id: str | None = None,
         *,
         runtime: AgentRuntime | None = None,
+        approval_gate: bool = False,
+        hooks_settings_path: str | None = None,
+        system_prompt: str | None = None,
     ) -> tuple[bool, str, str, str]:
         """Create a new tmux window and optionally start the agent.
 
@@ -468,7 +471,12 @@ class TmuxManager:
                     pane = window.active_pane
                     if pane:
                         if runtime is not None:
-                            cmd = runtime.build_start_command(resume_session_id)
+                            cmd = runtime.build_start_command(
+                                resume_session_id,
+                                approval_gate=approval_gate,
+                                hooks_settings_path=hooks_settings_path,
+                                system_prompt=system_prompt,
+                            )
                         else:
                             cmd = config.codex_command
                             if resume_session_id:

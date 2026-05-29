@@ -418,7 +418,17 @@ button.burger {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
 }
 
 .sidebar-new {
@@ -2621,6 +2631,85 @@ button.primary.send-button {
   background: var(--bg-3);
   border-color: var(--border-strong);
   color: var(--text-0);
+}
+
+.connector-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.connector-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.connector-name {
+  font-size: 14px;
+  color: var(--text-0);
+  font-weight: 600;
+}
+
+.connector-badge.live {
+  font-size: 11px;
+  font-weight: 600;
+  color: #2ecc71;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.connector-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.connector-actions button {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.directory-picker .dir-row .path {
+  margin-left: 8px;
+}
+
+.acl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.acl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.acl-row input[type="text"],
+.acl-row > input:not([type]) {
+  flex: 1;
+}
+
+.acl-write {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-1);
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.acl-row button.danger {
+  padding: 4px 8px;
 }
 
 .resume-row {

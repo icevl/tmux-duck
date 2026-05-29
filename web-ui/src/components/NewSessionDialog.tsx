@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
-import {
-  api,
-  DirectoryListing,
-  ResumeSession,
-  RuntimeInfo,
-} from "../api";
+import { api, ResumeSession, RuntimeInfo } from "../api";
+import { DirectoryPicker } from "./DirectoryPicker";
 
 interface Props {
   onClose: () => void;
@@ -20,8 +16,6 @@ type Stage = "directory" | "runtime" | "resume";
 
 export function NewSessionDialog({ onClose, onCreate }: Props) {
   const [stage, setStage] = useState<Stage>("directory");
-  const [listing, setListing] = useState<DirectoryListing | null>(null);
-  const [pathInput, setPathInput] = useState("~");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
   const [runtime, setRuntime] = useState<string>("codex");
@@ -32,23 +26,6 @@ export function NewSessionDialog({ onClose, onCreate }: Props) {
   useEffect(() => {
     api.listRuntimes().then((r) => setRuntimes(r.runtimes)).catch(() => undefined);
   }, []);
-
-  useEffect(() => {
-    if (stage !== "directory") return;
-    setError(null);
-    api
-      .listDirectories(pathInput)
-      .then((r) => {
-        setListing(r);
-        setPathInput(r.path);
-      })
-      .catch((err: Error) => setError(err.message));
-  }, [stage, pathInput]);
-
-  function goUp() {
-    if (!listing?.parent) return;
-    setPathInput(listing.parent);
-  }
 
   async function selectDirectory(path: string) {
     setSelectedPath(path);
@@ -95,44 +72,14 @@ export function NewSessionDialog({ onClose, onCreate }: Props) {
           <>
             <div className="modal-row">
               <label>Working directory</label>
-              <div style={{ display: "flex", gap: 6 }}>
-                <input
-                  style={{ flex: 1 }}
-                  value={pathInput}
-                  onChange={(e) => setPathInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") setPathInput((p) => p.trim() || "~");
-                  }}
-                />
-                <button onClick={goUp} disabled={!listing?.parent}>
-                  ↑ Up
-                </button>
-              </div>
-            </div>
-            <div style={{ maxHeight: 280, overflowY: "auto" }}>
-              {listing?.entries.length === 0 && (
-                <div style={{ color: "var(--text-2)", padding: 8 }}>
-                  No subdirectories.
-                </div>
-              )}
-              {listing?.entries.map((d) => (
-                <div
-                  key={d.path}
-                  className={`dir-row${selectedPath === d.path ? " selected" : ""}`}
-                  onClick={() => setSelectedPath(d.path)}
-                  onDoubleClick={() => setPathInput(d.path)}
-                >
-                  <span>📁 {d.name}</span>
-                  <span className="path">{d.path}</span>
-                </div>
-              ))}
+              <DirectoryPicker value={selectedPath} onChange={setSelectedPath} />
             </div>
             <div className="modal-actions">
               <button onClick={onClose}>Cancel</button>
               <button
                 className="primary"
-                disabled={!listing?.path || busy}
-                onClick={() => selectDirectory(selectedPath ?? listing?.path ?? "")}
+                disabled={!selectedPath || busy}
+                onClick={() => selectDirectory(selectedPath ?? "")}
               >
                 {busy ? "…" : "Use this directory →"}
               </button>
