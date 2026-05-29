@@ -222,7 +222,9 @@ def resolve_subagent_file(main_file: Path, agent_id: str) -> Path | None:
     return None
 
 
-def load_subagent_messages(main_file: Path, agent_id: str) -> list[dict[str, Any]] | None:
+def load_subagent_messages(
+    main_file: Path, agent_id: str
+) -> list[dict[str, Any]] | None:
     """Parse a subagent transcript into Web-UI message dicts (history snapshot).
 
     Returns None when the subagent file can't be found. `completion` control
