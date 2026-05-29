@@ -2263,6 +2263,29 @@ export function ChatView({
         });
 
         for (const a of pendingAttachments) URL.revokeObjectURL(a.previewUrl);
+
+        // Safety net: some inputs never echo back as a matching transcript
+        // user message — notably agent slash-commands like `/plan` on Codex,
+        // which switch mode without recording a user turn. With no echo the
+        // optimistic bubble would show "· sending…" forever, so drop the
+        // pending flag after a grace period if it hasn't been reconciled. (If
+        // an echo does arrive — before or after — dedup still merges it, so
+        // this never produces a duplicate.)
+        const settleText = finalText;
+        const settleWindow = session.window_id;
+        window.setTimeout(() => {
+          if (windowIdRef.current !== settleWindow) return;
+          setMessages((prev) => {
+            const idx = prev.findIndex(
+              (m) =>
+                m.pending && m.role === "user" && m.text === settleText,
+            );
+            if (idx === -1) return prev;
+            const next = prev.slice();
+            next[idx] = { ...next[idx], pending: false };
+            return next;
+          });
+        }, 6000);
       } catch (err) {
         setMessages((prev) => {
           const idx = prev.findIndex(
