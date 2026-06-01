@@ -52,7 +52,7 @@ APPROVAL_TIMEOUT_SECONDS = 540
 # polled at all — this keeps steady CPU (capture-pane) near zero when nothing
 # is happening.
 _POLL_INTERVAL = 2.5
-_ACTIVE_WINDOW_SECONDS = 120
+_ACTIVE_WINDOW_SECONDS = 30
 # Kill a thread's tmux window after this much inactivity, so idle Slack
 # threads don't leak agent processes. A thread stays one live session until
 # then; the timer is persisted in the DB (survives restarts) and checked on
@@ -391,11 +391,14 @@ class SlackConnector(BaseConnector):
         if target is None:
             # This session isn't owned by this connector's threads.
             return
-        # Agent output → the turn is live; keep polling this window for prompts.
-        self._active_at[window_id] = time.monotonic()
         if msg.message_type == "completion":
+            # Turn finished → no prompt is coming; stop polling immediately.
             store.touch_session_mapping_by_window(window_id)
+            self._active_at.pop(window_id, None)
             return
+        # Agent output → the turn is live; keep polling for a short tail so a
+        # prompt that appears right after its last output is still caught.
+        self._active_at[window_id] = time.monotonic()
         if not msg.is_complete:
             return  # skip streaming/partial chunks; post only finalized blocks
         piece = format_agent_part(msg)
