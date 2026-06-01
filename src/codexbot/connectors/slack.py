@@ -47,12 +47,17 @@ logger = logging.getLogger(__name__)
 # Deny if nobody clicks within this window. Kept below the Claude hook's
 # 600s ceiling so the endpoint answers before the hook itself times out.
 APPROVAL_TIMEOUT_SECONDS = 540
-_CODEX_POLL_INTERVAL = 1.5
+# Pane polling cadence, and how long after the last activity a window is still
+# considered "in a turn" and worth polling for prompts. Idle windows aren't
+# polled at all — this keeps steady CPU (capture-pane) near zero when nothing
+# is happening.
+_POLL_INTERVAL = 2.5
+_ACTIVE_WINDOW_SECONDS = 120
 # Kill a thread's tmux window after this much inactivity, so idle Slack
 # threads don't leak agent processes. A thread stays one live session until
 # then; the timer is persisted in the DB (survives restarts) and checked on
 # a slow cadence.
-IDLE_TTL_SECONDS = 5 * 24 * 3600  # 5 days
+IDLE_TTL_SECONDS = 24 * 3600  # 1 day
 _REAP_INTERVAL_SECONDS = 300
 # Slack mention markup: <@U123> or <@U123|name>
 _MENTION_RE = re.compile(r"<@[A-Z0-9]+(?:\|[^>]+)?>")
@@ -136,6 +141,8 @@ class SlackConnector(BaseConnector):
         self._codex_task: asyncio.Task | None = None
         # window_id → last handled prompt fingerprint (avoid re-asking)
         self._codex_last: dict[str, str] = {}
+        # window_id → monotonic time of last activity (gates pane polling)
+        self._active_at: dict[str, float] = {}
         # window_id → Slack user id who drove the latest turn (for write ACL)
         self._last_user: dict[str, str] = {}
         # window_id → monotonic time of the last "write blocked" note (throttle)
@@ -239,6 +246,7 @@ class SlackConnector(BaseConnector):
         self._outbound.clear()
         self._posted.clear()
         self._codex_last.clear()
+        self._active_at.clear()
         self._last_user.clear()
         self._block_note_at.clear()
         logger.info("Slack connector stopped id=%s", self.id)
@@ -347,6 +355,7 @@ class SlackConnector(BaseConnector):
             "thread_ts": thread_ts,
         }
         self._last_user[window_id] = user
+        self._active_at[window_id] = time.monotonic()
         store.touch_session_mapping_by_window(window_id)
 
         # Codex has no system-prompt flag, so on a fresh window we prepend the
@@ -382,6 +391,8 @@ class SlackConnector(BaseConnector):
         if target is None:
             # This session isn't owned by this connector's threads.
             return
+        # Agent output → the turn is live; keep polling this window for prompts.
+        self._active_at[window_id] = time.monotonic()
         if msg.message_type == "completion":
             store.touch_session_mapping_by_window(window_id)
             return
@@ -543,16 +554,21 @@ class SlackConnector(BaseConnector):
         last_reap = time.monotonic()
         while True:
             try:
-                await asyncio.sleep(_CODEX_POLL_INTERVAL)
+                await asyncio.sleep(_POLL_INTERVAL)
+                now = time.monotonic()
                 mappings = store.list_session_mappings(self.id)
                 for mapping in mappings:
+                    # Only poll windows with recent activity (a turn in flight);
+                    # idle windows produce no prompts, so skip their capture.
+                    active = now - self._active_at.get(mapping.window_id, 0.0)
+                    if active > _ACTIVE_WINDOW_SECONDS:
+                        continue
                     await self._check_window(
                         mapping.window_id,
                         mapping.runtime,
                         extract_interactive_content,
                         parse_options,
                     )
-                now = time.monotonic()
                 if now - last_reap >= _REAP_INTERVAL_SECONDS:
                     last_reap = now
                     await self._reap_idle(mappings)
@@ -565,6 +581,7 @@ class SlackConnector(BaseConnector):
         self._outbound.pop(window_id, None)
         self._posted.pop(window_id, None)
         self._codex_last.pop(window_id, None)
+        self._active_at.pop(window_id, None)
         self._last_user.pop(window_id, None)
         self._block_note_at.pop(window_id, None)
 
