@@ -28,6 +28,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
+
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 from slack_bolt.async_app import AsyncApp
 
@@ -61,6 +63,13 @@ IDLE_TTL_SECONDS = 24 * 3600  # 1 day
 _REAP_INTERVAL_SECONDS = 300
 # Slack mention markup: <@U123> or <@U123|name>
 _MENTION_RE = re.compile(r"<@[A-Z0-9]+(?:\|[^>]+)?>")
+# Cap per-attachment download size.
+_MAX_FILE_BYTES = 25 * 1024 * 1024
+
+
+def _safe_filename(name: str) -> str:
+    cleaned = "".join(c for c in str(name) if c.isalnum() or c in "._- ").strip()
+    return (cleaned or "file")[:120]
 
 
 @register_connector_type("slack")
@@ -298,15 +307,20 @@ class SlackConnector(BaseConnector):
             fut.set_result(approved)
 
     async def _handle_message(self, event: dict[str, Any]) -> None:
-        # Ignore bot/system messages and edits to avoid loops.
-        if event.get("bot_id") or event.get("subtype"):
+        # Ignore the bot's own messages and edits/deletes (but keep file uploads,
+        # which arrive with subtype "file_share").
+        if event.get("bot_id"):
+            return
+        subtype = event.get("subtype")
+        if subtype and subtype != "file_share":
             return
         # Strip the leading "<@U…>" mention token(s) so the agent gets a clean
         # instruction rather than the raw Slack mention markup.
         text = _MENTION_RE.sub("", event.get("text") or "").strip()
         channel = event.get("channel") or ""
         user = event.get("user") or ""
-        if not text or not channel:
+        files = event.get("files") or []
+        if not channel or (not text and not files):
             return
         if not self._is_allowed(channel, user):
             logger.info("slack message rejected channel=%s user=%s", channel, user)
@@ -322,6 +336,26 @@ class SlackConnector(BaseConnector):
             except Exception:  # noqa: BLE001
                 # Non-fatal: usually missing reactions:write scope or a dup.
                 logger.debug("could not add 👀 reaction id=%s", self.id)
+
+        # Download any attachments and reference their local paths in the
+        # prompt (same `(image attached: …)` convention as Telegram/web), so
+        # the agent can read them.
+        if files:
+            refs, failed = await self._download_files(files)
+            if refs:
+                joined = "\n".join(refs)
+                text = f"{text}\n{joined}".strip() if text else joined
+            if failed and self._app is not None:
+                await self._app.client.chat_postMessage(
+                    channel=channel,
+                    thread_ts=event.get("thread_ts") or event.get("ts"),
+                    text=(
+                        f"⚠️ Couldn't fetch {failed} attachment(s) — check the "
+                        f"bot's `files:read` scope."
+                    ),
+                )
+            if not text:
+                return
 
         # thread = session: a top-level message starts a thread; replies
         # continue it. We always reply inside the thread.
@@ -359,11 +393,12 @@ class SlackConnector(BaseConnector):
         store.touch_session_mapping_by_window(window_id)
 
         # Codex has no system-prompt flag, so on a fresh window we prepend the
-        # connector instructions to its first message (Claude already got them
-        # as a launch system prompt).
+        # connector instructions (+ baked guidance) to its first message
+        # (Claude already got them as a launch system prompt).
         send_text = text
-        if created and self._runtime_name == "codex" and self._instructions.strip():
-            send_text = f"{self._instructions.strip()}\n\n{text}"
+        if created and self._runtime_name == "codex":
+            preamble = bridge.combined_instructions(self._instructions)
+            send_text = f"{preamble}\n\n{text}".strip() if text else preamble
         ok = await bridge.send_user_message(window_id, send_text)
         if not ok and self._app is not None:
             await self._app.client.chat_postMessage(
@@ -371,6 +406,54 @@ class SlackConnector(BaseConnector):
                 thread_ts=thread_ts,
                 text="⚠️ Failed to deliver the message to the agent.",
             )
+
+    async def _download_files(
+        self, files: list[dict[str, Any]]
+    ) -> tuple[list[str], int]:
+        """Save Slack attachments locally; return (prompt-refs, failed count).
+
+        Needs the bot's ``files:read`` scope. Images are referenced as
+        ``(image attached: <path>)``, others as ``(file attached: <path>)`` —
+        the convention the agent already understands.
+        """
+        from .approval import connectors_state_dir
+
+        uploads = connectors_state_dir() / "uploads"
+        uploads.mkdir(parents=True, exist_ok=True)
+        bot_token = str(self.config.get("bot_token") or "")
+        refs: list[str] = []
+        failed = 0
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for f in files:
+                url = f.get("url_private_download") or f.get("url_private")
+                size = f.get("size")
+                if not url or (isinstance(size, int) and size > _MAX_FILE_BYTES):
+                    failed += 1
+                    continue
+                try:
+                    resp = await client.get(
+                        url, headers={"Authorization": f"Bearer {bot_token}"}
+                    )
+                    resp.raise_for_status()
+                except Exception:  # noqa: BLE001
+                    logger.exception("slack file download failed id=%s", self.id)
+                    failed += 1
+                    continue
+                # Without files:read Slack serves an HTML login page with 200.
+                if "text/html" in resp.headers.get("content-type", ""):
+                    failed += 1
+                    continue
+                name = _safe_filename(f.get("name") or f.get("id") or "file")
+                dest = uploads / f"{f.get('id', 'file')}_{name}"
+                try:
+                    dest.write_bytes(resp.content)
+                except OSError:
+                    failed += 1
+                    continue
+                mimetype = str(f.get("mimetype") or "")
+                kind = "image" if mimetype.startswith("image/") else "file"
+                refs.append(f"({kind} attached: {dest})")
+        return refs, failed
 
     # --- outbound (agent → Slack) ----------------------------------------
 
@@ -411,12 +494,23 @@ class SlackConnector(BaseConnector):
             return
         seen.add(key)
         store.touch_session_mapping_by_window(window_id)
-        await self._app.client.chat_postMessage(
-            channel=target["channel"],
-            thread_ts=target["thread_ts"],
-            text=piece[:38000],
-            mrkdwn=True,
-        )
+        blocks = build_message_blocks(piece)
+        if blocks:
+            # Markdown tables → real Block Kit table blocks. `text` is the
+            # notification fallback (required when sending blocks).
+            await self._app.client.chat_postMessage(
+                channel=target["channel"],
+                thread_ts=target["thread_ts"],
+                text=piece[:300],
+                blocks=blocks,
+            )
+        else:
+            await self._app.client.chat_postMessage(
+                channel=target["channel"],
+                thread_ts=target["thread_ts"],
+                text=to_slack_mrkdwn(piece)[:38000],
+                mrkdwn=True,
+            )
 
     # --- write-gate approval ---------------------------------------------
 
@@ -783,20 +877,142 @@ _TOOL_MARKER_RE = re.compile(r"^\*\*[\w.\-]+\*\*\(")
 
 
 def format_agent_part(msg: NewMessage) -> str | None:
-    """Render one streamed transcript message for Slack, or None to skip.
+    """Return the agent's own text answer (raw, sentinel-stripped), or None.
 
-    Posts ONLY the agent's own text answer. Thinking, tool invocations
-    (``**Bash**(…)``) and tool/command output are dropped — they're the noise
-    the user doesn't want; the agent summarizes what matters in its prose.
+    Posts ONLY the agent's prose. Thinking, tool invocations (``**Bash**(…)``)
+    and tool/command output are dropped. The returned text is rendered into
+    Slack blocks/mrkdwn by the caller (so markdown tables become real tables).
     """
-    text = (msg.text or "").strip()
+    text = _strip_sentinels(msg.text or "").strip()
     if not text:
         return None
     if msg.content_type != "text" or msg.role != "assistant":
         return None  # thinking / tool_use / tool_result / local_command
     if _TOOL_MARKER_RE.match(text):
         return None  # stray tool-call marker that arrived as text
-    return to_slack_mrkdwn(text)
+    return text
+
+
+# --- markdown tables → Block Kit table blocks ------------------------------
+
+_TABLE_SEP_CELL_RE = re.compile(r"^:?-{1,}:?$")
+
+
+def _table_cells(line: str) -> list[str]:
+    s = line.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return [c.strip() for c in s.split("|")]
+
+
+def _is_table_separator(line: str) -> bool:
+    cells = _table_cells(line)
+    if len(cells) < 2:
+        return False
+    return all(c and _TABLE_SEP_CELL_RE.match(c) for c in cells)
+
+
+def _segment_message(text: str) -> list[tuple]:
+    """Split text into ('text', str) and ('table', header, rows) segments.
+
+    A GFM pipe table (header row + `---` separator + data rows) becomes a
+    table segment; everything else is text. Content inside ``` fences is
+    never treated as a table.
+    """
+    lines = text.split("\n")
+    segments: list[tuple] = []
+    buf: list[str] = []
+    in_fence = False
+    i, n = 0, len(lines)
+    while i < n:
+        line = lines[i]
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            buf.append(line)
+            i += 1
+            continue
+        is_table = (
+            not in_fence
+            and "|" in line
+            and i + 1 < n
+            and _is_table_separator(lines[i + 1])
+            and len(_table_cells(line)) >= 2
+        )
+        if is_table:
+            if buf:
+                segments.append(("text", "\n".join(buf)))
+                buf = []
+            header = _table_cells(line)
+            i += 2  # header + separator
+            rows: list[list[str]] = []
+            while i < n and "|" in lines[i] and not _is_table_separator(lines[i]):
+                if lines[i].lstrip().startswith("```"):
+                    break
+                rows.append(_table_cells(lines[i]))
+                i += 1
+            segments.append(("table", header, rows))
+        else:
+            buf.append(line)
+            i += 1
+    if buf:
+        segments.append(("text", "\n".join(buf)))
+    return segments
+
+
+def _table_cell_text(value: str) -> str:
+    # raw_text is literal; drop markdown emphasis/code markers for cleanliness.
+    value = re.sub(r"\*\*(.+?)\*\*", r"\1", value)
+    value = value.replace("`", "")
+    return value[:1000]
+
+
+def _table_block(header: list[str], rows: list[list[str]]) -> dict[str, Any]:
+    ncols = min(max(len(header), 1), 20)
+
+    def mk(cells: list[str]) -> list[dict[str, Any]]:
+        padded = (cells + [""] * ncols)[:ncols]
+        return [{"type": "raw_text", "text": _table_cell_text(c)} for c in padded]
+
+    out_rows = [mk(header)] + [mk(r) for r in rows[:99]]
+    return {"type": "table", "rows": out_rows}
+
+
+def _chunks(text: str, size: int = 2900) -> list[str]:
+    if len(text) <= size:
+        return [text]
+    out, cur = [], ""
+    for line in text.split("\n"):
+        if len(cur) + len(line) + 1 > size and cur:
+            out.append(cur)
+            cur = ""
+        cur = f"{cur}\n{line}" if cur else line
+    if cur:
+        out.append(cur)
+    return out
+
+
+def build_message_blocks(text: str) -> list[dict[str, Any]] | None:
+    """Build Block Kit blocks if the text has a table, else None (plain text)."""
+    segments = _segment_message(text)
+    if not any(s[0] == "table" for s in segments):
+        return None
+    blocks: list[dict[str, Any]] = []
+    for seg in segments:
+        if len(blocks) >= 48:
+            break
+        if seg[0] == "text":
+            rendered = to_slack_mrkdwn(seg[1]).strip()
+            if not rendered:
+                continue
+            for chunk in _chunks(rendered):
+                blocks.append(
+                    {"type": "section", "text": {"type": "mrkdwn", "text": chunk}}
+                )
+        else:
+            blocks.append(_table_block(seg[1], seg[2]))
+    return blocks or None
 
 
 def _idle_seconds(last_activity_at: str | None) -> float | None:

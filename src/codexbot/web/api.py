@@ -1899,6 +1899,33 @@ def create_app(
         await bus.publish_sessions_changed()
         return {"ok": True, "killed": killed}
 
+    @app.get("/api/connectors/{connector_id}/export")
+    async def export_connector(
+        connector_id: str, _user: str = Depends(require_auth)
+    ) -> JSONResponse:
+        """Full connector config as a downloadable JSON (secrets included).
+
+        Intended for moving a connector to another deployment / configuring it
+        headlessly via the codexbot-connectors CLI — so unlike the list/get
+        responses, secrets are NOT stripped.
+        """
+        from ..connectors import store
+
+        rec = store.get_connector(connector_id)
+        if rec is None:
+            raise HTTPException(404, detail="connector not found")
+        payload = {
+            "type": rec.type,
+            "name": rec.name,
+            "enabled": rec.enabled,
+            "config": rec.config,
+        }
+        fname = f"connector-{rec.type}-{rec.name}.json".replace(" ", "_")
+        return JSONResponse(
+            payload,
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+
     @app.get("/api/sessions/{window_id}/screenshot.png")
     async def screenshot(
         window_id: str, _user: str = Depends(require_auth)

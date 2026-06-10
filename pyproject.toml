@@ -45,6 +45,7 @@ explicit = true
 
 [project.scripts]
 codexbot = "codexbot.main:main"
+codexbot-connectors = "codexbot.connectors.cli:main"
 codexbot-search-worker = "codexbot.search.worker:main"
 codexbot-search-benchmark = "codexbot.search.benchmark:main"
 

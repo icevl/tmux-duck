@@ -36,6 +36,9 @@ from codexbot.connectors.manager import ConnectorManager
         ("Bash", {"command": "cat foo.txt"}, "read"),
         ("Bash", {"command": "git status"}, "read"),
         ("Bash", {"command": "git diff HEAD~1"}, "read"),
+        ("Bash", {"command": "git rev-parse --show-toplevel"}, "read"),
+        ("Bash", {"command": "git merge-base main HEAD"}, "read"),
+        ("Bash", {"command": "git checkout -b feature"}, "write"),
         ("Bash", {"command": "FOO=1 grep x f"}, "read"),
         ("Bash", {"command": "rm -rf build"}, "write"),
         ("Bash", {"command": "git commit -m x"}, "write"),
@@ -98,11 +101,69 @@ def test_extra_read_commands_allowlist():
     assert classify_action("Bash", {"command": cmd}, ("rtk",)) == "read"
 
 
+def test_markdown_table_becomes_block_kit_table():
+    from codexbot.connectors.slack import build_message_blocks
+
+    md = (
+        "Services:\n\n"
+        "| Service | Replicas |\n"
+        "|---------|----------|\n"
+        "| auth | 1/1 |\n"
+        "| sip | global |\n\n"
+        "Done."
+    )
+    blocks = build_message_blocks(md)
+    assert blocks is not None
+    kinds = [b["type"] for b in blocks]
+    assert kinds == ["section", "table", "section"]
+    table = blocks[1]
+    assert len(table["rows"]) == 3  # header + 2 data rows
+    assert [c["text"] for c in table["rows"][0]] == ["Service", "Replicas"]
+    assert [c["text"] for c in table["rows"][1]] == ["auth", "1/1"]
+    assert all(c["type"] == "raw_text" for row in table["rows"] for c in row)
+
+
+def test_combined_instructions_always_appends_baked():
+    from codexbot.connectors.bridge import BAKED_INSTRUCTIONS, combined_instructions
+
+    # baked guidance is always present
+    assert combined_instructions("") == BAKED_INSTRUCTIONS
+    out = combined_instructions("Check docs/ first.")
+    assert out.startswith("Check docs/ first.")
+    assert out.endswith(BAKED_INSTRUCTIONS)
+    assert "AskUserQuestion" in out
+
+
+def test_no_table_returns_none():
+    from codexbot.connectors.slack import build_message_blocks
+
+    assert build_message_blocks("just prose, no table here") is None
+    # a pipe without a separator row is not a table
+    assert build_message_blocks("a | b but no separator") is None
+
+
 def test_compound_split_preserves_grep_pattern():
     from codexbot.connectors.classifier import classify_shell
 
     # the escaped pipe inside the grep pattern must not split the command
     assert classify_shell('grep "a\\|b\\|c" file', ("rtk",)) == "read"
+
+
+def test_docker_exec_and_shell_c_unwrapping():
+    from codexbot.connectors.classifier import classify_shell as cs
+
+    # SELECT reached via docker exec / sh -c is still a read
+    assert cs(r"""docker exec abc mysql -e "SELECT 1" """) == "read"
+    assert cs(r"""docker exec abc sh -lc 'mysql -e "SELECT id FROM t"' """) == "read"
+    assert cs(r"""sh -lc 'mysql -e "SELECT 1"' """) == "read"
+    assert (
+        cs(r"""ssh -p 1355 host "docker exec abc sh -lc 'mysql -e \"SELECT 1\"'" """)
+        == "read"
+    )
+    # but mutations through the same wrappers stay writes
+    assert cs("docker exec abc rm -rf /data") == "write"
+    assert cs('bash -c "rm -rf /x"') == "write"
+    assert cs('docker exec abc psql -c "UPDATE t SET x=1"') == "write"
 
 
 # --- store CRUD ------------------------------------------------------------
@@ -399,6 +460,33 @@ async def test_manager_hot_reload():
 
     assert ("start", rec.id) in _dummy_events
     assert ("stop", rec.id) in _dummy_events
+
+
+def test_cli_export_import_roundtrip(tmp_path):
+    import json
+
+    from codexbot.connectors import cli
+
+    rec = store.create_connector(
+        type="slack",
+        name="cli-rt",
+        config={"cwd": "/x", "bot_token": "xoxb-secret"},
+        enabled=True,
+    )
+    try:
+        out = tmp_path / "c.json"
+        assert cli.main(["export", rec.id, "--out", str(out)]) == 0
+        data = json.loads(out.read_text())
+        assert data["type"] == "slack"
+        assert data["config"]["bot_token"] == "xoxb-secret"  # secrets travel
+
+        assert cli.main(["import", str(out)]) == 0
+        clones = [c for c in store.list_connectors() if c.name == "cli-rt"]
+        assert len(clones) == 2  # original + imported copy
+    finally:
+        for c in store.list_connectors():
+            if c.name == "cli-rt":
+                store.delete_connector(c.id)
 
 
 async def test_manager_unknown_type_is_skipped():

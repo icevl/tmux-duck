@@ -200,6 +200,23 @@ export function ConnectorsDialog({ onClose }: Props) {
     }
   }
 
+  async function exportConnector(c: ConnectorInfo) {
+    try {
+      const data = await api.exportConnector(c.id);
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `connector-${c.type}-${c.name}.json`.replace(/\s+/g, "_");
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function killSessions(c: ConnectorInfo) {
     if (
       !window.confirm(
@@ -373,6 +390,9 @@ export function ConnectorsDialog({ onClose }: Props) {
                       {c.enabled ? "Disable" : "Enable"}
                     </button>
                     <button onClick={() => openEdit(c)}>Edit</button>
+                    <button onClick={() => exportConnector(c)} title="Download config as JSON">
+                      Export
+                    </button>
                     <button onClick={() => killSessions(c)} title="Kill all active agent sessions">
                       Kill sessions
                     </button>

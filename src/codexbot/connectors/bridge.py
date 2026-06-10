@@ -19,6 +19,21 @@ from . import store
 
 logger = logging.getLogger(__name__)
 
+# Always appended to every connector's instructions: connectors relay the
+# agent over chat and can't render the interactive AskUserQuestion form, so
+# the agent must ask follow-ups as plain text.
+BAKED_INSTRUCTIONS = (
+    "Do not use the interactive AskUserQuestion tool or selection menus. "
+    "If you need clarification, ask your question in plain text and wait for "
+    "the reply."
+)
+
+
+def combined_instructions(user_instructions: str) -> str:
+    """Connector's custom instructions with the baked-in guidance appended."""
+    user = (user_instructions or "").strip()
+    return f"{user}\n\n{BAKED_INSTRUCTIONS}" if user else BAKED_INSTRUCTIONS
+
 
 async def ensure_window(
     *,
@@ -70,8 +85,9 @@ async def ensure_window(
 
         hooks_settings_path = ensure_claude_hook_settings()
         # Claude takes the instructions as a system prompt at launch (never
-        # typed into the pane → no echo, no menu false-positives).
-        system_prompt = instructions.strip() or None
+        # typed into the pane → no echo, no menu false-positives). The baked
+        # guidance is always appended.
+        system_prompt = combined_instructions(instructions)
 
     success, message, wname, wid = await tmux_manager.create_window(
         str(path),

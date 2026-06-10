@@ -114,6 +114,15 @@ _READ_PROGRAMS = {
 # Command wrappers that precede the real command; stripped before classifying.
 _WRAPPERS = {"sudo", "doas", "env", "command", "nohup", "xargs"}
 
+# Read-only git subcommands (their common form). Anything else → write.
+_GIT_READ_SUBCOMMANDS = {
+    "status", "diff", "log", "show", "branch", "remote", "blame", "ls-files",
+    "rev-parse", "rev-list", "describe", "name-rev", "merge-base",
+    "for-each-ref", "symbolic-ref", "show-ref", "ls-tree", "ls-remote",
+    "cat-file", "reflog", "shortlog", "whatchanged", "var", "grep",
+    "count-objects", "cherry", "range-diff", "diff-tree", "diff-index",
+}
+
 # Substrings that force a write verdict even inside an otherwise read command
 # (redirection, in-place edits, chained mutations). Note: no bare "service "
 # here — it false-matched `docker service ls`; daemon control is handled by
@@ -139,6 +148,18 @@ _WRITE_SIGNALS = (
 # A redirection whose target is a real file is a write. Redirects to /dev/*
 # (e.g. `2>/dev/null`) and fd duplications (`2>&1`) are not.
 _REDIR_RE = re.compile(r'(?:^|\s)\d*&?>>?\s*("?)([^\s"&|;<>]+)')
+
+
+def _rejoin(tokens: list[str]) -> str:
+    """Rebuild a command string from tokens.
+
+    A single token already IS the command string (the remote/inner command was
+    one quoted arg) — return it verbatim so it re-parses as a command. Multiple
+    tokens are re-quoted with shlex.join so per-token grouping survives.
+    """
+    if len(tokens) == 1:
+        return tokens[0]
+    return shlex.join(tokens)
 
 
 def _has_file_redirect(cmd: str) -> bool:
@@ -296,18 +317,14 @@ def _classify_segment(segment: str, extra: set[str]) -> Action:
 
     if program == "git":
         sub = args[0] if args else ""
-        if sub in {
-            "status",
-            "diff",
-            "log",
-            "show",
-            "branch",
-            "remote",
-            "blame",
-            "ls-files",
-        }:
+        if sub in _GIT_READ_SUBCOMMANDS:
             return "read"
         return "write"
+
+    # sh/bash -c '<cmd>' → classify the wrapped command.
+    if program in {"sh", "bash", "zsh", "dash", "ash"}:
+        inner = _shell_c_command(args)
+        return classify_shell(inner) if inner is not None else "write"
 
     if program in _READ_PROGRAMS or program in extra:
         return "read"
@@ -445,7 +462,8 @@ def _ssh_remote_command(args: list[str]) -> str:
             i += 2 if tok in value_flags else 1
         else:
             break  # this token is the host (or user@host)
-    return " ".join(args[i + 1 :])  # everything after the host
+    # shlex.join re-quotes so nested command grouping survives re-parsing.
+    return _rejoin(args[i + 1 :])  # everything after the host
 
 
 def _classify_docker(args: list[str]) -> Action:
@@ -465,7 +483,34 @@ def _classify_docker(args: list[str]) -> Action:
             j += 1
         action = rest[j] if j < len(rest) else ""
         return "read" if action in _DOCKER_NOUN_READ_ACTIONS else "write"
+    if sub == "exec":
+        inner = _docker_exec_command(rest)
+        return classify_shell(inner) if inner else "write"
     return "write"
+
+
+def _docker_exec_command(tokens: list[str]) -> str:
+    """Extract the command from `docker exec [opts] <container> <cmd…>`."""
+    value_flags = {"-e", "--env", "-u", "--user", "-w", "--workdir", "--env-file"}
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok.startswith("-"):
+            i += 2 if tok in value_flags else 1
+        else:
+            break  # the container name
+    return _rejoin(tokens[i + 1 :])
+
+
+_SHELL_C_RE = re.compile(r"-[a-z]*c")
+
+
+def _shell_c_command(args: list[str]) -> str | None:
+    """Return the command string from `sh/bash -c '<cmd>'` (or -lc/-ic), else None."""
+    for idx, arg in enumerate(args):
+        if _SHELL_C_RE.fullmatch(arg) and idx + 1 < len(args):
+            return args[idx + 1]
+    return None
 
 
 __all__ = ["Action", "classify_action", "classify_shell", "READ_TOOLS", "WRITE_TOOLS"]

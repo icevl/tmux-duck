@@ -753,6 +753,10 @@ export const api = {
       `/api/connectors/${encodeURIComponent(id)}/kill-sessions`,
       { method: "POST" },
     ),
+  exportConnector: (id: string) =>
+    request<Record<string, unknown>>(
+      `/api/connectors/${encodeURIComponent(id)}/export`,
+    ),
 };
 
 export type WsEvent =

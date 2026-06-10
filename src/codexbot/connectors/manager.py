@@ -15,7 +15,6 @@ import logging
 import pkgutil
 from typing import TYPE_CHECKING, Any
 
-from ..config import config
 from . import store
 from .base import BaseConnector, ConnectorContext, get_connector_class
 
@@ -77,6 +76,8 @@ class ConnectorManager:
             _load_connector_implementations()
             self._ctx = ConnectorContext(monitor=monitor, bot=bot)
             self._started = True
+            from ..config import config
+
             records = store.list_connectors(enabled_only=True)
             if records and not config.web_ui_enabled:
                 # The Claude write-gate posts approvals to the FastAPI
