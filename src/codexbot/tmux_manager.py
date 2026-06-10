@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -71,6 +72,7 @@ class TmuxManager:
         session = self.get_session()
         if session:
             self._scrub_session_env(session)
+            self._set_session_env(session)
             return session
 
         # Create new session with main window named specifically
@@ -82,6 +84,7 @@ class TmuxManager:
         if session.windows:
             session.windows[0].rename_window(config.tmux_main_window_name)
         self._scrub_session_env(session)
+        self._set_session_env(session)
         return session
 
     @staticmethod
@@ -106,6 +109,30 @@ class TmuxManager:
             try:
                 subprocess.run(
                     ["tmux", "set-environment", "-gru", var],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+
+    @staticmethod
+    def _set_session_env(session: libtmux.Session) -> None:
+        """Disable shell update prompts in spawned windows.
+
+        oh-my-zsh's "[Y/n] update?" prompt eats the first keystroke of the
+        agent start command (so `claude` arrives as `laude`). Exporting these
+        into the session env makes new windows skip the prompt entirely.
+        """
+        env = {"DISABLE_AUTO_UPDATE": "true", "DISABLE_UPDATE_PROMPT": "true"}
+        for name, value in env.items():
+            try:
+                session.set_environment(name, value)
+            except Exception:
+                pass
+            try:
+                subprocess.run(
+                    ["tmux", "set-environment", "-g", name, value],
                     check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -409,6 +436,54 @@ class TmuxManager:
 
         return await asyncio.to_thread(_sync_kill)
 
+    @staticmethod
+    def _type_start_command(pane, cmd: str, wid: str) -> None:  # noqa: ANN001
+        """Type the agent start command into a freshly created pane, robustly.
+
+        Two races to defeat: (1) sending before the shell finished loading
+        (oh-my-zsh etc.) drops the leading character ("claude" → "laude"); a
+        rendered banner doesn't mean the shell accepts input yet. So we wait
+        until the pane output goes *stable* (loading finished, prompt idle).
+        (2) Even then the pty can occasionally drop the first char, so we type
+        without Enter, verify the command landed intact, clear+retype if not,
+        then submit.
+        """
+
+        def capture() -> str:
+            try:
+                return "\n".join(pane.capture_pane())
+            except Exception:  # noqa: BLE001
+                return ""
+
+        # 1) Wait for the shell to finish loading: pane non-empty AND unchanged
+        #    across two consecutive samples (idle at prompt).
+        prev, stable = None, 0
+        for _ in range(60):  # up to ~3s
+            rendered = capture()
+            if rendered.strip() and rendered == prev:
+                stable += 1
+                if stable >= 2:
+                    break
+            else:
+                stable = 0
+            prev = rendered
+            time.sleep(0.08)
+        time.sleep(0.1)
+
+        # 2) Type without Enter, verify a distinctive prefix echoed, retry once.
+        probe = cmd[:18]
+        pane.send_keys(cmd, enter=False, literal=True)
+        time.sleep(0.15)
+        if probe and probe not in capture():
+            logger.warning(
+                "start command first char likely dropped; retrying (window=%s)", wid
+            )
+            pane.send_keys("C-u", enter=False, literal=False)  # clear input line
+            time.sleep(0.1)
+            pane.send_keys(cmd, enter=False, literal=True)
+            time.sleep(0.1)
+        pane.send_keys("Enter", enter=False, literal=False)
+
     async def create_window(
         self,
         work_dir: str,
@@ -417,6 +492,9 @@ class TmuxManager:
         resume_session_id: str | None = None,
         *,
         runtime: AgentRuntime | None = None,
+        approval_gate: bool = False,
+        hooks_settings_path: str | None = None,
+        system_prompt: str | None = None,
     ) -> tuple[bool, str, str, str]:
         """Create a new tmux window and optionally start the agent.
 
@@ -468,12 +546,17 @@ class TmuxManager:
                     pane = window.active_pane
                     if pane:
                         if runtime is not None:
-                            cmd = runtime.build_start_command(resume_session_id)
+                            cmd = runtime.build_start_command(
+                                resume_session_id,
+                                approval_gate=approval_gate,
+                                hooks_settings_path=hooks_settings_path,
+                                system_prompt=system_prompt,
+                            )
                         else:
                             cmd = config.codex_command
                             if resume_session_id:
                                 cmd = f"{cmd} resume {resume_session_id}"
-                        pane.send_keys(cmd, enter=True)
+                        self._type_start_command(pane, cmd, wid)
 
                 logger.info(
                     "Created window '%s' (id=%s) at %s",

@@ -18,8 +18,22 @@ class AgentRuntime(Protocol):
     display_name: str
     display_emoji: str
 
-    def build_start_command(self, resume_session_id: str | None) -> str:
-        """Return the shell command to start this agent inside a tmux pane."""
+    def build_start_command(
+        self,
+        resume_session_id: str | None,
+        *,
+        approval_gate: bool = False,
+        hooks_settings_path: str | None = None,
+        system_prompt: str | None = None,
+    ) -> str:
+        """Return the shell command to start this agent inside a tmux pane.
+
+        When ``approval_gate`` is set (connector sessions), the agent is
+        launched so that reads run freely but mutating operations require
+        external approval: Claude via a ``PreToolUse`` hook loaded from
+        ``hooks_settings_path``; Codex via its native ``untrusted`` approval
+        policy whose prompts a connector intercepts from the pane.
+        """
         ...
 
     async def discover_session_id(

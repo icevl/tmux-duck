@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import re
+import shlex
 import time
 from pathlib import Path
 
@@ -48,11 +49,31 @@ class ClaudeRuntime:
     display_name = "Claude Code"
     display_emoji = "🧠"
 
-    def build_start_command(self, resume_session_id: str | None) -> str:
+    def build_start_command(
+        self,
+        resume_session_id: str | None,
+        *,
+        approval_gate: bool = False,
+        hooks_settings_path: str | None = None,
+        system_prompt: str | None = None,
+    ) -> str:
         cmd = config.claude_command
         if resume_session_id:
             cmd = f"{cmd} --resume {resume_session_id}"
-        if config.claude_auto_approve_dangerous:
+        if approval_gate:
+            # Connector mode: full auto so reads never prompt; a PreToolUse
+            # hook (loaded from the connector's settings file) gates writes.
+            if "--dangerously-skip-permissions" not in cmd:
+                cmd = f"{cmd} --dangerously-skip-permissions"
+            if hooks_settings_path:
+                cmd = f"{cmd} --settings {shlex.quote(hooks_settings_path)}"
+            if system_prompt and system_prompt.strip():
+                # Connector custom instructions ride in the system prompt so
+                # they're never typed into the pane (no echo, no menu mishaps).
+                cmd = (
+                    f"{cmd} --append-system-prompt {shlex.quote(system_prompt.strip())}"
+                )
+        elif config.claude_auto_approve_dangerous:
             if "--dangerously-skip-permissions" not in cmd:
                 cmd = f"{cmd} --dangerously-skip-permissions"
         return cmd

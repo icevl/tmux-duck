@@ -4598,9 +4598,20 @@ async def post_init(application: Application) -> None:
 
     await start_web_server(monitor, application.bot)
 
+    # Boot external input connectors (Slack, …). No-op when none are
+    # enabled in connectors.sqlite.
+    from .connectors import connector_manager
+
+    await connector_manager.start(monitor, application.bot)
+
 
 async def post_shutdown(application: Application) -> None:
     global _status_poll_task
+
+    # Stop connectors before the web server so in-flight inbound work drains
+    from .connectors import connector_manager
+
+    await connector_manager.stop()
 
     # Stop the web UI server first so in-flight requests can drain
     from .web import stop_web_server

@@ -25,6 +25,7 @@ import { FilesPanel } from "./components/FilesPanel";
 import { OfficePanel } from "./components/OfficePanel";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { NewSessionDialog } from "./components/NewSessionDialog";
+import { ConnectorsDialog } from "./components/ConnectorsDialog";
 import { ScreenshotModal } from "./components/ScreenshotModal";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { RenameDialog } from "./components/RenameDialog";
@@ -303,6 +304,7 @@ export function App() {
     }
   }, [activeId]);
   const [creating, setCreating] = useState(false);
+  const [showConnectors, setShowConnectors] = useState(false);
   const [screenshotFor, setScreenshotFor] = useState<string | null>(null);
   const [killTarget, setKillTarget] = useState<SessionSummary | null>(null);
   const [renameTarget, setRenameTarget] = useState<SessionSummary | null>(null);
@@ -1022,6 +1024,10 @@ export function App() {
           setCreating(true);
           setSidebarOpen(false);
         }}
+        onOpenConnectors={() => {
+          setShowConnectors(true);
+          setSidebarOpen(false);
+        }}
         onLogout={handleLogout}
         onClose={closeSidebar}
         onRename={setRenameTarget}
@@ -1210,6 +1216,9 @@ export function App() {
 
       {creating && (
         <NewSessionDialog onClose={() => setCreating(false)} onCreate={handleCreate} />
+      )}
+      {showConnectors && (
+        <ConnectorsDialog onClose={() => setShowConnectors(false)} />
       )}
       {screenshotFor && (
         <ScreenshotModal
