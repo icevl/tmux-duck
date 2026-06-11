@@ -123,6 +123,26 @@ def test_markdown_table_becomes_block_kit_table():
     assert all(c["type"] == "raw_text" for row in table["rows"] for c in row)
 
 
+def test_claude_system_prompt_passed_as_file():
+    import pathlib
+
+    from codexbot.runtimes.claude import ClaudeRuntime
+
+    multiline = "1. one\n2. two with apostrophe don't\n6. db stuff"
+    cmd = ClaudeRuntime().build_start_command(
+        None,
+        approval_gate=True,
+        hooks_settings_path="/x/h.json",
+        system_prompt=multiline,
+    )
+    # single-line command (no newline leaks into the pane) + file flag
+    assert "\n" not in cmd
+    assert "--append-system-prompt-file" in cmd
+    assert "--append-system-prompt " not in cmd  # not the inline form
+    path = cmd.split("--append-system-prompt-file ")[1].split()[0].strip("'\"")
+    assert pathlib.Path(path).read_text().strip() == multiline
+
+
 def test_combined_instructions_always_appends_baked():
     from codexbot.connectors.bridge import BAKED_INSTRUCTIONS, combined_instructions
 

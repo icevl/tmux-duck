@@ -15,13 +15,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import shlex
+import tempfile
 import time
 from pathlib import Path
 
 from ..config import config
 from ..tmux_manager import tmux_manager
+from ..utils import codexbot_dir
 
 logger = logging.getLogger(__name__)
 _SHELL_COMMANDS = {"bash", "fish", "sh", "zsh"}
@@ -42,6 +45,24 @@ _RE_WORKSPACE_TRUST_ACCEPT_OPTION = re.compile(
     r"^\s*(?:❯\s*)?1\.\s+Yes,\s+proceed\b",
     re.IGNORECASE | re.MULTILINE,
 )
+
+
+def _write_system_prompt_file(system_prompt: str | None) -> str | None:
+    """Persist the connector system prompt to a file; return its path or None.
+
+    Claude reads it via ``--append-system-prompt-file`` at launch, so the
+    (possibly multi-line) instructions never get typed into the pane.
+    """
+    if not system_prompt or not system_prompt.strip():
+        return None
+    prompts_dir = codexbot_dir() / "connectors" / "sysprompts"
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+    fd, path = tempfile.mkstemp(
+        prefix="sysprompt-", suffix=".txt", dir=str(prompts_dir)
+    )
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(system_prompt.strip() + "\n")
+    return path
 
 
 class ClaudeRuntime:
@@ -67,12 +88,12 @@ class ClaudeRuntime:
                 cmd = f"{cmd} --dangerously-skip-permissions"
             if hooks_settings_path:
                 cmd = f"{cmd} --settings {shlex.quote(hooks_settings_path)}"
-            if system_prompt and system_prompt.strip():
-                # Connector custom instructions ride in the system prompt so
-                # they're never typed into the pane (no echo, no menu mishaps).
-                cmd = (
-                    f"{cmd} --append-system-prompt {shlex.quote(system_prompt.strip())}"
-                )
+            prompt_file = _write_system_prompt_file(system_prompt)
+            if prompt_file:
+                # Pass via a FILE, not inline: a multi-line/quoted prompt typed
+                # into the pane breaks shell quoting (instructions spilled into
+                # the shell as commands). The command line stays single-line.
+                cmd = f"{cmd} --append-system-prompt-file {shlex.quote(prompt_file)}"
         elif config.claude_auto_approve_dangerous:
             if "--dangerously-skip-permissions" not in cmd:
                 cmd = f"{cmd} --dangerously-skip-permissions"
