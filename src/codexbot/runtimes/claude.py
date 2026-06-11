@@ -34,15 +34,17 @@ _RE_BYPASS_PERMISSIONS_PROMPT = re.compile(
     re.IGNORECASE,
 )
 _RE_BYPASS_ACCEPT_OPTION = re.compile(
-    r"^\s*(?:❯\s*)?2\.\s+Yes,\s+I accept\b",
+    r"^\s*(?:❯\s*)?2\.\s+Yes\b",
     re.IGNORECASE | re.MULTILINE,
 )
 _RE_WORKSPACE_TRUST_PROMPT = re.compile(
-    r"do you trust the files in this folder\?",
+    r"do you trust the files in this",
     re.IGNORECASE,
 )
+# Accept any "1. Yes…" option (wording varies by version: "Yes, proceed",
+# "Yes, I trust this folder", …).
 _RE_WORKSPACE_TRUST_ACCEPT_OPTION = re.compile(
-    r"^\s*(?:❯\s*)?1\.\s+Yes,\s+proceed\b",
+    r"^\s*(?:❯\s*)?1\.\s+Yes\b",
     re.IGNORECASE | re.MULTILINE,
 )
 

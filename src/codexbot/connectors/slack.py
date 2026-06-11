@@ -728,6 +728,13 @@ class SlackConnector(BaseConnector):
         pane = await tmux_manager.capture_pane(window_id)
         if not pane:
             return
+        # Startup prompts (folder-trust, bypass-permissions) are auto-confirmed
+        # by the Claude runtime — never forward them to Slack as choices.
+        if runtime == "claude":
+            from ..runtimes.claude import _classify_startup_prompt
+
+            if _classify_startup_prompt(pane) is not None:
+                return
         content = extract_interactive_content(pane, runtime=runtime)
         if content is None:
             self._codex_last.pop(window_id, None)

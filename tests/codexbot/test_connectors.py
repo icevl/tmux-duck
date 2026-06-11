@@ -143,6 +143,21 @@ def test_claude_system_prompt_passed_as_file():
     assert pathlib.Path(path).read_text().strip() == multiline
 
 
+def test_startup_prompt_classification():
+    from codexbot.runtimes.claude import _classify_startup_prompt
+
+    trust = (
+        "Do you trust the files in this folder?\n"
+        " ❯ 1. Yes, I trust this folder\n   2. No, exit\n"
+        "Enter to confirm · Esc to cancel"
+    )
+    bypass = "bypass permissions mode\n 1. No\n ❯ 2. Yes, I accept"
+    assert _classify_startup_prompt(trust) == "workspace_trust"
+    assert _classify_startup_prompt(bypass) == "bypass_permissions"
+    # a real question is NOT a startup prompt (so it still forwards to Slack)
+    assert _classify_startup_prompt("What next?\n 1. A\n 2. B") is None
+
+
 def test_combined_instructions_always_appends_baked():
     from codexbot.connectors.bridge import BAKED_INSTRUCTIONS, combined_instructions
 
