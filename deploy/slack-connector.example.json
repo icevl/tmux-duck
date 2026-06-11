@@ -1,0 +1,18 @@
+{
+  "type": "slack",
+  "name": "Technical Assistant",
+  "enabled": true,
+  "config": {
+    "default_runtime": "claude",
+    "cwd": "/home/wavix",
+    "bot_token": "xoxb-REPLACE_ME",
+    "app_token": "xapp-REPLACE_ME",
+    "instructions": "",
+    "allowed_channels": [],
+    "extra_read_commands": [],
+    "read_only": false,
+    "acl": [
+      {"user": "U0XXXXXXXX", "write": true}
+    ]
+  }
+}
