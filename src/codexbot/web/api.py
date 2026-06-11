@@ -211,21 +211,6 @@ def _valid_sort_order(value: Any) -> int | None:
     return value
 
 
-def _describe_tool_call(tool_name: str, tool_input: Any) -> str:
-    """Human-readable summary of a tool call for an approval card."""
-    if not isinstance(tool_input, dict):
-        return tool_name
-    if "command" in tool_input:
-        return str(tool_input.get("command") or "")
-    path = tool_input.get("file_path") or tool_input.get("path") or ""
-    if path:
-        return f"{tool_name}: {path}"
-    try:
-        return f"{tool_name} {json.dumps(tool_input, ensure_ascii=False)[:500]}"
-    except (TypeError, ValueError):
-        return tool_name
-
-
 def _connector_secret_keys(type_name: str) -> tuple[str, ...]:
     """Secret config keys for a type, from its schema (with a fallback)."""
     from ..connectors.base import secret_keys_for_type
@@ -1757,73 +1742,19 @@ def create_app(
     async def connectors_approve_tool(request: Request) -> dict[str, Any]:
         """Write-gate endpoint called by the Claude PreToolUse hook.
 
-        Authenticated by a shared secret (localhost only). Reads are allowed
-        immediately; writes are routed to the owning connector, which blocks
-        on a human decision (e.g. Slack Approve/Deny) before returning.
+        Authenticated by a shared secret (localhost only). The decision logic
+        is shared with the headless approval server (connectors.approval).
         """
-        from ..connectors import bridge, connector_manager, store
-        from ..connectors.approval import approval_secret
-        from ..connectors.classifier import classify_action
-
-        def _allow() -> dict[str, Any]:
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "allow",
-                }
-            }
-
-        def _deny(reason: str) -> dict[str, Any]:
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": reason,
-                }
-            }
+        from ..connectors.approval import approval_secret, decide_tool_call
 
         provided = request.headers.get("X-Connector-Secret", "")
         if not provided or not secrets.compare_digest(provided, approval_secret()):
             raise HTTPException(403, detail="forbidden")
-
         try:
             payload = await request.json()
         except Exception:  # noqa: BLE001
             payload = {}
-        tool_name = str(payload.get("tool_name") or "")
-        tool_input = payload.get("tool_input") or {}
-        session_id = str(payload.get("session_id") or "")
-
-        if classify_action(tool_name, tool_input) == "read":
-            return _allow()
-
-        window_id = bridge.window_for_session(session_id)
-        if not window_id:
-            return _allow()  # not a connector-managed session
-        mapping = store.find_mapping_by_window(window_id)
-        if mapping is None:
-            return _allow()
-        connector = connector_manager.get_connector(mapping.connector_id)
-        if connector is None:
-            return _allow()
-
-        # Re-classify with the connector's trusted read-only commands (e.g.
-        # custom tools like `rtk`); they bypass the gate.
-        extra_reads = connector.config.get("extra_read_commands") or []
-        if (
-            isinstance(extra_reads, list)
-            and classify_action(
-                tool_name, tool_input, tuple(str(x) for x in extra_reads)
-            )
-            == "read"
-        ):
-            return _allow()
-
-        detail = _describe_tool_call(tool_name, tool_input)
-        approved = await connector.request_write_approval(
-            window_id, f"{tool_name} requires approval", detail
-        )
-        return _allow() if approved else _deny("Denied by reviewer")
+        return await decide_tool_call(payload)
 
     @app.get("/api/connector-types")
     async def connector_types_endpoint(

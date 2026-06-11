@@ -109,9 +109,18 @@ class Config:
             load_dotenv(global_env)
             logger.debug("Loaded env from %s", global_env)
 
+        # Telegram transport (default on). Set CODEXBOT_TELEGRAM_ENABLED=false
+        # to run headless — e.g. only the Slack connector — without a Telegram
+        # bot. In that mode the token/allowed-users are optional.
+        self.telegram_enabled: bool = os.getenv(
+            "CODEXBOT_TELEGRAM_ENABLED", "true"
+        ).strip().lower() not in {"0", "false", "no", "off"}
         self.telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN") or ""
-        if not self.telegram_bot_token:
-            raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
+        if self.telegram_enabled and not self.telegram_bot_token:
+            raise ValueError(
+                "TELEGRAM_BOT_TOKEN environment variable is required "
+                "(set CODEXBOT_TELEGRAM_ENABLED=false to run without Telegram)"
+            )
 
         # Web UI transport (optional). When `WEB_UI_PASSWORD` is set, an HTTP +
         # WebSocket server runs alongside the Telegram bot and exposes the same
@@ -225,7 +234,7 @@ class Config:
             )
 
         allowed_users_str = os.getenv("ALLOWED_USERS", "")
-        if not allowed_users_str:
+        if self.telegram_enabled and not allowed_users_str:
             raise ValueError("ALLOWED_USERS environment variable is required")
         try:
             self.allowed_users: set[int] = {

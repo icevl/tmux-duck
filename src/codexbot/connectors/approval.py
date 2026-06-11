@@ -11,11 +11,13 @@ The Codex branch needs none of this — it relies on Codex's native
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import secrets
 import sys
 from pathlib import Path
+from typing import Any
 
 from ..config import config
 from ..utils import codexbot_dir
@@ -152,10 +154,89 @@ def ensure_claude_hook_settings() -> str:
     return str(settings_path)
 
 
+# --- shared write-gate decision (used by web + headless approval servers) ---
+
+
+def _allow() -> dict[str, Any]:
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+        }
+    }
+
+
+def _deny(reason: str) -> dict[str, Any]:
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }
+
+
+def _describe_tool_call(tool_name: str, tool_input: Any) -> str:
+    if not isinstance(tool_input, dict):
+        return tool_name
+    if "command" in tool_input:
+        return str(tool_input.get("command") or "")
+    path = tool_input.get("file_path") or tool_input.get("path") or ""
+    if path:
+        return f"{tool_name}: {path}"
+    try:
+        return f"{tool_name} {json.dumps(tool_input, ensure_ascii=False)[:500]}"
+    except (TypeError, ValueError):
+        return tool_name
+
+
+async def decide_tool_call(payload: dict[str, Any]) -> dict[str, Any]:
+    """Decide a PreToolUse hook call → allow/deny JSON.
+
+    Reads pass immediately; writes are routed to the owning connector, which
+    blocks on a human decision (Slack Approve/Deny). Shared by the web-UI
+    endpoint and the headless approval server.
+    """
+    from . import bridge, store
+    from .classifier import classify_action
+    from .manager import connector_manager
+
+    tool_name = str(payload.get("tool_name") or "")
+    tool_input = payload.get("tool_input") or {}
+    session_id = str(payload.get("session_id") or "")
+
+    if classify_action(tool_name, tool_input) == "read":
+        return _allow()
+
+    window_id = bridge.window_for_session(session_id)
+    if not window_id:
+        return _allow()  # not a connector-managed session
+    mapping = store.find_mapping_by_window(window_id)
+    if mapping is None:
+        return _allow()
+    connector = connector_manager.get_connector(mapping.connector_id)
+    if connector is None:
+        return _allow()
+
+    extra_reads = connector.config.get("extra_read_commands") or []
+    if isinstance(extra_reads, list) and (
+        classify_action(tool_name, tool_input, tuple(str(x) for x in extra_reads))
+        == "read"
+    ):
+        return _allow()
+
+    detail = _describe_tool_call(tool_name, tool_input)
+    approved = await connector.request_write_approval(
+        window_id, f"{tool_name} requires approval", detail
+    )
+    return _allow() if approved else _deny("Denied by reviewer")
+
+
 __all__ = [
     "HOOK_TIMEOUT_SECONDS",
     "approval_endpoint_url",
     "approval_secret",
     "connectors_state_dir",
+    "decide_tool_call",
     "ensure_claude_hook_settings",
 ]

@@ -79,11 +79,12 @@ class ConnectorManager:
             from ..config import config
 
             records = store.list_connectors(enabled_only=True)
-            if records and not config.web_ui_enabled:
+            if records and not config.web_ui_enabled and config.telegram_enabled:
                 # The Claude write-gate posts approvals to the FastAPI
-                # endpoint; with the Web UI off there is no server, so the
-                # hook fails open (writes run un-gated). Codex's pane-based
-                # gate is unaffected.
+                # endpoint; in Telegram mode with the Web UI off there is no
+                # server, so the hook fails open (writes run un-gated). Codex's
+                # pane gate is unaffected. (Headless mode runs its own
+                # loopback approval server, so this doesn't apply there.)
                 logger.warning(
                     "Connectors enabled but Web UI is disabled — the Claude "
                     "write-gate is unavailable and Claude writes will NOT be "
