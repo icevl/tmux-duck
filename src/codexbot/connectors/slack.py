@@ -61,6 +61,12 @@ _ACTIVE_WINDOW_SECONDS = 30
 # a slow cadence.
 IDLE_TTL_SECONDS = 24 * 3600  # 1 day
 _REAP_INTERVAL_SECONDS = 300
+# How often the connector freshens its working tree, and the guard that keeps
+# the pull from yanking files out from under a live turn. A pull only runs when
+# the tree is clean, no merge/rebase is in progress, the branch tracks an
+# upstream, and no thread has been active within this window (ff-only — diverged
+# branches are skipped, never merged).
+_REPO_REFRESH_INTERVAL_SECONDS = 3600
 # Slack mention markup: <@U123> or <@U123|name>
 _MENTION_RE = re.compile(r"<@[A-Z0-9]+(?:\|[^>]+)?>")
 # Cap per-attachment download size.
@@ -649,6 +655,9 @@ class SlackConnector(BaseConnector):
         from ..terminal_parser import extract_interactive_content, parse_options
 
         last_reap = time.monotonic()
+        # First freshen only after a full interval, so a just-deployed checkout
+        # isn't pulled the instant the connector boots.
+        last_repo_refresh = time.monotonic()
         while True:
             try:
                 await asyncio.sleep(_POLL_INTERVAL)
@@ -669,6 +678,9 @@ class SlackConnector(BaseConnector):
                 if now - last_reap >= _REAP_INTERVAL_SECONDS:
                     last_reap = now
                     await self._reap_idle(mappings)
+                if now - last_repo_refresh >= _REPO_REFRESH_INTERVAL_SECONDS:
+                    last_repo_refresh = now
+                    await self._maybe_refresh_repo()
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001
@@ -717,6 +729,75 @@ class SlackConnector(BaseConnector):
                     )
                 except Exception:  # noqa: BLE001
                     pass
+
+    def _has_active_turn(self) -> bool:
+        """True if any thread has had a turn in flight within the active window."""
+        now = time.monotonic()
+        return any(
+            now - ts <= _ACTIVE_WINDOW_SECONDS for ts in self._active_at.values()
+        )
+
+    async def _maybe_refresh_repo(self) -> None:
+        """Fast-forward the connector's working tree when it's safe and idle.
+
+        Bails out unless every guard holds: cwd is a git work tree, the tree is
+        clean (a dirty tree or unresolved conflict shows up in ``--porcelain``),
+        no merge is in progress, and the branch tracks an upstream. ``--ff-only``
+        means a diverged branch is left untouched rather than merged. Skipped
+        entirely while any thread is mid-turn so files never move under an agent.
+        """
+        cwd = self._cwd
+        if not cwd or self._has_active_turn():
+            return
+        rc, _ = await self._run_git(cwd, "rev-parse", "--is-inside-work-tree")
+        if rc != 0:
+            return
+        rc, out = await self._run_git(cwd, "status", "--porcelain")
+        if rc != 0 or out.strip():
+            return
+        rc, _ = await self._run_git(
+            cwd, "rev-parse", "--verify", "--quiet", "MERGE_HEAD"
+        )
+        if rc == 0:
+            return
+        rc, _ = await self._run_git(
+            cwd, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"
+        )
+        if rc != 0:
+            return
+        rc, out = await self._run_git(cwd, "pull", "--ff-only")
+        msg = out.strip().splitlines()[-1] if out.strip() else ""
+        if rc == 0:
+            logger.info(
+                "connector repo freshened id=%s cwd=%s: %s",
+                self.id,
+                cwd,
+                msg or "up to date",
+            )
+        else:
+            logger.info(
+                "connector repo pull skipped (not fast-forward) id=%s cwd=%s: %s",
+                self.id,
+                cwd,
+                msg,
+            )
+
+    @staticmethod
+    async def _run_git(cwd: str, *args: str) -> tuple[int, str]:
+        """Run ``git -C cwd <args>``; return (returncode, combined output)."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                "-C",
+                cwd,
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            return proc.returncode or 0, out.decode("utf-8", "replace")
+        except (OSError, asyncio.TimeoutError):
+            return 1, ""
 
     async def _check_window(
         self, window_id: str, runtime: str, extract_interactive_content, parse_options
