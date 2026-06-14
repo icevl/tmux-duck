@@ -75,6 +75,11 @@ target-version = "py312"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# libtmux ships a pytest plugin (auto-loaded via its pytest11 entry point) that
+# we don't use — we drive tmux through the library, not its fixtures. Newer
+# libtmux applies a mark to a fixture in that plugin, which pytest 9.1+ rejects
+# at collection time, breaking the whole run. Disable the plugin.
+addopts = "-p no:libtmux"
 markers = [
     "integration: tests using real filesystem or external processes",
 ]
