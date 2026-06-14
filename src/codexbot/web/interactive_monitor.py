@@ -92,7 +92,13 @@ class InteractivePromptMonitor:
 
         from ..session import session_manager
 
-        window_ids = list(session_manager.window_states.keys())
+        # Dormant keys are post-reboot placeholders, not live tmux windows —
+        # capturing them always fails, so skip them rather than poll dead ids.
+        window_ids = [
+            wid
+            for wid in session_manager.window_states.keys()
+            if not session_manager.is_dormant_key(wid)
+        ]
         for window_id in window_ids:
             try:
                 await self._check_window(window_id)

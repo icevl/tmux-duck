@@ -656,8 +656,15 @@ class TestSessionMonitorSessionRebinding:
         with patch("codexbot.session.session_manager") as mock_sm:
             # Only @1 is bound to a Telegram thread.
             mock_sm.iter_thread_bindings.return_value = [(10, 42, "@1")]
-            # But @2 and @3 exist as web-only windows.
-            mock_sm.window_states = {"@1": object(), "@2": object(), "@3": object()}
+            # @2 and @3 are web-only windows; the dormant key is a post-reboot
+            # resume stub with no live tmux window and must be skipped entirely.
+            mock_sm.window_states = {
+                "@1": object(),
+                "@2": object(),
+                "@3": object(),
+                "dormant:sid-x": object(),
+            }
+            mock_sm.is_dormant_key = lambda k: k.startswith("dormant:")
 
             async def fake_refresh(wid: str) -> str | None:
                 return {"@1": "sid-1", "@2": "sid-2-web", "@3": None}[wid]
@@ -669,6 +676,7 @@ class TestSessionMonitorSessionRebinding:
             result = await monitor._load_current_window_sessions()
 
         assert result == {"@1": "sid-1", "@2": "sid-2-web"}
+        # Three live windows refreshed; the dormant key was never polled.
         assert mock_sm.refresh_window_session_if_stale.await_count == 3
 
     @pytest.mark.asyncio

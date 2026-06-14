@@ -258,8 +258,15 @@ class TmuxManager:
                 return None
             try:
                 window = session.windows.get(window_id=window_id)
-                if not window:
-                    return None
+            except Exception:
+                # Window no longer exists (dormant placeholder, closed window,
+                # bad id). Benign and expected — callers treat None as "no
+                # capture". Logging this at ERROR floods the log when a poller
+                # iterates stale window_states keys, so stay quiet here.
+                return None
+            if not window:
+                return None
+            try:
                 pane = window.active_pane
                 if not pane:
                     return None

@@ -548,6 +548,9 @@ class SessionMonitor:
         for window_id in list(session_manager.window_states.keys()):
             if window_id in visited:
                 continue
+            # Dormant placeholders have no live tmux window to monitor.
+            if session_manager.is_dormant_key(window_id):
+                continue
             session_id = await session_manager.refresh_window_session_if_stale(
                 window_id
             )
