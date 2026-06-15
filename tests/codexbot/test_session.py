@@ -972,3 +972,46 @@ class TestSessionDiscoveryFallback:
         assert mgr.get_window_state("@1").session_id == ""
         mock_fallback.assert_not_awaited()
         mock_wait.assert_not_awaited()
+
+
+class TestDiscoveryGating:
+    """Connector-owned windows must never get pane-injected hint discovery."""
+
+    @pytest.mark.asyncio
+    async def test_connector_window_skips_discovery(self, mgr: SessionManager) -> None:
+        state = mgr.get_window_state("@8")
+        state.session_id = "sid-1"
+        state.connector_id = "conn_abc"
+
+        with (
+            patch("codexbot.session.slash_command_registry") as slash_reg,
+            patch("codexbot.session.skill_hint_registry") as skill_reg,
+            patch.object(mgr, "_refresh_sessions_index", new=AsyncMock()) as refresh,
+        ):
+            await mgr.schedule_hint_discovery("@8")
+            await mgr.schedule_slash_command_discovery("@8")
+            await mgr.schedule_skill_hint_discovery("@8")
+
+        # Discovery would type `/help` into the pane and collide with the first
+        # forwarded message — connector windows opt out entirely.
+        slash_reg.schedule_discovery.assert_not_called()
+        skill_reg.schedule_discovery.assert_not_called()
+        refresh.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_non_connector_window_runs_discovery(
+        self, mgr: SessionManager
+    ) -> None:
+        state = mgr.get_window_state("@1")
+        state.session_id = "sid-2"
+        state.connector_id = None
+
+        with (
+            patch("codexbot.session.slash_command_registry") as slash_reg,
+            patch("codexbot.session.skill_hint_registry") as skill_reg,
+            patch.object(mgr, "_refresh_sessions_index", new=AsyncMock()),
+        ):
+            await mgr.schedule_hint_discovery("@1")
+
+        slash_reg.schedule_discovery.assert_called_once()
+        skill_reg.schedule_discovery.assert_called_once()

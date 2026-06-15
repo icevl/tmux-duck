@@ -480,6 +480,8 @@ class SessionManager:
         state = self.get_window_state(window_id)
         if not state.session_id:
             return
+        if state.connector_id:
+            return
         await self._refresh_sessions_index(force=True)
         transcript_path = self._session_index.get(state.session_id)
         slash_command_registry.schedule_discovery(
@@ -494,6 +496,8 @@ class SessionManager:
         state = self.get_window_state(window_id)
         if not state.session_id:
             return
+        if state.connector_id:
+            return
         await self._refresh_sessions_index(force=True)
         transcript_path = self._session_index.get(state.session_id)
         skill_hint_registry.schedule_discovery(
@@ -507,6 +511,13 @@ class SessionManager:
         """Schedule all composer-hint discovery for a ready window."""
         state = self.get_window_state(window_id)
         if not state.session_id:
+            return
+        # Connector windows (e.g. Slack) forward the user's message straight
+        # into the pane and never surface the agent's slash/skill commands as
+        # UI. Discovery types `/help` into the same input line, which collides
+        # with the first forwarded message (`/helpExplain how LCR…`) and wedges
+        # the session — so skip discovery entirely for connector-owned windows.
+        if state.connector_id:
             return
         await self._refresh_sessions_index(force=True)
         transcript_path = self._session_index.get(state.session_id)
