@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, ChevronLeft, User, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bot, ChevronLeft, User, X } from "lucide-react";
 import { api, SessionMessage, Subagent, WsEvent } from "../api";
 import { Markdown } from "./Markdown";
 
@@ -7,6 +7,8 @@ interface Props {
   windowId: string;
   open: boolean;
   onClose: () => void;
+  row?: "top" | "bottom";
+  onToggleRow?: () => void;
   subscribeWs: (l: (e: WsEvent) => void) => () => void;
 }
 
@@ -46,7 +48,14 @@ function SubagentBubble({ m }: { m: SessionMessage }) {
   );
 }
 
-export function SubagentsPanel({ windowId, open, onClose, subscribeWs }: Props) {
+export function SubagentsPanel({
+  windowId,
+  open,
+  onClose,
+  row,
+  onToggleRow,
+  subscribeWs,
+}: Props) {
   const [subagents, setSubagents] = useState<Subagent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<SessionMessage[]>([]);
@@ -150,6 +159,19 @@ export function SubagentsPanel({ windowId, open, onClose, subscribeWs }: Props) 
             : "Subagents"}
           {!selectedId && subagents.length > 0 ? ` (${subagents.length})` : ""}
         </span>
+        {onToggleRow && (
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onToggleRow}
+            title={row === "bottom" ? "Move to top row" : "Move to bottom row"}
+            aria-label={
+              row === "bottom" ? "Move to top row" : "Move to bottom row"
+            }
+          >
+            {row === "bottom" ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"

@@ -41,7 +41,6 @@ import {
   WsEvent,
 } from "../api";
 import { SkillsModal } from "./SkillsModal";
-import { SubagentsPanel } from "./SubagentsPanel";
 import { Markdown } from "./Markdown";
 import { RuntimeIcon } from "./Sidebar";
 import { DuckLogo } from "./DuckLogo";
@@ -64,6 +63,8 @@ interface Props {
   termOpen: boolean;
   onToggleFiles: () => void;
   filesOpen: boolean;
+  onToggleSubagents: () => void;
+  subagentsOpen: boolean;
   onRename: (name: string) => Promise<void>;
   showToast: (text: string, kind?: "info" | "error") => void;
   searchTarget: SearchHitTarget | null;
@@ -957,6 +958,8 @@ export function ChatView({
   termOpen,
   onToggleFiles,
   filesOpen,
+  onToggleSubagents,
+  subagentsOpen,
   onRename,
   showToast,
   searchTarget,
@@ -994,7 +997,6 @@ export function ChatView({
   const [dragOver, setDragOver] = useState(false);
   const [keysMenuOpen, setKeysMenuOpen] = useState(false);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
-  const [subagentsOpen, setSubagentsOpen] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitIsRepo, setGitIsRepo] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -2525,7 +2527,7 @@ export function ChatView({
                 className={subagentsOpen ? "active" : ""}
                 onClick={() => {
                   setChatMenuOpen(false);
-                  setSubagentsOpen((v) => !v);
+                  onToggleSubagents();
                 }}
               >
                 <Bot size={ICON} />
@@ -3073,12 +3075,6 @@ export function ChatView({
           }}
         />
       )}
-      <SubagentsPanel
-        windowId={session.window_id}
-        open={subagentsOpen}
-        onClose={() => setSubagentsOpen(false)}
-        subscribeWs={subscribeWs}
-      />
     </main>
   );
 }

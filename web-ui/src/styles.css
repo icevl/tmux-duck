@@ -3986,7 +3986,8 @@ button.primary.send-button {
   .app-shell.diff-open,
   .app-shell.office-open,
   .app-shell.term-open,
-  .app-shell.files-open {
+  .app-shell.files-open,
+  .app-shell.subagents-open {
     /* Mobile: panels are fixed overlays, no grid column. */
     grid-template-columns: 1fr;
   }
@@ -3994,7 +3995,8 @@ button.primary.send-button {
   .diff-panel,
   .office-panel,
   .term-panel,
-  .files-panel {
+  .files-panel,
+  .subagents-panel {
     position: fixed;
     inset: 0;
     width: 100vw;
@@ -4008,7 +4010,8 @@ button.primary.send-button {
   .app-shell.diff-open .diff-panel,
   .app-shell.office-open .office-panel,
   .app-shell.term-open .term-panel,
-  .app-shell.files-open .files-panel {
+  .app-shell.files-open .files-panel,
+  .app-shell.subagents-open .subagents-panel {
     transform: translateX(0);
   }
 
@@ -4253,32 +4256,22 @@ button.primary.send-button {
    works identically on desktop and mobile. Surfaces Claude subagent (Agent /
    Workflow) transcripts the main chat never shows. */
 .subagents-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(440px, 100vw);
+  height: 100%;
+  width: 100%;
   background: var(--bg-1);
   border-left: 1px solid var(--border);
-  box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  z-index: 140;
-  transform: translateX(100%);
-  transition: transform 0.2s ease;
-}
-
-.subagents-panel.open {
-  transform: translateX(0);
+  overflow: hidden;
 }
 
 .subagents-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 0 0 52px;
-  height: 52px;
+  flex: 0 0 60px;
+  height: 60px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
 }
