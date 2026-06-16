@@ -3,6 +3,8 @@
 // and the proxy in vite.config.ts forwards them to the Python backend in
 // dev mode.
 
+export type SessionStatus = "running" | "blocked" | "done" | "idle";
+
 export interface SessionSummary {
   window_id: string;
   name: string;
@@ -15,6 +17,12 @@ export interface SessionSummary {
   pinned: boolean;
   sort_order: number | null;
   dormant?: boolean;
+  // Server-side agent status (SessionStatusTracker). Present once the backend
+  // enriches /api/sessions; older payloads omit it and default to "idle".
+  status?: SessionStatus;
+  status_since?: number | null;
+  attention?: boolean;
+  prompt_summary?: string | null;
 }
 
 export interface ResumeDormantResponse {
@@ -722,6 +730,12 @@ export const api = {
       { method: "POST", json: { option_index: optionIndex, total } },
     ),
 
+  ackSession: (windowId: string) =>
+    request<{ ok: boolean }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/ack`,
+      { method: "POST" },
+    ),
+
   listSessionFiles: (windowId: string, path = "") =>
     request<{
       path: string;
@@ -874,6 +888,25 @@ export type WsEvent =
   | {
       type: "interactive_prompt_cleared";
       window_id: string;
+      ts: number;
+      seq?: number;
+    }
+  | {
+      type: "session_status";
+      window_id: string;
+      status: SessionStatus;
+      status_since: number | null;
+      attention: boolean;
+      prompt_summary: string | null;
+      ts: number;
+      seq?: number;
+    }
+  | {
+      type: "attention";
+      window_id: string;
+      reason: string;
+      title: string;
+      body: string;
       ts: number;
       seq?: number;
     }

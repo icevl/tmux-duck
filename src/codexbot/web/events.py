@@ -40,24 +40,37 @@ class EventBus:
 
     def __init__(self, *, queue_size: int = 256) -> None:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+        # Internal subscribers (e.g. the SessionStatusTracker) consume the same
+        # fan-out as web clients but must NOT count as "a client is watching":
+        # `subscriber_count` gates the pane-streaming and interactive-prompt
+        # poll loops, which should still idle when no browser is attached.
+        self._internal: set[asyncio.Queue[dict[str, Any]]] = set()
         self._queue_size = queue_size
         self._closed = False
         self._next_seq = 1
 
-    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+    def subscribe(self, *, internal: bool = False) -> asyncio.Queue[dict[str, Any]]:
         q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=self._queue_size)
         if self._closed:
             self._put_shutdown(q)
             return q
         self._subscribers.add(q)
+        if internal:
+            self._internal.add(q)
         return q
 
     def unsubscribe(self, q: asyncio.Queue[dict[str, Any]]) -> None:
         self._subscribers.discard(q)
+        self._internal.discard(q)
 
     @property
     def subscriber_count(self) -> int:
-        return len(self._subscribers)
+        """Number of client (non-internal) subscribers currently attached."""
+        return len(self._subscribers) - len(self._internal)
+
+    @property
+    def is_closed(self) -> bool:
+        return self._closed
 
     def _put_shutdown(self, q: asyncio.Queue[dict[str, Any]]) -> None:
         event = {"type": self.SHUTDOWN_EVENT_TYPE}
@@ -94,6 +107,7 @@ class EventBus:
                 dead.append(q)
         for q in dead:
             self._subscribers.discard(q)
+            self._internal.discard(q)
             # Don't just orphan the queue: the /api/ws handler is parked on
             # `queue.get()` and would block forever, so the browser would keep
             # a live-but-dead socket and silently receive nothing. Push the

@@ -84,6 +84,8 @@ from .update_checker import (
 if TYPE_CHECKING:
     from telegram import Bot
 
+    from .session_status import SessionStatusTracker
+
 logger = logging.getLogger(__name__)
 
 
@@ -473,12 +475,20 @@ async def _delete_telegram_topic(bot: "Bot | None", window_id: str) -> None:
 
 
 def create_app(
-    bus: EventBus, *, dev_mode: bool = False, bot: "Bot | None" = None
+    bus: EventBus,
+    *,
+    dev_mode: bool = False,
+    bot: "Bot | None" = None,
+    status_tracker: "SessionStatusTracker | None" = None,
 ) -> FastAPI:
     """Build the FastAPI app with the shared event bus.
 
     When `bot` is provided, /api/sessions create/rename/delete operations
     mirror to a Telegram forum topic so the two transports stay in sync.
+
+    When `status_tracker` is provided, /api/sessions entries are enriched with
+    the server-side agent status (running / blocked / done / idle) so a freshly
+    loaded client renders the right indicators without waiting for live events.
     """
     # Origin allowlist also includes Vite dev origins when running locally.
     allowed_origins = tuple(config.web_ui_allowed_origins)
@@ -812,6 +822,19 @@ def create_app(
         # Make sure the transcript mtime index is current so the sort by
         # activity reflects reality.
         await session_manager._refresh_sessions_index(force=True)
+        status_snapshot = status_tracker.snapshot() if status_tracker else {}
+
+        def _status_fields(window_id: str) -> dict[str, Any]:
+            st = status_snapshot.get(window_id)
+            if st is None:
+                return {
+                    "status": "idle",
+                    "status_since": None,
+                    "attention": False,
+                    "prompt_summary": None,
+                }
+            return st.to_payload()
+
         result: list[dict[str, Any]] = []
         for w in windows:
             ws = session_manager.get_window_state(w.window_id)
@@ -839,6 +862,7 @@ def create_app(
                     "pinned": bool(ws.pinned),
                     "sort_order": ws.sort_order,
                     "dormant": False,
+                    **_status_fields(w.window_id),
                 }
             )
         # Dormant entries (preserved across reboot) ride along in the same list
@@ -871,6 +895,7 @@ def create_app(
                     "pinned": bool(ws.pinned),
                     "sort_order": ws.sort_order,
                     "dormant": True,
+                    **_status_fields(dormant_key),
                 }
             )
         # Pinned sessions float to the top; manual order wins inside each
@@ -1720,6 +1745,17 @@ def create_app(
         ok = await navigate_and_choose(window_id, req.option_index, req.total)
         if not ok:
             raise HTTPException(400, detail="navigate failed")
+        return {"ok": True}
+
+    @app.post("/api/sessions/{window_id}/ack")
+    async def acknowledge_session(
+        window_id: str,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        # Mark a "finished while you were away" session as seen, so Mission
+        # Control clears its done affordance. No-op if no tracker / not done.
+        if status_tracker is not None:
+            await status_tracker.acknowledge(window_id)
         return {"ok": True}
 
     @app.post("/api/sessions/{window_id}/command")

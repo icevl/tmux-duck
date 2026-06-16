@@ -20,6 +20,7 @@ import { EventStream } from "./ws";
 import { Login } from "./components/Login";
 import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
+import { MissionControl } from "./components/MissionControl";
 import { DiffPanel } from "./components/DiffPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { OfficePanel } from "./components/OfficePanel";
@@ -71,12 +72,10 @@ function savePanelRowMap(map: PanelRowMap): void {
   }
 }
 const NOTIFICATION_PREF_KEY = "codexbot-notifications-enabled-v1";
-const INPUT_REQUIRED_TOOL_NAMES = new Set([
-  "request_user_input",
-  "AskUserQuestion",
-  "exit_plan_mode",
-  "ExitPlanMode",
-]);
+// While Mission Control is open, re-pull the authoritative status snapshot on
+// this cadence as a safety net over the live `session_status` events (a missed
+// event, a backgrounded tab, or the dashboard opened after a quiet spell).
+const MISSION_CONTROL_REFRESH_MS = 7000;
 
 type BrowserNotificationPermission = NotificationPermission | "unsupported";
 
@@ -132,31 +131,6 @@ function writeNotificationsEnabled(enabled: boolean): void {
 function currentNotificationPermission(): BrowserNotificationPermission {
   if (!browserNotificationsSupported()) return "unsupported";
   return Notification.permission;
-}
-
-function isInputRequiredEvent(event: WsEvent): boolean {
-  return (
-    event.type === "message" &&
-    event.content_type === "tool_use" &&
-    INPUT_REQUIRED_TOOL_NAMES.has(event.tool_name ?? "")
-  );
-}
-
-function notificationKind(event: WsEvent): "completion" | "input" | null {
-  if (event.type === "completion") return "completion";
-  if (isInputRequiredEvent(event)) return "input";
-  // Codex plan/question prompts live only in the pane (no transcript
-  // tool_use), surfaced as interactive_prompt. Claude already notifies via
-  // the transcript tool_use path above, so gate this to codex to avoid a
-  // double "needs input" notification.
-  if (event.type === "interactive_prompt" && event.runtime === "codex") {
-    return "input";
-  }
-  return null;
-}
-
-function eventWindowId(event: WsEvent): string | null {
-  return "window_id" in event && event.window_id ? event.window_id : null;
 }
 
 function setFromMap(
@@ -310,6 +284,16 @@ export function App() {
   const [killTarget, setKillTarget] = useState<SessionSummary | null>(null);
   const [renameTarget, setRenameTarget] = useState<SessionSummary | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Mission Control: a full-width cross-session dashboard that replaces the
+  // chat in the main area. Click a card to open the session; blocked cards can
+  // answer the pending prompt inline.
+  const [showMission, setShowMission] = useState(false);
+  // Latest interactive prompt per window (options + cursor), so Mission Control
+  // can render answer buttons on blocked cards. Set on `interactive_prompt`,
+  // cleared on `interactive_prompt_cleared` / `completion`.
+  const [interactivePrompts, setInteractivePrompts] = useState<
+    Record<string, { ui_name: string; options: { label: string }[]; current_index: number }>
+  >({});
   const [searchTarget, setSearchTarget] = useState<SearchHitTarget | null>(null);
   // Panel open-state is per-topic so the Diff / Office / Terminal panel
   // a user has open on session A stays open when they switch to it
@@ -425,10 +409,15 @@ export function App() {
     showToast("Notifications enabled");
   }, [showToast]);
 
+  // Browser notifications are driven entirely by the server's Attention Router
+  // (`attention` events): the backend owns the policy — what's worth a ping
+  // (blocked / long turn done), dedup, cooldown, quiet hours — and the page
+  // just displays it. Foreground only: it shows whenever a tab is open in a
+  // secure context (https / localhost); closed-app delivery would need web push.
   const maybeNotify = useCallback((event: WsEvent) => {
-    const kind = notificationKind(event);
-    const windowId = eventWindowId(event);
-    if (!kind || !windowId) return;
+    if (event.type !== "attention") return;
+    const windowId = event.window_id;
+    if (!windowId) return;
     if (!notificationsEnabledRef.current) return;
     if (!browserNotificationsSupported()) return;
 
@@ -437,6 +426,7 @@ export function App() {
       setNotificationPermission(permission);
     }
     if (permission !== "granted") return;
+    // Don't interrupt for the session you're already looking at.
     if (
       document.visibilityState !== "hidden" &&
       windowId === activeIdRef.current
@@ -444,17 +434,9 @@ export function App() {
       return;
     }
 
-    // Interactive prompts re-emit on cursor movement (current_index change)
-    // and on reconnect (new seq each time), so a seq-based key would re-notify
-    // for the same prompt. Key on stable content instead.
-    const key =
-      event.type === "interactive_prompt"
-        ? `${kind}:${windowId}:${event.ui_name}:${event.options
-            .map((o) => o.label)
-            .join("|")}`
-        : "seq" in event && event.seq
-          ? `${kind}:${event.seq}`
-          : `${kind}:${windowId}:${"ts" in event ? event.ts : 0}`;
+    // The server already dedups/cooldowns; key on reason+ts so only a reconnect
+    // re-delivery (same ts, new seq) is suppressed here.
+    const key = `attn:${windowId}:${event.reason}:${event.ts}`;
     if (notifiedEventsRef.current.has(key)) return;
     notifiedEventsRef.current.add(key);
     if (notifiedEventsRef.current.size > 200) {
@@ -462,17 +444,15 @@ export function App() {
       if (oldest) notifiedEventsRef.current.delete(oldest);
     }
 
-    const session = sessionsRef.current.find((s) => s.window_id === windowId);
-    const title = kind === "input" ? "TmuxDuck needs input" : "TmuxDuck finished";
-    const body = session?.name ?? windowId;
     try {
-      const notification = new Notification(title, {
-        body,
-        tag: `codi:${windowId}:${key}`,
+      const notification = new Notification(event.title, {
+        body: event.body,
+        tag: `codi:${windowId}:${event.reason}`,
       });
       notification.onclick = () => {
         window.focus();
         setActiveId(windowId);
+        setShowMission(false);
       };
     } catch {
       // Notification construction can fail if the browser revokes permission
@@ -525,13 +505,58 @@ export function App() {
     const stream = new EventStream();
     streamRef.current = stream;
     // On WS reconnect, the server hasn't replayed events missed during the
-    // gap — tell subscribers (ChatView) to backfill history.
+    // gap — re-sync the authoritative session snapshot (status included) and
+    // tell subscribers (ChatView) to backfill history.
     stream.onReconnect = () => {
+      refreshSessions();
       for (const cb of reconnectListeners.current) cb();
     };
     const unsub = stream.subscribe((event) => {
+      // Track the live prompt per window for Mission Control's inline answers.
+      // Additive: the busy/status logic below still runs for these events.
+      if (event.type === "interactive_prompt") {
+        setInteractivePrompts((prev) => ({
+          ...prev,
+          [event.window_id]: {
+            ui_name: event.ui_name,
+            options: event.options,
+            current_index: event.current_index,
+          },
+        }));
+      } else if (
+        event.type === "interactive_prompt_cleared" ||
+        event.type === "completion"
+      ) {
+        const wid = event.window_id;
+        if (wid) {
+          setInteractivePrompts((prev) => {
+            if (!(wid in prev)) return prev;
+            const next = { ...prev };
+            delete next[wid];
+            return next;
+          });
+        }
+      }
+
       if (event.type === "sessions_changed") {
         refreshSessions();
+      } else if (event.type === "session_status") {
+        // Server-authoritative status (SessionStatusTracker). Patch it onto the
+        // session so Mission Control reflects running/blocked/done/idle live.
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.window_id === event.window_id
+              ? {
+                  ...s,
+                  status: event.status,
+                  status_since: event.status_since,
+                  attention: event.attention,
+                  prompt_summary: event.prompt_summary,
+                }
+              : s,
+          ),
+        );
+        for (const l of wsListeners.current) l(event);
       } else {
         // Bump the session's last_activity so the sidebar bubbles it up.
         if (
@@ -651,6 +676,20 @@ export function App() {
     };
   }, [auth, refreshSessions, maybeNotify]);
 
+  // Keep Mission Control sourced from the backend while it's open: refetch the
+  // authoritative status snapshot on open and on a short interval. Live
+  // `session_status` events still patch state between refreshes for instant
+  // updates; this poll just self-heals any drift. Skipped while the tab is
+  // hidden (nothing to look at, no reason to hit tmux).
+  useEffect(() => {
+    if (auth !== "authed" || !showMission) return;
+    refreshSessions();
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") refreshSessions();
+    }, MISSION_CONTROL_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [auth, showMission, refreshSessions]);
+
   const subscribeWs = useCallback((listener: (e: WsEvent) => void) => {
     wsListeners.current.add(listener);
     return () => {
@@ -668,6 +707,12 @@ export function App() {
   const activeSession = useMemo(
     () => sessions.find((s) => s.window_id === activeId) ?? null,
     [sessions, activeId],
+  );
+
+  // Sessions waiting on the user right now — drives the Mission Control badge.
+  const attentionCount = useMemo(
+    () => sessions.filter((s) => !s.dormant && s.status === "blocked").length,
+    [sessions],
   );
 
   // Prune panel-open entries for sessions that no longer exist so a
@@ -827,7 +872,11 @@ export function App() {
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const handleSelectSession = useCallback((id: string) => {
     setActiveId(id);
+    setShowMission(false);
     setSidebarOpen(false);
+    // Opening a "finished while away" session counts as seeing it.
+    const opened = sessionsRef.current.find((s) => s.window_id === id);
+    if (opened?.status === "done") void api.ackSession(id);
   }, []);
   const handleOpenSearchHit = useCallback((target: SearchHitTarget) => {
     setActiveId(target.window_id);
@@ -1039,6 +1088,12 @@ export function App() {
         activeId={activeId}
         busyIds={busyIds}
         doneIds={doneIds}
+        missionActive={showMission}
+        attentionCount={attentionCount}
+        onToggleMission={() => {
+          setShowMission((v) => !v);
+          setSidebarOpen(false);
+        }}
         onSelect={handleSelectSession}
         onNew={() => {
           setCreating(true);
@@ -1066,7 +1121,16 @@ export function App() {
         onClick={closeSidebar}
         aria-hidden="true"
       />
-      {activeSession ? (
+      {showMission ? (
+        <MissionControl
+          sessions={sessions}
+          activeId={activeId}
+          prompts={interactivePrompts}
+          onOpen={handleSelectSession}
+          onClose={() => setShowMission(false)}
+          onToast={showToast}
+        />
+      ) : activeSession ? (
         isNarrow ? (
           // Mobile: panels are fixed full-screen overlays driven by CSS
           // (.app-shell.*-open). The wrapping layout is irrelevant.

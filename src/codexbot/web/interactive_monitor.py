@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from ..terminal_parser import (
@@ -42,9 +43,19 @@ class InteractivePromptMonitor:
     # failure, or a redraw mid-frame) must not retract a still-open prompt.
     _CLEAR_MISS_THRESHOLD = 2
 
-    def __init__(self, bus: "EventBus", *, poll_interval: float = 1.0) -> None:
+    def __init__(
+        self,
+        bus: "EventBus",
+        *,
+        poll_interval: float = 1.0,
+        extra_demand: Callable[[], bool] | None = None,
+    ) -> None:
         self._bus = bus
         self._poll_interval = poll_interval
+        # Optional predicate that keeps polling alive even when no web client is
+        # attached — set by the Attention Router so the agent being blocked on
+        # the user is still detected (and pushed) while you're away from the UI.
+        self._extra_demand = extra_demand
         self._task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
         # window_id → fingerprint of last published prompt, so we don't
@@ -83,9 +94,13 @@ class InteractivePromptMonitor:
                 continue
 
     async def _tick(self) -> None:
-        if self._bus.subscriber_count == 0:
-            # Skip polling when nobody is listening — also forget last
-            # state so a re-attaching client gets a fresh event.
+        demand = self._bus.subscriber_count > 0 or (
+            self._extra_demand is not None and self._extra_demand()
+        )
+        if not demand:
+            # Skip polling when nobody is listening (no web client and no
+            # attention channel) — also forget last state so a re-attaching
+            # client gets a fresh event.
             self._last.clear()
             self._miss.clear()
             return
@@ -171,32 +186,84 @@ class InteractivePromptMonitor:
         return f"{name}::{parsed.current_index}::{labels}"
 
 
-async def navigate_and_choose(window_id: str, option_index: int, total: int) -> bool:
-    """Move the TUI cursor to `option_index` (0-based) and press Enter.
+# How many navigate-then-recheck rounds before we give up landing on the
+# target option. Each round corrects for a cursor that moved under us.
+_MAX_NAV_ATTEMPTS = 4
 
-    Uses arrow keys, which works for both numbered (`1. ...`) and radio
-    (`◯ ...`) Claude prompts regardless of where the cursor currently
-    sits. Overshooting Up at the top is harmless — the TUI clamps.
+
+def _forward_steps(current_index: int, target_index: int, total: int) -> int:
+    """Down-key presses to move the cursor from ``current`` to ``target``.
+
+    The Claude/Codex pickers wrap (Down past the last option returns to the
+    first) and advance exactly one option per press, so a forward-only count
+    reaches any target regardless of where the cursor sits — unlike pressing
+    Up, which we observed wrapping unpredictably.
+    """
+    return (target_index - current_index) % total
+
+
+async def _read_current_prompt(window_id: str) -> ParsedPrompt | None:
+    """Capture the pane and parse the live option list + cursor position."""
+    from ..session import session_manager
+
+    state = session_manager.window_states.get(window_id)
+    if state is None:
+        return None
+    pane_text = await tmux_manager.capture_pane(window_id)
+    if not pane_text:
+        return None
+    content = extract_interactive_content(pane_text, runtime=state.runtime)
+    if content is None:
+        return None
+    return parse_options(content.content)
+
+
+async def navigate_and_choose(window_id: str, option_index: int, total: int) -> bool:
+    """Move the TUI cursor onto ``option_index`` (0-based) and press Enter.
+
+    Reads the cursor's *actual* position from the live pane and steps Down to
+    the target, then re-reads to confirm before committing. This is resilient
+    to the picker wrapping and to the cursor having moved since the prompt was
+    surfaced. Critically, if we can't confirm the cursor is on the target we
+    return False WITHOUT pressing Enter — better to fail the choice than to
+    submit the wrong option (the old "press Up to reach the top" approach broke
+    exactly here, because Up wraps instead of clamping).
     """
     if option_index < 0 or total <= 0 or option_index >= total:
         return False
-    # Push cursor to top first.
-    for _ in range(total):
-        if not await tmux_manager.send_keys(
-            window_id, "Up", enter=False, literal=False
-        ):
+
+    for _ in range(_MAX_NAV_ATTEMPTS):
+        parsed = await _read_current_prompt(window_id)
+        if parsed is None or not parsed.options:
             return False
-        await asyncio.sleep(0.02)
-    for _ in range(option_index):
-        if not await tmux_manager.send_keys(
-            window_id, "Down", enter=False, literal=False
-        ):
-            return False
-        await asyncio.sleep(0.02)
-    # Small settle gap before Enter — the TUI sometimes coalesces a
-    # tight Down+Enter and treats Enter as a no-op.
+        count = len(parsed.options)
+        if option_index >= count:
+            return False  # the menu changed under us
+        if parsed.current_index == option_index:
+            break
+        steps = _forward_steps(parsed.current_index, option_index, count)
+        for _ in range(steps):
+            if not await tmux_manager.send_keys(
+                window_id, "Down", enter=False, literal=False
+            ):
+                return False
+            await asyncio.sleep(0.02)
+        await asyncio.sleep(0.08)  # let the TUI settle before re-reading
+    else:
+        return False  # never confirmed on the target — do not commit
+
+    # Final confirmation: only commit when the cursor is provably on the target.
+    parsed = await _read_current_prompt(window_id)
+    if parsed is None or parsed.current_index != option_index:
+        return False
+    # Small settle gap — the TUI sometimes coalesces a tight move+Enter.
     await asyncio.sleep(0.1)
     return await tmux_manager.send_keys(window_id, "Enter", enter=False, literal=False)
 
 
-__all__ = ["InteractivePromptMonitor", "navigate_and_choose", "ParsedOption"]
+__all__ = [
+    "InteractivePromptMonitor",
+    "navigate_and_choose",
+    "ParsedOption",
+    "_forward_steps",
+]

@@ -142,6 +142,14 @@ class Config:
         self.search_enabled: bool = os.getenv(
             "CODEXBOT_SEARCH_ENABLED", "false"
         ).strip().lower() in ("1", "true", "yes", "on")
+        # Attention Router: turn server-side status transitions (agent blocked
+        # on you / long turn finished) into proactive notifications via the
+        # configured channels (Telegram today). Inert without a delivery
+        # channel; gates the always-on interactive-prompt poll. Tuning lives in
+        # module constants in web/attention.py, not env vars.
+        self.attention_enabled: bool = _env_flag_enabled(
+            "CODEXBOT_ATTENTION_ENABLED", default=True
+        )
         self.web_ui_host: str = (
             os.getenv("WEB_UI_HOST", "127.0.0.1").strip() or "127.0.0.1"
         )

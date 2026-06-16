@@ -4,6 +4,7 @@ import {
   BellOff,
   Brain,
   GripVertical,
+  LayoutGrid,
   Loader2,
   LogOut,
   Moon,
@@ -52,6 +53,10 @@ interface Props {
   activeId: string | null;
   busyIds: Set<string>;
   doneIds: Set<string>;
+  // Mission Control toggle + count of sessions waiting on the user.
+  missionActive: boolean;
+  attentionCount: number;
+  onToggleMission: () => void;
   onSelect: (id: string) => void;
   onNew: () => void;
   onOpenConnectors: () => void;
@@ -97,6 +102,9 @@ export function Sidebar({
   activeId,
   busyIds,
   doneIds,
+  missionActive,
+  attentionCount,
+  onToggleMission,
   onSelect,
   onNew,
   onOpenConnectors,
@@ -469,6 +477,21 @@ export function Sidebar({
           aria-label="Connectors"
         >
           <Plug size={ICON} />
+        </button>
+        <button
+          type="button"
+          className={`icon-button sidebar-mission${
+            missionActive ? " active" : ""
+          }`}
+          onClick={onToggleMission}
+          aria-pressed={missionActive}
+          title="Mission Control"
+          aria-label="Mission Control"
+        >
+          <LayoutGrid size={ICON} />
+          {attentionCount > 0 ? (
+            <span className="sidebar-mission-badge">{attentionCount}</span>
+          ) : null}
         </button>
         <button
           className="icon-button"

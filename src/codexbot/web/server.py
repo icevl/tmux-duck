@@ -29,9 +29,11 @@ from ..session_monitor import NewMessage, SessionMonitor
 from ..skill_hints import skill_hint_registry
 from ..slash_commands import slash_command_registry
 from .api import create_app
+from .attention import AttentionRouter, BrowserNotifier, Notifier
 from .events import EventBus, session_monitor_listener
 from .interactive_monitor import InteractivePromptMonitor
 from .search_status_publisher import search_status_publisher_loop
+from .session_status import SessionStatusTracker
 from .streaming import stream_pane_loop
 from .update_checker import poll_loop as update_poll_loop
 
@@ -74,6 +76,8 @@ class WebServerHandle:
         search_producer: LiveQueueProducer | None = None,
         idle_tracker: "search_supervisor.IdleTracker | None" = None,
         interactive_monitor: InteractivePromptMonitor | None = None,
+        status_tracker: SessionStatusTracker | None = None,
+        attention_router: AttentionRouter | None = None,
     ) -> None:
         self.server = server
         self.task = task
@@ -89,6 +93,8 @@ class WebServerHandle:
         self.search_producer = search_producer
         self.idle_tracker = idle_tracker
         self.interactive_monitor = interactive_monitor
+        self.status_tracker = status_tracker
+        self.attention_router = attention_router
         self.listener: Listener | None = None
         self.search_listener: Listener | None = None
 
@@ -161,7 +167,12 @@ async def start_web_server(
         listener_ref = None
         search_listener_ref = None
 
-    app = create_app(bus, bot=bot)
+    # Server-side status state machine, shared by the session list (enriches
+    # /api/sessions) and live `session_status` events. Subscribes internally so
+    # it doesn't keep the pane/prompt poll loops awake when no browser attaches.
+    status_tracker = SessionStatusTracker(bus)
+
+    app = create_app(bus, bot=bot, status_tracker=status_tracker)
 
     # Surface the TOTP enrollment QR + URI in the startup logs the first
     # time we generate a secret, so the operator can scan it once into
@@ -236,8 +247,33 @@ async def start_web_server(
     else:
         logger.info("Auto-update checker disabled via CODEXBOT_AUTO_UPDATE")
 
+    # Attention Router: notify the user when a session blocks on them or a long
+    # turn finishes. It applies the policy (dedup, cooldown, quiet hours) and
+    # dispatches to channels.
+    #
+    # Channel: BrowserNotifier — re-publishes an `attention` event the open web
+    # UI shows as a notification (foreground, gated on the user's toggle). Note
+    # Telegram is intentionally NOT a channel: it already forwards every
+    # prompt/message into the same topic (see `handle_interactive_ui` in
+    # bot.py), so a ping there would just double-notify. Closed-app delivery
+    # (web push) would slot in here as another notifier later.
+    #
+    # No `extra_demand` on the interactive monitor: browser notifications only
+    # matter while a tab is open, and an open tab already drives the poll. The
+    # always-on poll is only needed for closed-app (web push), not built yet.
+    attention_router: AttentionRouter | None = None
+    if config.attention_enabled:
+        notifiers: list[Notifier] = [BrowserNotifier(bus)]
+        attention_router = AttentionRouter(bus, notifiers)
+    else:
+        logger.info("Attention Router disabled via CODEXBOT_ATTENTION_ENABLED")
+
     interactive_monitor = InteractivePromptMonitor(bus)
     await interactive_monitor.start()
+
+    await status_tracker.start()
+    if attention_router is not None:
+        await attention_router.start()
 
     logger.info(
         "Web UI listening on http://%s:%d", config.web_ui_host, config.web_ui_port
@@ -258,6 +294,8 @@ async def start_web_server(
         search_producer=search_producer,
         idle_tracker=idle_tracker,
         interactive_monitor=interactive_monitor,
+        status_tracker=status_tracker,
+        attention_router=attention_router,
     )
     handle.listener = listener_ref
     handle.search_listener = search_listener_ref
@@ -278,6 +316,19 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
         monitor.remove_listener(handle.search_listener)
     if monitor is not None and handle.idle_tracker is not None:
         handle.idle_tracker.detach(monitor)
+    # Stop the bus consumers before closing the bus: once closed, the bus hands
+    # new subscriptions a shutdown sentinel, and their consume loops must not
+    # race to re-subscribe.
+    if handle.attention_router is not None:
+        try:
+            await handle.attention_router.stop()
+        except Exception:  # noqa: BLE001
+            pass
+    if handle.status_tracker is not None:
+        try:
+            await handle.status_tracker.stop()
+        except Exception:  # noqa: BLE001
+            pass
     slash_command_registry.set_event_publisher(None)
     skill_hint_registry.set_event_publisher(None)
     await handle.bus.close()

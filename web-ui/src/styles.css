@@ -4390,3 +4390,209 @@ button.primary.send-button {
   flex-direction: column;
   gap: 8px;
 }
+
+/* ----------------------------------------------------------------------- */
+/* Mission Control                                                          */
+/* ----------------------------------------------------------------------- */
+
+/* Footer icon-button (matches connectors / logout). `position: relative` so
+   the attention badge can sit in the corner. */
+.sidebar-mission {
+  position: relative;
+}
+
+.sidebar-mission.active {
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+  color: var(--duck-yellow-strong);
+}
+
+.sidebar-mission-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--warn);
+  color: #1a1116;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.mc-summary {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+.mc-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.mc-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
+
+.mc-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--bg-3);
+  color: var(--text-1);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.mc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  text-align: left;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.mc-card:hover {
+  background: var(--bg-2);
+  border-color: var(--border-strong);
+}
+
+.mc-card.active {
+  background: var(--duck-yellow-soft);
+}
+
+.mc-card-blocked {
+  border-left-color: var(--warn);
+}
+.mc-card-running {
+  border-left-color: var(--duck-yellow);
+}
+.mc-card-done {
+  border-left-color: var(--ok);
+}
+
+.mc-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mc-card-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.mc-chip {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: capitalize;
+  background: var(--bg-3);
+  color: var(--text-2);
+}
+
+.mc-chip-blocked {
+  background: rgba(255, 180, 84, 0.16);
+  color: var(--warn);
+}
+.mc-chip-running {
+  background: var(--duck-yellow-soft);
+  color: var(--duck-yellow-strong);
+}
+.mc-chip-done {
+  background: rgba(78, 212, 160, 0.16);
+  color: var(--ok);
+}
+
+.mc-card-cwd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-card-prompt {
+  font-size: 12px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.mc-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.mc-action {
+  padding: 4px 10px;
+  background: var(--bg-3);
+  color: var(--text-0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.mc-action:hover:not(:disabled) {
+  background: var(--duck-yellow-soft);
+  border-color: var(--duck-yellow);
+  color: var(--duck-yellow-strong);
+}
+
+.mc-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
