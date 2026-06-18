@@ -16,6 +16,59 @@ const EXPQUOTE_BLOCK = /\x02EXPQUOTE_START\x02([\s\S]*?)\x02EXPQUOTE_END\x02/g;
 // upstream stripped control chars).
 const EXPQUOTE_BLOCK_PLAIN = /EXPQUOTE_START([\s\S]*?)EXPQUOTE_END/g;
 
+// Absolute host paths an agent prints (e.g. "open /Users/me/.agent/x.html").
+// Anchored to a known top-level dir + a file extension to avoid linkifying
+// arbitrary slash-separated text. A leading `~/` is allowed (backend expands).
+const FILE_PATH_RE =
+  /(?:~|\/(?:Users|home|root|Volumes|private|tmp|var|opt|mnt|srv|data|etc|usr))\/[^\s'"`)\]<>]+\.[A-Za-z0-9]{1,12}/g;
+
+interface MdastNode {
+  type: string;
+  value?: string;
+  url?: string;
+  children?: MdastNode[];
+}
+
+// Split a text value into text + link nodes wherever a file path appears.
+function splitPathText(value: string): MdastNode[] {
+  const out: MdastNode[] = [];
+  let last = 0;
+  for (const m of value.matchAll(FILE_PATH_RE)) {
+    const start = m.index ?? 0;
+    if (start > last) out.push({ type: "text", value: value.slice(last, start) });
+    const path = m[0];
+    out.push({
+      type: "link",
+      url: `/api/file?path=${encodeURIComponent(path)}`,
+      children: [{ type: "text", value: path }],
+    });
+    last = start + path.length;
+  }
+  if (out.length === 0) return [{ type: "text", value }];
+  if (last < value.length) out.push({ type: "text", value: value.slice(last) });
+  return out;
+}
+
+// remark plugin: turn file paths in plain text into download links. Only
+// touches `text` nodes, so code blocks / inline code (which carry `value`, not
+// child text nodes) and existing links are left untouched.
+function remarkLinkifyPaths() {
+  const walk = (node: MdastNode): void => {
+    if (!node.children) return;
+    const next: MdastNode[] = [];
+    for (const child of node.children) {
+      if (child.type === "text" && typeof child.value === "string") {
+        next.push(...splitPathText(child.value));
+      } else {
+        if (child.type !== "link") walk(child);
+        next.push(child);
+      }
+    }
+    node.children = next;
+  };
+  return (tree: MdastNode) => walk(tree);
+}
+
 function preprocess(raw: string): string {
   let text = raw;
   const replacer = (_match: string, inner: string) => {
@@ -57,16 +110,30 @@ function splitBlocks(text: string): string[] {
 }
 
 const MD_COMPONENTS = {
-  a: ({ href, children, ...rest }: ComponentPropsWithoutRef<"a">) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" {...rest}>
-      {children}
-    </a>
-  ),
+  a: ({ href, children, ...rest }: ComponentPropsWithoutRef<"a">) => {
+    // File-download links (linkified host paths) download in place rather than
+    // opening a blank tab; the backend serves them as attachments.
+    if (typeof href === "string" && href.startsWith("/api/file?")) {
+      return (
+        <a href={href} download {...rest}>
+          {children}
+        </a>
+      );
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" {...rest}>
+        {children}
+      </a>
+    );
+  },
 };
 
 const MarkdownBlock = memo(function MarkdownBlock({ text }: { text: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkLinkifyPaths]}
+      components={MD_COMPONENTS}
+    >
       {text}
     </ReactMarkdown>
   );

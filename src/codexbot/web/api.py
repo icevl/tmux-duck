@@ -200,6 +200,48 @@ def _safe_image_ext(filename: str) -> str | None:
     return None
 
 
+def resolve_scoped_path(raw: str, roots: list[Path]) -> Path | None:
+    """Resolve ``raw`` to an existing regular file confined to ``roots``.
+
+    Returns the canonical path only when it is an existing file located inside
+    one of the allowed roots; otherwise None. ``resolve()`` follows symlinks and
+    collapses ``..`` first, so neither traversal nor a symlink pointing outside
+    a root can escape the scope. Returning None for every failure (out-of-scope,
+    missing, not-a-file) avoids leaking whether an out-of-scope path exists.
+    """
+    if not raw:
+        return None
+    try:
+        target = Path(raw).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not any(target == r or target.is_relative_to(r) for r in roots):
+        return None
+    if not target.is_file():
+        return None
+    return target
+
+
+def allowed_file_roots() -> list[Path]:
+    """Roots a file download may come from: the user's home plus the cwd of
+    every tracked session. Covers ~/.agent, repos, ~/.codexbot, and any
+    out-of-home project directory an agent is working in, while excluding the
+    rest of the host filesystem."""
+    roots: list[Path] = []
+    try:
+        roots.append(Path.home().resolve())
+    except (OSError, RuntimeError):
+        pass
+    for ws in session_manager.window_states.values():
+        if not ws.cwd:
+            continue
+        try:
+            roots.append(Path(ws.cwd).resolve())
+        except (OSError, RuntimeError):
+            continue
+    return roots
+
+
 def _safe_tmux_name_part(value: str) -> str:
     cleaned = "".join(
         ch if ch.isalnum() or ch in "._-" else "_" for ch in value.strip()
@@ -1514,6 +1556,22 @@ def create_app(
             ".vscode",
         }
     )
+
+    @app.get("/api/file")
+    async def download_file(
+        path: str,
+        _user: str = Depends(require_auth),
+    ) -> FileResponse:
+        # Serve any file the user references in chat (e.g. an agent prints
+        # `open /Users/me/.agent/diagrams/x.html`) as a download, so they don't
+        # have to SSH in. Confined to the home dir + active session cwds; served
+        # as an attachment (never rendered inline) so nothing executes in the
+        # web UI's origin. An authenticated user already has full host access
+        # via the agent panes, so this opens no new exfiltration path.
+        target = resolve_scoped_path(path, allowed_file_roots())
+        if target is None:
+            raise HTTPException(404, detail="file not found")
+        return FileResponse(target, filename=target.name)
 
     def _resolve_files_path(cwd: str, rel: str) -> Path:
         root = Path(cwd).resolve()
