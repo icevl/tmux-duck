@@ -429,6 +429,23 @@ def test_acl_use_permission():
     assert _slack({})._is_allowed("C1", "Uany") is True
 
 
+def test_allowed_channels_gate_channels_only():
+    c = _slack({"allowed_channels": ["C1"]})
+    # Listed channel passes; unlisted channel rejected.
+    assert c._is_allowed("C1", "U1") is True
+    assert c._is_allowed("C2", "U1") is False
+    # DM channel ids aren't listable, so the channel allowlist is skipped for
+    # DMs — a DM still passes even though its channel id isn't in the list.
+    assert c._is_allowed("D9", "U1", is_dm=True) is True
+
+
+def test_dm_still_enforces_user_acl():
+    c = _slack({"acl": [{"user": "U1", "write": False}]})
+    # DM bypasses the channel allowlist but NOT the user ACL.
+    assert c._is_allowed("D9", "U1", is_dm=True) is True
+    assert c._is_allowed("D9", "U2", is_dm=True) is False
+
+
 def test_acl_write_permission():
     c = _slack({"acl": [{"user": "U1", "write": True}, {"user": "U2", "write": False}]})
     c._last_user["@w"] = "U1"

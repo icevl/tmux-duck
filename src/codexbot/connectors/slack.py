@@ -184,10 +184,14 @@ class SlackConnector(BaseConnector):
     def _acl_users(self) -> set[str]:
         return {str(e["user"]) for e in self._acl() if e.get("user")}
 
-    def _is_allowed(self, channel: str, user: str) -> bool:
-        channels = self.config.get("allowed_channels") or []
-        if channels and channel not in channels:
-            return False
+    def _is_allowed(self, channel: str, user: str, is_dm: bool = False) -> bool:
+        # The channel allowlist gates public/private channels by id. DM channel
+        # ids are per-user and not listable, so for DMs we gate on the user ACL
+        # only (a DM is inherently 1:1 with the person who opened it).
+        if not is_dm:
+            channels = self.config.get("allowed_channels") or []
+            if channels and channel not in channels:
+                return False
         acl_users = self._acl_users()
         # Empty ACL → anyone may use the bot (read-only, since no write grants).
         if acl_users and user not in acl_users:
@@ -270,18 +274,28 @@ class SlackConnector(BaseConnector):
 
     def _register_handlers(self, app: AsyncApp) -> None:
         # Socket Mode auto-acks events, so event handlers take no `ack`.
-        # Mention-only mode: the bot acts solely when @-mentioned. A plain
-        # `message` event (which also fires on a mention) is swallowed as a
-        # no-op so it neither double-handles nor reacts to ordinary channel
-        # chatter — and Socket Mode doesn't log it as unhandled.
+        # Channels are mention-only: a plain channel `message` (which also fires
+        # on a mention) is swallowed so the bot doesn't react to ordinary
+        # chatter; the mention is handled via `app_mention`. DMs have no mention,
+        # so a direct message (`channel_type == "im"`) is handled here directly —
+        # one continuous session per DM, no tagging required.
         @app.event("message")
         async def _on_message(event: dict[str, Any]) -> None:
-            return
+            if event.get("channel_type") != "im":
+                return
+            try:
+                await self._handle_message(event, is_dm=True)
+            except Exception:  # noqa: BLE001
+                logger.exception("slack DM handling failed id=%s", self.id)
 
         @app.event("app_mention")
         async def _on_mention(event: dict[str, Any]) -> None:
+            # A mention inside a DM also arrives as `message.im` (handled above);
+            # skip it here so we don't double-handle.
+            if (event.get("channel") or "").startswith("D"):
+                return
             try:
-                await self._handle_message(event)
+                await self._handle_message(event, is_dm=False)
             except Exception:  # noqa: BLE001
                 logger.exception("slack mention handling failed id=%s", self.id)
 
@@ -312,7 +326,7 @@ class SlackConnector(BaseConnector):
         if fut is not None and not fut.done():
             fut.set_result(approved)
 
-    async def _handle_message(self, event: dict[str, Any]) -> None:
+    async def _handle_message(self, event: dict[str, Any], is_dm: bool = False) -> None:
         # Ignore the bot's own messages and edits/deletes (but keep file uploads,
         # which arrive with subtype "file_share").
         if event.get("bot_id"):
@@ -328,9 +342,37 @@ class SlackConnector(BaseConnector):
         files = event.get("files") or []
         if not channel or (not text and not files):
             return
-        if not self._is_allowed(channel, user):
+        if not self._is_allowed(channel, user, is_dm=is_dm):
             logger.info("slack message rejected channel=%s user=%s", channel, user)
             return
+
+        # Session scoping + where replies land.
+        #  - DM: one continuous session per DM channel; reply at top level so it
+        #    reads as a normal conversation. No mention needed.
+        #  - Channel: thread = session; reply inside the thread.
+        if is_dm:
+            session_key = channel
+            reply_thread_ts: str | None = None
+            window_name = f"slack-dm-{channel}"
+        else:
+            thread_root = event.get("thread_ts") or event.get("ts")
+            session_key = f"{channel}:{thread_root}"
+            reply_thread_ts = thread_root
+            window_name = f"slack-{thread_root}"
+
+        # `/new` (DM only): drop the current DM session so the next turn starts
+        # with a clean context. Any text after `/new` becomes the first message
+        # of the fresh session.
+        if is_dm and (text == "/new" or text.startswith(("/new ", "/new\n"))):
+            await self._reset_session(session_key)
+            text = text[len("/new") :].strip()
+            if not text and not files:
+                if self._app is not None:
+                    await self._app.client.chat_postMessage(
+                        channel=channel,
+                        text="🆕 Fresh session — send your next message.",
+                    )
+                return
 
         # Acknowledge receipt with a 👀 reaction before the (slow) work starts.
         msg_ts = event.get("ts")
@@ -354,7 +396,7 @@ class SlackConnector(BaseConnector):
             if failed and self._app is not None:
                 await self._app.client.chat_postMessage(
                     channel=channel,
-                    thread_ts=event.get("thread_ts") or event.get("ts"),
+                    thread_ts=reply_thread_ts,
                     text=(
                         f"⚠️ Couldn't fetch {failed} attachment(s) — check the "
                         f"bot's `files:read` scope."
@@ -363,18 +405,13 @@ class SlackConnector(BaseConnector):
             if not text:
                 return
 
-        # thread = session: a top-level message starts a thread; replies
-        # continue it. We always reply inside the thread.
-        thread_ts = event.get("thread_ts") or event.get("ts")
-        external_id = f"{channel}:{thread_ts}"
-
         try:
             window_id, created = await bridge.ensure_window(
                 connector_id=self.id,
-                external_id=external_id,
+                external_id=session_key,
                 runtime_name=self._runtime_name,
                 cwd=self._cwd,
-                window_name=f"slack-{thread_ts}",
+                window_name=window_name,
                 instructions=self._instructions,
             )
         except Exception as exc:  # noqa: BLE001
@@ -382,17 +419,17 @@ class SlackConnector(BaseConnector):
             if self._app is not None:
                 await self._app.client.chat_postMessage(
                     channel=channel,
-                    thread_ts=thread_ts,
+                    thread_ts=reply_thread_ts,
                     text=f"⚠️ Couldn't start a session: {exc}",
                 )
             return
 
-        # Route this window's output back to this thread. Keyed by window
-        # id (stable immediately) rather than session id (discovered
+        # Route this window's output back to where the message came from. Keyed
+        # by window id (stable immediately) rather than session id (discovered
         # asynchronously, especially for the Codex runtime).
         self._outbound[window_id] = {
             "channel": channel,
-            "thread_ts": thread_ts,
+            "thread_ts": reply_thread_ts,
         }
         self._last_user[window_id] = user
         self._active_at[window_id] = time.monotonic()
@@ -409,7 +446,7 @@ class SlackConnector(BaseConnector):
         if not ok and self._app is not None:
             await self._app.client.chat_postMessage(
                 channel=channel,
-                thread_ts=thread_ts,
+                thread_ts=reply_thread_ts,
                 text="⚠️ Failed to deliver the message to the agent.",
             )
 
@@ -693,6 +730,22 @@ class SlackConnector(BaseConnector):
         self._active_at.pop(window_id, None)
         self._last_user.pop(window_id, None)
         self._block_note_at.pop(window_id, None)
+
+    async def _reset_session(self, external_id: str) -> None:
+        """Tear down the agent session bound to ``external_id`` (used by `/new`).
+
+        Kills the tmux window, drops the persisted mapping, and clears in-memory
+        state so the next message spins up a fresh agent with a clean context.
+        """
+        mapping = store.get_session_mapping(self.id, external_id)
+        if mapping is None:
+            return
+        try:
+            await tmux_manager.kill_window(mapping.window_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("reset: kill_window failed id=%s", self.id)
+        store.delete_session_mapping(self.id, external_id)
+        self._forget_window(mapping.window_id)
 
     async def _reap_idle(self, mappings) -> None:  # noqa: ANN001
         """Kill tmux windows for threads idle past the TTL; drop dead mappings.
