@@ -35,6 +35,21 @@ _UUID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
 _SHELL_COMMANDS = {"bash", "fish", "sh", "zsh"}
 
 
+# On macOS, `/Users`, `/private`, etc. are firmlinks onto the data volume, so
+# `Path.resolve()` rewrites `/Users/mike/x` → `/System/Volumes/Data/Users/mike/x`.
+# Claude Code names its project dir from the firmlink-visible path (`-Users-…`),
+# NOT the resolved one, so we must strip this prefix before encoding or the
+# derived transcript path points at a directory that doesn't exist (→ the
+# session's messages never stream). No-op on Linux.
+_MACOS_DATA_FIRMLINK = "/System/Volumes/Data"
+
+
+def _strip_macos_firmlink(path: str) -> str:
+    if path.startswith(_MACOS_DATA_FIRMLINK + "/"):
+        return path[len(_MACOS_DATA_FIRMLINK) :]
+    return path
+
+
 def _encode_claude_cwd(cwd: str) -> str:
     """Encode an absolute cwd the same way Claude Code names its project dir.
 
@@ -58,7 +73,7 @@ def claude_transcript_path(session_id: str, cwd: str) -> Path | None:
         resolved = Path(cwd).expanduser().resolve()
     except (OSError, RuntimeError, ValueError):
         return None
-    encoded = _encode_claude_cwd(str(resolved))
+    encoded = _encode_claude_cwd(_strip_macos_firmlink(str(resolved)))
     return config.claude_projects_path / encoded / f"{session_id}.jsonl"
 
 
