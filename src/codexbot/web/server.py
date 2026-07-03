@@ -35,6 +35,7 @@ from .interactive_monitor import InteractivePromptMonitor
 from .search_status_publisher import search_status_publisher_loop
 from .session_status import SessionStatusTracker
 from .streaming import stream_pane_loop
+from .usage import UsageCollector, usage_publisher_loop
 from .update_checker import poll_loop as update_poll_loop
 
 if TYPE_CHECKING:
@@ -78,6 +79,7 @@ class WebServerHandle:
         interactive_monitor: InteractivePromptMonitor | None = None,
         status_tracker: SessionStatusTracker | None = None,
         attention_router: AttentionRouter | None = None,
+        usage_task: asyncio.Task[None] | None = None,
     ) -> None:
         self.server = server
         self.task = task
@@ -95,6 +97,7 @@ class WebServerHandle:
         self.interactive_monitor = interactive_monitor
         self.status_tracker = status_tracker
         self.attention_router = attention_router
+        self.usage_task = usage_task
         self.listener: Listener | None = None
         self.search_listener: Listener | None = None
 
@@ -172,7 +175,13 @@ async def start_web_server(
     # it doesn't keep the pane/prompt poll loops awake when no browser attaches.
     status_tracker = SessionStatusTracker(bus)
 
-    app = create_app(bus, bot=bot, status_tracker=status_tracker)
+    # Per-agent usage counters (Codex rate limits, Claude token totals) read
+    # from local files only — served via /api/usage + `agent_usage` events.
+    usage_collector = UsageCollector()
+
+    app = create_app(
+        bus, bot=bot, status_tracker=status_tracker, usage_collector=usage_collector
+    )
 
     # Surface the TOTP enrollment QR + URI in the startup logs the first
     # time we generate a secret, so the operator can scan it once into
@@ -275,6 +284,10 @@ async def start_web_server(
     if attention_router is not None:
         await attention_router.start()
 
+    usage_task = asyncio.create_task(
+        usage_publisher_loop(bus, usage_collector), name="codexbot-usage-publisher"
+    )
+
     logger.info(
         "Web UI listening on http://%s:%d", config.web_ui_host, config.web_ui_port
     )
@@ -296,6 +309,7 @@ async def start_web_server(
         interactive_monitor=interactive_monitor,
         status_tracker=status_tracker,
         attention_router=attention_router,
+        usage_task=usage_task,
     )
     handle.listener = listener_ref
     handle.search_listener = search_listener_ref
@@ -346,6 +360,12 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
         handle.update_task.cancel()
         try:
             await handle.update_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+    if handle.usage_task is not None:
+        handle.usage_task.cancel()
+        try:
+            await handle.usage_task
         except (asyncio.CancelledError, Exception):  # noqa: BLE001
             pass
     if handle.search_task is not None:

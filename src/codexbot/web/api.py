@@ -85,6 +85,7 @@ if TYPE_CHECKING:
     from telegram import Bot
 
     from .session_status import SessionStatusTracker
+    from .usage import UsageCollector
 
 logger = logging.getLogger(__name__)
 
@@ -522,6 +523,7 @@ def create_app(
     dev_mode: bool = False,
     bot: "Bot | None" = None,
     status_tracker: "SessionStatusTracker | None" = None,
+    usage_collector: "UsageCollector | None" = None,
 ) -> FastAPI:
     """Build the FastAPI app with the shared event bus.
 
@@ -1556,6 +1558,15 @@ def create_app(
             ".vscode",
         }
     )
+
+    @app.get("/api/usage")
+    async def agent_usage(_user: str = Depends(require_auth)) -> dict[str, Any]:
+        # Per-agent usage counters for the sidebar. Built entirely from local
+        # files (Codex rollout rate limits, Claude transcript token usage) —
+        # no provider API calls, so this can never trip a 429.
+        if usage_collector is None:
+            return {"codex": None, "claude": None}
+        return await asyncio.to_thread(usage_collector.snapshot)
 
     @app.get("/api/file")
     async def download_file(

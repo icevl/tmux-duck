@@ -19,7 +19,13 @@ import {
 } from "lucide-react";
 import { TunioPlayer } from "tunio-player";
 import "tunio-player/styles.css";
-import { api, SearchStatusResponse, SessionSummary, WsEvent } from "../api";
+import {
+  AgentUsageSnapshot,
+  api,
+  SearchStatusResponse,
+  SessionSummary,
+  WsEvent,
+} from "../api";
 import { DuckLogo } from "./DuckLogo";
 import { SearchStatusFooter } from "./SearchStatusFooter";
 import { SessionSearch, type SearchHitTarget } from "./SessionSearch";
@@ -96,6 +102,22 @@ function compareSessions(a: SessionSummary, b: SessionSummary): number {
   return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
 }
 
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+function fmtReset(ts: number | null): string {
+  if (!ts) return "—";
+  return new Date(ts * 1000).toLocaleString([], {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function Sidebar({
   sessions,
   sessionsLoaded,
@@ -142,7 +164,32 @@ export function Sidebar({
   // null = not yet known (initial fetch in flight); true/false = backend
   // CODEXBOT_SEARCH_ENABLED.
   const [searchEnabled, setSearchEnabled] = useState<boolean | null>(null);
+  // Per-agent usage counters (Codex rate limits, Claude token totals). Initial
+  // snapshot via REST; live updates via `agent_usage` events (server polls
+  // local files every ~2.5 min — no provider API calls involved).
+  const [usage, setUsage] = useState<AgentUsageSnapshot | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getUsage()
+      .then((u) => {
+        if (!cancelled) setUsage(u);
+      })
+      .catch(() => {
+        // Older backend without /api/usage — the block simply doesn't render.
+      });
+    const unsub = subscribeWs((event) => {
+      if (event.type === "agent_usage") {
+        setUsage({ codex: event.codex, claude: event.claude });
+      }
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [subscribeWs]);
 
   const handleSearchActiveChange = useCallback((active: boolean) => {
     setSearchActive(active);
@@ -451,6 +498,52 @@ export function Sidebar({
         )}
       </div>
       {searchEnabled !== false && <SearchStatusFooter status={searchStatus} />}
+      {(usage?.codex?.primary || usage?.claude) && (
+        <div className="sidebar-usage">
+          {usage?.codex?.primary && (
+            <div
+              className="usage-row"
+              title={`5h window resets ${fmtReset(usage.codex.primary.resets_at)}${
+                usage.codex.secondary
+                  ? ` · weekly resets ${fmtReset(usage.codex.secondary.resets_at)}`
+                  : ""
+              }`}
+            >
+              <span className="usage-agent">Codex</span>
+              <div className="usage-bar">
+                <div
+                  className={`usage-bar-fill${
+                    usage.codex.primary.used_percent >= 80 ? " high" : ""
+                  }`}
+                  style={{
+                    width: `${Math.min(100, usage.codex.primary.used_percent)}%`,
+                  }}
+                />
+              </div>
+              <span className="usage-text">
+                {Math.round(usage.codex.primary.used_percent)}% 5h
+                {usage.codex.secondary
+                  ? ` · ${Math.round(usage.codex.secondary.used_percent)}% wk`
+                  : ""}
+              </span>
+            </div>
+          )}
+          {usage?.claude && (
+            <div
+              className="usage-row"
+              title={`Last 5h: ${fmtTokens(usage.claude.last_5h.input)} in / ${fmtTokens(
+                usage.claude.last_5h.output,
+              )} out · cache read today ${fmtTokens(usage.claude.today.cache_read)}`}
+            >
+              <span className="usage-agent">Claude</span>
+              <span className="usage-text">
+                today {fmtTokens(usage.claude.today.input)} in ·{" "}
+                {fmtTokens(usage.claude.today.output)} out
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       <div className="sidebar-footer">
         <TunioPlayer
           id={OFFICE_STREAM_ID}

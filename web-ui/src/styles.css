@@ -4596,3 +4596,58 @@ button.primary.send-button {
   opacity: 0.5;
   cursor: default;
 }
+
+/* ----------------------------------------------------------------------- */
+/* Sidebar usage counters (Codex rate limits, Claude token totals)          */
+/* ----------------------------------------------------------------------- */
+
+.sidebar-usage {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.usage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-2);
+  cursor: default;
+}
+
+.usage-agent {
+  flex-shrink: 0;
+  width: 44px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.usage-bar {
+  flex: 1;
+  min-width: 24px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--duck-yellow);
+  transition: width 0.3s ease;
+}
+
+.usage-bar-fill.high {
+  background: var(--warn);
+}
+
+.usage-text {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

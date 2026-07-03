@@ -5,6 +5,37 @@
 
 export type SessionStatus = "running" | "blocked" | "done" | "idle";
 
+// Per-agent usage counters (sidebar). Built server-side from local files only.
+export interface CodexUsageWindow {
+  used_percent: number;
+  window_minutes: number | null;
+  resets_at: number | null;
+}
+
+export interface CodexUsage {
+  primary: CodexUsageWindow | null;
+  secondary: CodexUsageWindow | null;
+  updated_at: number | null;
+}
+
+export interface ClaudeTokenTotals {
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_creation: number;
+}
+
+export interface ClaudeUsage {
+  today: ClaudeTokenTotals;
+  last_5h: ClaudeTokenTotals;
+  updated_at: number | null;
+}
+
+export interface AgentUsageSnapshot {
+  codex: CodexUsage | null;
+  claude: ClaudeUsage | null;
+}
+
 export interface SessionSummary {
   window_id: string;
   name: string;
@@ -736,6 +767,8 @@ export const api = {
       { method: "POST" },
     ),
 
+  getUsage: () => request<AgentUsageSnapshot>("/api/usage"),
+
   listSessionFiles: (windowId: string, path = "") =>
     request<{
       path: string;
@@ -907,6 +940,13 @@ export type WsEvent =
       reason: string;
       title: string;
       body: string;
+      ts: number;
+      seq?: number;
+    }
+  | {
+      type: "agent_usage";
+      codex: CodexUsage | null;
+      claude: ClaudeUsage | null;
       ts: number;
       seq?: number;
     }
