@@ -44,8 +44,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Poll cadence while a web client is attached (the user asked for 2–3 min).
-POLL_INTERVAL_SECONDS = 150.0
+# Poll cadence while a web client is attached.
+POLL_INTERVAL_SECONDS = 120.0
 # Cheap re-check cadence while nobody is connected (no file work happens).
 IDLE_SLEEP_SECONDS = 30.0
 # Republish even without changes so a fresh client sees data within this bound.
