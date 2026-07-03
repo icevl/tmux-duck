@@ -25,9 +25,21 @@ export interface ClaudeTokenTotals {
   cache_creation: number;
 }
 
+export interface ClaudeLimitWindow {
+  used_percent: number;
+  resets_at: number | null;
+}
+
 export interface ClaudeUsage {
   today: ClaudeTokenTotals;
   last_5h: ClaudeTokenTotals;
+  // Official account-wide limit percentages (same numbers as the console),
+  // fetched via the CLI's OAuth credential. Null when unavailable — the UI
+  // falls back to the local token counters.
+  limits: {
+    five_hour: ClaudeLimitWindow | null;
+    seven_day: ClaudeLimitWindow | null;
+  } | null;
   updated_at: number | null;
 }
 

@@ -528,12 +528,45 @@ export function Sidebar({
               </span>
             </div>
           )}
-          {usage?.claude && (
+          {usage?.claude?.limits?.five_hour ? (
+            // Official account-wide percentages (matches the console).
             <div
               className="usage-row"
-              title={`Last 5h: ${fmtTokens(usage.claude.last_5h.input)} in / ${fmtTokens(
-                usage.claude.last_5h.output,
-              )} out · cache read today ${fmtTokens(usage.claude.today.cache_read)}`}
+              title={`5h window resets ${fmtReset(
+                usage.claude.limits.five_hour.resets_at,
+              )}${
+                usage.claude.limits.seven_day
+                  ? ` · weekly resets ${fmtReset(usage.claude.limits.seven_day.resets_at)}`
+                  : ""
+              } · this Mac today: ${fmtTokens(usage.claude.today.input)} in / ${fmtTokens(
+                usage.claude.today.output,
+              )} out`}
+            >
+              <span className="usage-agent">Claude</span>
+              <div className="usage-bar">
+                <div
+                  className={`usage-bar-fill${
+                    usage.claude.limits.five_hour.used_percent >= 80 ? " high" : ""
+                  }`}
+                  style={{
+                    width: `${Math.min(100, usage.claude.limits.five_hour.used_percent)}%`,
+                  }}
+                />
+              </div>
+              <span className="usage-text">
+                {Math.round(usage.claude.limits.five_hour.used_percent)}% 5h
+                {usage.claude.limits.seven_day
+                  ? ` · ${Math.round(usage.claude.limits.seven_day.used_percent)}% wk`
+                  : ""}
+              </span>
+            </div>
+          ) : usage?.claude ? (
+            // Fallback: local token counters (this machine only).
+            <div
+              className="usage-row"
+              title={`This Mac only. Last 5h: ${fmtTokens(
+                usage.claude.last_5h.input,
+              )} in / ${fmtTokens(usage.claude.last_5h.output)} out`}
             >
               <span className="usage-agent">Claude</span>
               <span className="usage-text">
@@ -541,7 +574,7 @@ export function Sidebar({
                 {fmtTokens(usage.claude.today.output)} out
               </span>
             </div>
-          )}
+          ) : null}
         </div>
       )}
       <div className="sidebar-footer">

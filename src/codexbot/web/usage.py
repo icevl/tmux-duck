@@ -25,6 +25,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import subprocess
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -32,6 +34,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import httpx
 
 from ..config import config
 
@@ -56,6 +60,19 @@ CLAUDE_SCAN_MTIME_HOURS = 26
 # Per-file LRU of message ids already counted (dedup across content-block
 # lines that repeat the same usage payload).
 _DEDUP_IDS_PER_FILE = 128
+# Official Claude limit percentages come from the same OAuth endpoint the CLI's
+# /usage screen uses — account-wide numbers (all machines), matching the
+# console. The token is Claude Code's own OAuth credential (Keychain on macOS,
+# ~/.claude/.credentials.json elsewhere); Claude Code keeps it refreshed. This
+# is the one network call in this module: one GET per TTL window — at the poll
+# cadence that's ~24 requests/hour, far below any rate limit, and every failure
+# (expired token, endpoint change, 429) degrades to the local token counters.
+CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+CLAUDE_OAUTH_BETA_HEADER = "oauth-2025-04-20"
+CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials"
+CLAUDE_CREDENTIALS_FILE = Path.home() / ".claude" / ".credentials.json"
+CLAUDE_LIMITS_TTL_SECONDS = 60.0
+CLAUDE_LIMITS_HTTP_TIMEOUT = 10.0
 
 
 # ── Codex: official rate-limit snapshot from rollout files ─────────────────
@@ -146,6 +163,110 @@ def read_codex_usage(root: Path | None = None) -> dict[str, Any] | None:
     return None
 
 
+# ── Claude: official limit percentages via the CLI's OAuth credential ──────
+
+
+def _token_from_creds_json(raw: str) -> str | None:
+    """Extract a still-valid access token from Claude Code's credentials JSON."""
+    try:
+        creds = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    oauth = creds.get("claudeAiOauth")
+    if not isinstance(oauth, dict):
+        return None
+    expires_at = oauth.get("expiresAt")
+    if isinstance(expires_at, (int, float)) and expires_at / 1000 <= time.time():
+        return None  # expired — Claude Code will refresh it on its next run
+    token = oauth.get("accessToken")
+    return token if isinstance(token, str) and token else None
+
+
+def _claude_oauth_token() -> str | None:
+    if sys.platform == "darwin":
+        try:
+            proc = subprocess.run(
+                [
+                    "security",
+                    "find-generic-password",
+                    "-s",
+                    CLAUDE_KEYCHAIN_SERVICE,
+                    "-w",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5.0,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            proc = None
+        if proc is not None and proc.returncode == 0:
+            token = _token_from_creds_json(proc.stdout.strip())
+            if token:
+                return token
+    try:
+        return _token_from_creds_json(CLAUDE_CREDENTIALS_FILE.read_text())
+    except OSError:
+        return None
+
+
+def _iso_to_epoch(value: Any) -> float | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _limit_window(win: Any) -> dict[str, Any] | None:
+    if not isinstance(win, dict):
+        return None
+    used = win.get("utilization")
+    if not isinstance(used, (int, float)):
+        return None
+    return {
+        "used_percent": float(used),
+        "resets_at": _iso_to_epoch(win.get("resets_at")),
+    }
+
+
+def _parse_oauth_usage(data: Any) -> dict[str, Any] | None:
+    """Shape the /api/oauth/usage response into {five_hour, seven_day}."""
+    if not isinstance(data, dict):
+        return None
+    five_hour = _limit_window(data.get("five_hour"))
+    seven_day = _limit_window(data.get("seven_day"))
+    if five_hour is None and seven_day is None:
+        return None
+    return {"five_hour": five_hour, "seven_day": seven_day}
+
+
+def read_claude_limits() -> dict[str, Any] | None:
+    """Account-wide Claude limit percentages, or None (degrade to tokens)."""
+    token = _claude_oauth_token()
+    if not token:
+        return None
+    try:
+        resp = httpx.get(
+            CLAUDE_USAGE_URL,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "anthropic-beta": CLAUDE_OAUTH_BETA_HEADER,
+            },
+            timeout=CLAUDE_LIMITS_HTTP_TIMEOUT,
+        )
+    except Exception:  # noqa: BLE001 - any transport error degrades to tokens
+        logger.debug("usage: claude limits fetch failed", exc_info=True)
+        return None
+    if resp.status_code != 200:
+        logger.debug("usage: claude limits endpoint returned %s", resp.status_code)
+        return None
+    try:
+        return _parse_oauth_usage(resp.json())
+    except ValueError:
+        return None
+
+
 # ── Claude: token totals aggregated from transcripts ───────────────────────
 
 
@@ -170,6 +291,10 @@ class UsageCollector:
         self._lock = threading.Lock()
         self._claude_files: dict[str, _FileCache] = {}
         self._claude_updated_at: float | None = None
+        # TTL cache for the official-limits fetch so concurrent REST hits and
+        # the publisher loop don't multiply network calls.
+        self._claude_limits: dict[str, Any] | None = None
+        self._claude_limits_at = 0.0
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -249,9 +374,14 @@ class UsageCollector:
                     for k, v in zip(keys, vals):
                         last_5h[k] += v
 
+        if now - self._claude_limits_at >= CLAUDE_LIMITS_TTL_SECONDS:
+            self._claude_limits = read_claude_limits()
+            self._claude_limits_at = now
+
         return {
             "today": today,
             "last_5h": last_5h,
+            "limits": self._claude_limits,
             "updated_at": self._claude_updated_at,
         }
 
@@ -350,6 +480,7 @@ async def usage_publisher_loop(bus: "EventBus", collector: UsageCollector) -> No
 
 __all__ = [
     "UsageCollector",
+    "read_claude_limits",
     "read_codex_usage",
     "usage_publisher_loop",
 ]

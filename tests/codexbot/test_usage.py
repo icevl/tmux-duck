@@ -121,8 +121,11 @@ def claude_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root = tmp_path / "projects"
     (root / "-Users-mike-proj").mkdir(parents=True)
     from codexbot.config import config
+    from codexbot.web import usage as usage_mod
 
     monkeypatch.setattr(config, "claude_projects_path", root)
+    # Tests must never touch the Keychain or the network.
+    monkeypatch.setattr(usage_mod, "read_claude_limits", lambda: None)
     return root
 
 
@@ -196,3 +199,71 @@ def test_claude_missing_root_returns_none(
 
     monkeypatch.setattr(config, "claude_projects_path", tmp_path / "missing")
     assert UsageCollector().snapshot()["claude"] is None
+
+
+# ── Claude official limits (OAuth endpoint parsing) ─────────────────────────
+
+
+def test_parse_oauth_usage_real_shape() -> None:
+    from codexbot.web.usage import _parse_oauth_usage
+
+    data = {
+        "five_hour": {
+            "utilization": 42.0,
+            "resets_at": "2026-07-03T11:39:59.756919+00:00",
+            "limit_dollars": None,
+        },
+        "seven_day": {
+            "utilization": 16.0,
+            "resets_at": "2026-07-09T09:59:59.756936+00:00",
+        },
+        "extra_usage": {"is_enabled": False},
+    }
+    parsed = _parse_oauth_usage(data)
+    assert parsed is not None
+    assert parsed["five_hour"]["used_percent"] == 42.0
+    assert parsed["seven_day"]["used_percent"] == 16.0
+    assert parsed["five_hour"]["resets_at"] is not None
+
+
+def test_parse_oauth_usage_rejects_garbage() -> None:
+    from codexbot.web.usage import _parse_oauth_usage
+
+    assert _parse_oauth_usage(None) is None
+    assert _parse_oauth_usage({}) is None
+    assert _parse_oauth_usage({"five_hour": {"utilization": "n/a"}}) is None
+
+
+def test_token_from_creds_json() -> None:
+    from codexbot.web.usage import _token_from_creds_json
+
+    future_ms = (time.time() + 3600) * 1000
+    past_ms = (time.time() - 3600) * 1000
+    ok = json.dumps(
+        {"claudeAiOauth": {"accessToken": "sk-ant-oat01-x", "expiresAt": future_ms}}
+    )
+    expired = json.dumps(
+        {"claudeAiOauth": {"accessToken": "sk-ant-oat01-x", "expiresAt": past_ms}}
+    )
+    assert _token_from_creds_json(ok) == "sk-ant-oat01-x"
+    assert _token_from_creds_json(expired) is None  # stale token → degrade
+    assert _token_from_creds_json("not json") is None
+    assert _token_from_creds_json("{}") is None
+
+
+def test_claude_snapshot_includes_limits(
+    claude_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.web import usage as usage_mod
+
+    now = time.time()
+    f = claude_root / "-Users-mike-proj" / "s1.jsonl"
+    f.write_text(_usage_line("msg_1", now - 60, 100, 50) + "\n")
+    limits = {
+        "five_hour": {"used_percent": 42.0, "resets_at": now + 1000},
+        "seven_day": {"used_percent": 16.0, "resets_at": now + 90000},
+    }
+    monkeypatch.setattr(usage_mod, "read_claude_limits", lambda: limits)
+    snap = UsageCollector().snapshot()
+    assert snap["claude"]["limits"] == limits
+    assert snap["claude"]["today"]["input"] == 100
