@@ -1,10 +1,12 @@
 import {
   ClipboardEvent,
   DragEvent,
+  forwardRef,
   KeyboardEvent,
   memo,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -943,6 +945,671 @@ const KEY_BUTTONS: Array<{ label: string; key: string }> = [
 // Bot-side commands — handled locally by the web UI.
 const BOT_QUICK_COMMANDS = ["/screenshot", "/skillhelp", "/esc"];
 
+export type ComposerHandle = {
+  insertText: (fragment: string) => void;
+};
+
+interface ComposerProps {
+  windowId: string;
+  runtime: string;
+  sessionId: string | null;
+  gitBranch: string | null;
+  gitIsRepo: boolean;
+  agentSlashCommands: SlashCommandHint[];
+  agentSkillHints: SkillHint[];
+  onSubmit: (caption: string, files: File[]) => Promise<void>;
+  onBotCommand: (command: string) => Promise<boolean>;
+  onSwitchBranch: (branch: string) => Promise<void>;
+  onKey: (key: string) => void;
+  onCommand: (command: string) => void;
+}
+
+// The composer owns every keystroke-hot piece of state (draft text, slash
+// hints, attachments, popovers). Keeping it out of ChatView means typing
+// never re-renders the message list — with long histories that re-render
+// is what made the input lag.
+const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
+  {
+    windowId,
+    runtime,
+    sessionId,
+    gitBranch,
+    gitIsRepo,
+    agentSlashCommands,
+    agentSkillHints,
+    onSubmit,
+    onBotCommand,
+    onSwitchBranch,
+    onKey,
+    onCommand,
+  },
+  ref,
+) {
+  const [text, setText] = useState("");
+  const [slashRange, setSlashRange] = useState<SlashTokenRange | null>(null);
+  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<
+    Array<{ id: string; file: File; previewUrl: string }>
+  >([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [keysMenuOpen, setKeysMenuOpen] = useState(false);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [branchList, setBranchList] = useState<string[] | null>(null);
+  const [branchLoadError, setBranchLoadError] = useState<string | null>(null);
+  const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
+
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const slashHintRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const keysMenuRef = useRef<HTMLDivElement | null>(null);
+  const branchMenuRef = useRef<HTMLDivElement | null>(null);
+  // Per-session draft cache. Switching sessions stashes the current
+  // composer text under the previous window_id and restores any draft for
+  // the new one, so each topic keeps its own pending message.
+  const draftsRef = useRef<Record<string, string>>({});
+  const prevWindowIdRef = useRef<string | null>(null);
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
+
+  const closeSlashHints = useCallback(() => {
+    setSlashRange(null);
+    setSlashActiveIndex(0);
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      insertText: (fragment: string) => {
+        setText((prev) => (prev ? `${prev} ${fragment}` : fragment));
+        textareaRef.current?.focus();
+      },
+    }),
+    [],
+  );
+
+  useEffect(() => {
+    const previousWid = prevWindowIdRef.current;
+    if (previousWid && previousWid !== windowId) {
+      draftsRef.current[previousWid] = textRef.current;
+    }
+    prevWindowIdRef.current = windowId;
+    const restored = draftsRef.current[windowId] ?? "";
+    setText(restored);
+    closeSlashHints();
+    setAttachments((prev) => {
+      for (const a of prev) URL.revokeObjectURL(a.previewUrl);
+      return [];
+    });
+    // Focus the composer after the new draft is rendered. Mobile browsers
+    // ignore programmatic focus for keyboard summoning, so this only puts
+    // a caret on desktop — exactly what we want. Defer with a microtask so
+    // the textarea's `value` is the new draft when we move the caret.
+    queueMicrotask(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      const pos = restored.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }, [closeSlashHints, windowId]);
+
+  // Revoke any preview blobs we still hold when the composer unmounts.
+  useEffect(() => {
+    return () => {
+      setAttachments((prev) => {
+        for (const a of prev) URL.revokeObjectURL(a.previewUrl);
+        return [];
+      });
+    };
+  }, []);
+
+  const slashHints = useMemo(() => {
+    if (!slashRange) return [];
+    if (slashRange.trigger === "$") {
+      if (runtime !== "codex") return [];
+      const prefix = `$${slashRange.query}`;
+      return agentSkillHints
+        .map((hint) => ({
+          command: hint.invocation,
+          description: hint.description,
+        }))
+        .filter((hint) => hint.command.toLowerCase().startsWith(prefix));
+    }
+    const prefix = `/${slashRange.query}`;
+    return agentSlashCommands.filter((hint) =>
+      hint.command.toLowerCase().startsWith(prefix),
+    );
+  }, [agentSkillHints, agentSlashCommands, runtime, slashRange]);
+  const showSlashHints = slashRange !== null && slashHints.length > 0;
+  const composerHintLabel =
+    slashRange?.trigger === "$"
+      ? "Codex skills"
+      : `${runtime === "claude" ? "Claude" : "Codex"} commands`;
+
+  useEffect(() => {
+    setSlashActiveIndex((idx) =>
+      slashHints.length === 0 ? 0 : Math.min(idx, slashHints.length - 1),
+    );
+  }, [slashHints.length]);
+
+  // Keep the active hint visible when navigating with arrow keys. The
+  // hints container scrolls, but neither setSlashActiveIndex nor the
+  // browser scrolls the focused item into view on its own (the
+  // textarea retains keyboard focus the whole time).
+  useEffect(() => {
+    if (!showSlashHints) return;
+    slashHintRefs.current[slashActiveIndex]?.scrollIntoView({
+      block: "nearest",
+    });
+  }, [slashActiveIndex, showSlashHints]);
+
+  const refreshSlashHints = useCallback(
+    (value: string, selectionStart: number | null | undefined) => {
+      const nextRange = slashTokenRange(value, selectionStart);
+      setSlashRange(nextRange);
+      setSlashActiveIndex(0);
+    },
+    [],
+  );
+
+  const insertSlashHint = useCallback(
+    (hint: SlashCommandHint) => {
+      const currentText = textRef.current;
+      const el = textareaRef.current;
+      const currentRange =
+        slashRange ?? slashTokenRange(currentText, el?.selectionStart);
+      if (!currentRange) return;
+
+      const inserted = `${hint.command} `;
+      const nextText =
+        currentText.slice(0, currentRange.start) +
+        inserted +
+        currentText.slice(currentRange.end);
+      const nextCaret = currentRange.start + inserted.length;
+      textRef.current = nextText;
+      setText(nextText);
+      closeSlashHints();
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        textarea.setSelectionRange(nextCaret, nextCaret);
+      });
+    },
+    [closeSlashHints, slashRange],
+  );
+
+  const addFiles = useCallback((files: FileList | File[] | null) => {
+    if (!files) return;
+    const incoming = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (incoming.length === 0) return;
+    setAttachments((prev) => [
+      ...prev,
+      ...incoming.map((file) => ({
+        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    ]);
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => {
+      const next: typeof prev = [];
+      for (const a of prev) {
+        if (a.id === id) URL.revokeObjectURL(a.previewUrl);
+        else next.push(a);
+      }
+      return next;
+    });
+  }, []);
+
+  // Lazy-load the branch list when the popover opens. Refetch each time so
+  // stale entries (deleted/renamed branches) don't linger.
+  useEffect(() => {
+    if (!branchMenuOpen) return;
+    let cancelled = false;
+    setBranchList(null);
+    setBranchLoadError(null);
+    api
+      .listBranches(windowId)
+      .then((r) => {
+        if (cancelled) return;
+        if (!r.is_repo) {
+          setBranchList([]);
+          setBranchLoadError("not a git repo");
+          return;
+        }
+        setBranchList(r.branches);
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setBranchList([]);
+        setBranchLoadError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [branchMenuOpen, windowId]);
+
+  // Close the keys/commands popover on outside click or Escape.
+  useEffect(() => {
+    if (!keysMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      const el = keysMenuRef.current;
+      if (el && !el.contains(e.target as Node)) setKeysMenuOpen(false);
+    };
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setKeysMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [keysMenuOpen]);
+
+  // Close branch popover on outside click or Escape, mirroring the keys menu.
+  useEffect(() => {
+    if (!branchMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      const el = branchMenuRef.current;
+      if (el && !el.contains(e.target as Node)) setBranchMenuOpen(false);
+    };
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setBranchMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [branchMenuOpen]);
+
+  const handleSwitchBranch = useCallback(
+    async (branch: string) => {
+      if (branch === gitBranch) {
+        setBranchMenuOpen(false);
+        return;
+      }
+      setSwitchingBranch(branch);
+      try {
+        await onSwitchBranch(branch);
+        setBranchMenuOpen(false);
+      } catch {
+        // Parent already surfaced the error; keep the menu open for retry.
+      } finally {
+        setSwitchingBranch(null);
+      }
+    },
+    [gitBranch, onSwitchBranch],
+  );
+
+  const submit = useCallback(
+    async (payload: string) => {
+      const caption = payload.trimEnd();
+      const pendingAttachments = attachments;
+      const hasAttachments = pendingAttachments.length > 0;
+      if (!caption && !hasAttachments) return;
+      closeSlashHints();
+
+      // Slash-commands run only when there are no attachments — otherwise the
+      // user clearly meant to upload, not invoke a bot command.
+      if (!hasAttachments) {
+        const cmd = parseSlashCommand(caption);
+        if (cmd && cmd in BOT_COMMANDS) {
+          const handled = await onBotCommand(cmd);
+          if (handled) {
+            setText("");
+            textareaRef.current?.focus();
+            return;
+          }
+        }
+      }
+
+      setSending(true);
+      // Clear composer immediately so sending feels instant. Restored on error.
+      setText("");
+      setAttachments([]);
+      try {
+        await onSubmit(
+          caption,
+          pendingAttachments.map((a) => a.file),
+        );
+        for (const a of pendingAttachments) URL.revokeObjectURL(a.previewUrl);
+      } catch {
+        // Parent already surfaced the error; restore the draft for retry.
+        setText((cur) => (cur ? cur : payload));
+        setAttachments((cur) => [...pendingAttachments, ...cur]);
+      } finally {
+        setSending(false);
+        textareaRef.current?.focus();
+      }
+    },
+    [attachments, closeSlashHints, onBotCommand, onSubmit],
+  );
+
+  const onTextareaKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showSlashHints) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashActiveIndex((idx) => (idx + 1) % slashHints.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashActiveIndex(
+          (idx) => (idx - 1 + slashHints.length) % slashHints.length,
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertSlashHint(slashHints[slashActiveIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeSlashHints();
+        return;
+      }
+    }
+
+    if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      void submit(text);
+    }
+  };
+
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const item of Array.from(items)) {
+      if (item.kind === "file") {
+        const f = item.getAsFile();
+        if (f && f.type.startsWith("image/")) files.push(f);
+      }
+    }
+    if (files.length > 0) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  };
+
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files"))
+      return;
+    e.preventDefault();
+    setDragOver(true);
+  };
+
+  const onDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    // Only clear when leaving the composer itself, not bubbling out of a child.
+    if (e.currentTarget === e.target) setDragOver(false);
+  };
+
+  const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    addFiles(e.dataTransfer?.files ?? null);
+  };
+
+  return (
+    <div
+      className={`composer${dragOver ? " drag-over" : ""}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {attachments.length > 0 && (
+        <div className="attachments-row">
+          {attachments.map((a) => (
+            <div key={a.id} className="attachment-chip" title={a.file.name}>
+              <img src={a.previewUrl} alt={a.file.name} />
+              <button
+                type="button"
+                className="attachment-remove"
+                aria-label={`Remove ${a.file.name}`}
+                onClick={() => removeAttachment(a.id)}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {showSlashHints && (
+        <div
+          id="slash-command-hints"
+          className="slash-hints"
+          role="listbox"
+          aria-label={composerHintLabel}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div className="slash-hints-label">{composerHintLabel}</div>
+          {slashHints.map((hint, index) => (
+            <button
+              key={hint.command}
+              ref={(el) => {
+                slashHintRefs.current[index] = el;
+              }}
+              type="button"
+              role="option"
+              aria-selected={index === slashActiveIndex}
+              className={
+                "slash-hint-item" +
+                (index === slashActiveIndex ? " active" : "")
+              }
+              onMouseEnter={() => setSlashActiveIndex(index)}
+              onClick={() => insertSlashHint(hint)}
+            >
+              <span className="slash-hint-command">{hint.command}</span>
+              <span className="slash-hint-description">
+                {hint.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      <textarea
+        ref={textareaRef}
+        value={text}
+        placeholder="Send a message — Enter to send, Shift+Enter for newline. Paste or drop images to attach."
+        name="chat-message"
+        autoComplete="off"
+        data-1p-ignore="true"
+        data-lpignore="true"
+        data-bwignore="true"
+        aria-controls={showSlashHints ? "slash-command-hints" : undefined}
+        aria-expanded={showSlashHints}
+        aria-autocomplete="list"
+        onChange={(e) => {
+          const next = e.target.value;
+          setText(next);
+          refreshSlashHints(next, e.target.selectionStart);
+        }}
+        onFocus={(e) =>
+          refreshSlashHints(e.currentTarget.value, e.currentTarget.selectionStart)
+        }
+        onSelect={(e) =>
+          refreshSlashHints(e.currentTarget.value, e.currentTarget.selectionStart)
+        }
+        onBlur={closeSlashHints}
+        onKeyDown={onTextareaKeyDown}
+        onPaste={onPaste}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => {
+          addFiles(e.target.files);
+          // Reset value so picking the same file again still fires onChange.
+          e.target.value = "";
+        }}
+      />
+      <div className="composer-controls">
+        {gitIsRepo && gitBranch ? (
+          <div
+            className={`branch-menu${branchMenuOpen ? " open" : ""}`}
+            ref={branchMenuOpen ? branchMenuRef : undefined}
+          >
+            <button
+              type="button"
+              className="branch-button"
+              aria-haspopup="listbox"
+              aria-expanded={branchMenuOpen}
+              title="Switch branch"
+              onClick={() => setBranchMenuOpen((v) => !v)}
+            >
+              branch: {gitBranch}
+            </button>
+            {branchMenuOpen && (
+              <div className="branch-menu-popover" role="listbox">
+                {branchList === null && (
+                  <div className="branch-menu-empty">Loading…</div>
+                )}
+                {branchList !== null && branchList.length === 0 && (
+                  <div className="branch-menu-empty">
+                    {branchLoadError || "No branches"}
+                  </div>
+                )}
+                {branchList !== null &&
+                  branchList.map((b) => {
+                    const isCurrent = b === gitBranch;
+                    const isSwitching = switchingBranch === b;
+                    return (
+                      <button
+                        key={b}
+                        type="button"
+                        role="option"
+                        aria-selected={isCurrent}
+                        className={`branch-menu-item${isCurrent ? " current" : ""}`}
+                        disabled={
+                          isCurrent || switchingBranch !== null
+                        }
+                        onClick={() => handleSwitchBranch(b)}
+                      >
+                        <span className="branch-menu-mark">
+                          {isCurrent ? "•" : isSwitching ? "…" : ""}
+                        </span>
+                        <span className="branch-menu-name">{b}</span>
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <span className="hint">
+            {sessionId
+              ? `session: ${sessionId.slice(0, 8)}…`
+              : "session: detecting…"}
+          </span>
+        )}
+        <div className="composer-buttons">
+          <div
+            className={`keys-menu${keysMenuOpen ? " open" : ""}`}
+            ref={keysMenuOpen ? keysMenuRef : undefined}
+          >
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Keys and commands"
+              aria-expanded={keysMenuOpen}
+              title="Keys and commands"
+              onClick={() => setKeysMenuOpen((v) => !v)}
+            >
+              <Keyboard size={ICON} />
+            </button>
+            {keysMenuOpen && (
+              <div className="keys-menu-popover">
+                <div className="keys-menu-section">
+                  <div className="keys-menu-label">Keys</div>
+                  <div className="keys-menu-grid">
+                    {KEY_BUTTONS.map((kb) => (
+                      <button
+                        key={kb.key}
+                        onClick={() => {
+                          onKey(kb.key);
+                          setKeysMenuOpen(false);
+                        }}
+                        title={kb.key}
+                      >
+                        {kb.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="keys-menu-section">
+                  <div className="keys-menu-label">Agent commands</div>
+                  <div className="keys-menu-grid">
+                    {agentSlashCommands.map((hint) => (
+                      <button
+                        key={hint.command}
+                        onClick={() => {
+                          onCommand(hint.command);
+                          setKeysMenuOpen(false);
+                        }}
+                        title={hint.description}
+                      >
+                        {hint.command}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="keys-menu-section">
+                  <div className="keys-menu-label">Bot commands</div>
+                  <div className="keys-menu-grid">
+                    {BOT_QUICK_COMMANDS.map((cmd) => (
+                      <button
+                        key={cmd}
+                        onClick={() => {
+                          void onBotCommand(cmd);
+                          setKeysMenuOpen(false);
+                        }}
+                        title={BOT_COMMANDS[cmd] || cmd}
+                      >
+                        {cmd}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Attach image"
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach image"
+          >
+            <Paperclip size={ICON} />
+          </button>
+          <button
+            className="primary send-button"
+            disabled={sending || (!text.trim() && attachments.length === 0)}
+            onClick={() => void submit(text)}
+            title="Send"
+            aria-label="Send"
+          >
+            <SendHorizontal size={ICON} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export function ChatView({
   session,
   subscribeWs,
@@ -974,14 +1641,10 @@ export function ChatView({
   // yet" briefly between selecting a session and the history landing.
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyLoadRevision, setHistoryLoadRevision] = useState(0);
-  const [text, setText] = useState("");
-  const [slashRange, setSlashRange] = useState<SlashTokenRange | null>(null);
-  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
   const [choiceSendingKey, setChoiceSendingKey] = useState<string | null>(null);
   const [choicePageByKey, setChoicePageByKey] = useState<
     Record<string, ChoicePageState>
   >({});
-  const [sending, setSending] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(session.name);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
@@ -991,18 +1654,9 @@ export function ChatView({
     currentIndex: number;
   } | null>(null);
   const [interactiveSending, setInteractiveSending] = useState(false);
-  const [attachments, setAttachments] = useState<
-    Array<{ id: string; file: File; previewUrl: string }>
-  >([]);
-  const [dragOver, setDragOver] = useState(false);
-  const [keysMenuOpen, setKeysMenuOpen] = useState(false);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitIsRepo, setGitIsRepo] = useState(false);
-  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
-  const [branchList, setBranchList] = useState<string[] | null>(null);
-  const [branchLoadError, setBranchLoadError] = useState<string | null>(null);
-  const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
   const [searchHighlightKey, setSearchHighlightKey] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const messagesListRef = useRef<HTMLDivElement | null>(null);
@@ -1085,26 +1739,14 @@ export function ChatView({
       }
     }
   }, []);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const slashHintRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const keysMenuRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<ComposerHandle | null>(null);
   const chatMenuRef = useRef<HTMLDivElement | null>(null);
-  const branchMenuRef = useRef<HTMLDivElement | null>(null);
   const handledSearchTargetRef = useRef<string | null>(null);
   const searchHighlightTimerRef = useRef<number | null>(null);
   const sessionIdRef = useRef<string | null>(session.session_id);
   const windowIdRef = useRef(session.window_id);
   const historyCacheRef = useRef<Map<string, HistoryCacheEntry>>(new Map());
   const historyLoadedWindowRef = useRef<string | null>(null);
-  // Per-session draft cache. Switching sessions stashes the current
-  // composer text under the previous window_id and restores any draft for
-  // the new one, so each topic keeps its own pending message.
-  const draftsRef = useRef<Record<string, string>>({});
-  const textRef = useRef(text);
-  useEffect(() => {
-    textRef.current = text;
-  }, [text]);
   useEffect(() => {
     hasMoreRef.current = hasMore;
   }, [hasMore]);
@@ -1165,28 +1807,6 @@ export function ChatView({
     setChoiceSendingKey(null);
   }, [session.window_id]);
 
-  const slashHints = useMemo(() => {
-    if (!slashRange) return [];
-    if (slashRange.trigger === "$") {
-      if (session.runtime !== "codex") return [];
-      const prefix = `$${slashRange.query}`;
-      return agentSkillHints
-        .map((hint) => ({
-          command: hint.invocation,
-          description: hint.description,
-        }))
-        .filter((hint) => hint.command.toLowerCase().startsWith(prefix));
-    }
-    const prefix = `/${slashRange.query}`;
-    return agentSlashCommands.filter((hint) =>
-      hint.command.toLowerCase().startsWith(prefix),
-    );
-  }, [agentSkillHints, agentSlashCommands, session.runtime, slashRange]);
-  const showSlashHints = slashRange !== null && slashHints.length > 0;
-  const composerHintLabel =
-    slashRange?.trigger === "$"
-      ? "Codex skills"
-      : `${session.runtime === "claude" ? "Claude" : "Codex"} commands`;
   const activeChoiceMessageKey = useMemo(
     () => latestActiveChoiceMessageKey(messages),
     [messages],
@@ -1245,68 +1865,10 @@ export function ChatView({
   }, [activeChoiceMessageKey, activeChoiceProgress, activeChoicePrompt]);
 
   useEffect(() => {
-    setSlashActiveIndex((idx) =>
-      slashHints.length === 0 ? 0 : Math.min(idx, slashHints.length - 1),
-    );
-  }, [slashHints.length]);
-
-  // Keep the active hint visible when navigating with arrow keys. The
-  // hints container scrolls, but neither setSlashActiveIndex nor the
-  // browser scrolls the focused item into view on its own (the
-  // textarea retains keyboard focus the whole time).
-  useEffect(() => {
-    if (!showSlashHints) return;
-    slashHintRefs.current[slashActiveIndex]?.scrollIntoView({
-      block: "nearest",
-    });
-  }, [slashActiveIndex, showSlashHints]);
-
-  useEffect(() => {
     if (choiceSendingKey && choiceSendingKey !== activeChoiceMessageKey) {
       setChoiceSendingKey(null);
     }
   }, [activeChoiceMessageKey, choiceSendingKey]);
-
-  const refreshSlashHints = useCallback(
-    (value: string, selectionStart: number | null | undefined) => {
-      const nextRange = slashTokenRange(value, selectionStart);
-      setSlashRange(nextRange);
-      setSlashActiveIndex(0);
-    },
-    [],
-  );
-
-  const closeSlashHints = useCallback(() => {
-    setSlashRange(null);
-    setSlashActiveIndex(0);
-  }, []);
-
-  const insertSlashHint = useCallback(
-    (hint: SlashCommandHint) => {
-      const currentText = textRef.current;
-      const el = textareaRef.current;
-      const currentRange =
-        slashRange ?? slashTokenRange(currentText, el?.selectionStart);
-      if (!currentRange) return;
-
-      const inserted = `${hint.command} `;
-      const nextText =
-        currentText.slice(0, currentRange.start) +
-        inserted +
-        currentText.slice(currentRange.end);
-      const nextCaret = currentRange.start + inserted.length;
-      textRef.current = nextText;
-      setText(nextText);
-      closeSlashHints();
-      requestAnimationFrame(() => {
-        const textarea = textareaRef.current;
-        if (!textarea) return;
-        textarea.focus();
-        textarea.setSelectionRange(nextCaret, nextCaret);
-      });
-    },
-    [closeSlashHints, slashRange],
-  );
 
   const storeHistoryCache = useCallback(
     (
@@ -1422,15 +1984,8 @@ export function ChatView({
   ]);
 
   useEffect(() => {
-    const previousWid = windowIdRef.current;
-    const isRealSwitch = previousWid && previousWid !== session.window_id;
-    if (isRealSwitch) {
-      draftsRef.current[previousWid] = textRef.current;
-    }
     windowIdRef.current = session.window_id;
     sessionIdRef.current = session.session_id;
-    const restored = draftsRef.current[session.window_id] ?? "";
-    setText(restored);
     setNameDraft(session.name);
     setEditingName(false);
     setAwaitingResponse(false);
@@ -1438,33 +1993,7 @@ export function ChatView({
     setInteractiveSending(false);
     setChoiceSendingKey(null);
     setSearchHighlightKey(null);
-    closeSlashHints();
-    setAttachments((prev) => {
-      for (const a of prev) URL.revokeObjectURL(a.previewUrl);
-      return [];
-    });
-    // Focus the composer after the new draft is rendered. Mobile browsers
-    // ignore programmatic focus for keyboard summoning, so this only puts
-    // a caret on desktop — exactly what we want. Defer with a microtask so
-    // the textarea's `value` is the new draft when we move the caret.
-    queueMicrotask(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      const pos = restored.length;
-      el.setSelectionRange(pos, pos);
-    });
-  }, [closeSlashHints, session.window_id, session.session_id, session.name]);
-
-  // Revoke any preview blobs we still hold when the chat view unmounts.
-  useEffect(() => {
-    return () => {
-      setAttachments((prev) => {
-        for (const a of prev) URL.revokeObjectURL(a.previewUrl);
-        return [];
-      });
-    };
-  }, []);
+  }, [session.window_id, session.session_id, session.name]);
 
   useEffect(() => {
     return () => {
@@ -1474,31 +2003,6 @@ export function ChatView({
     };
   }, []);
 
-
-  const addFiles = useCallback((files: FileList | File[] | null) => {
-    if (!files) return;
-    const incoming = Array.from(files).filter((f) => f.type.startsWith("image/"));
-    if (incoming.length === 0) return;
-    setAttachments((prev) => [
-      ...prev,
-      ...incoming.map((file) => ({
-        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`,
-        file,
-        previewUrl: URL.createObjectURL(file),
-      })),
-    ]);
-  }, []);
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments((prev) => {
-      const next: typeof prev = [];
-      for (const a of prev) {
-        if (a.id === id) URL.revokeObjectURL(a.previewUrl);
-        else next.push(a);
-      }
-      return next;
-    });
-  }, []);
 
   const loadHistory = useCallback(() => {
     let cancelled = false;
@@ -1968,24 +2472,6 @@ export function ChatView({
   }, [session.window_id]);
 
 
-  // Close the keys/commands popover on outside click or Escape.
-  useEffect(() => {
-    if (!keysMenuOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      const el = keysMenuRef.current;
-      if (el && !el.contains(e.target as Node)) setKeysMenuOpen(false);
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setKeysMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [keysMenuOpen]);
-
   useEffect(() => {
     if (!chatMenuOpen) return;
     const onDocClick = (e: MouseEvent) => {
@@ -2003,83 +2489,32 @@ export function ChatView({
     };
   }, [chatMenuOpen]);
 
-  // Close branch popover on outside click or Escape, mirroring the keys menu.
-  useEffect(() => {
-    if (!branchMenuOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      const el = branchMenuRef.current;
-      if (el && !el.contains(e.target as Node)) setBranchMenuOpen(false);
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setBranchMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [branchMenuOpen]);
-
-  // Lazy-load the branch list when the popover opens. Refetch each time so
-  // stale entries (deleted/renamed branches) don't linger.
-  useEffect(() => {
-    if (!branchMenuOpen) return;
-    const windowId = session.window_id;
-    let cancelled = false;
-    setBranchList(null);
-    setBranchLoadError(null);
-    api
-      .listBranches(windowId)
-      .then((r) => {
-        if (cancelled || windowIdRef.current !== windowId) return;
-        if (!r.is_repo) {
-          setBranchList([]);
-          setBranchLoadError("not a git repo");
-          return;
-        }
-        setBranchList(r.branches);
-      })
-      .catch((err: Error) => {
-        if (cancelled) return;
-        setBranchList([]);
-        setBranchLoadError(err.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [branchMenuOpen, session.window_id]);
-
   const handleSwitchBranch = useCallback(
     async (branch: string) => {
-      if (branch === gitBranch) {
-        setBranchMenuOpen(false);
-        return;
-      }
-      setSwitchingBranch(branch);
       try {
         await api.switchBranch(session.window_id, branch);
         setGitBranch(branch);
-        setBranchMenuOpen(false);
         showToast(`Switched to ${branch}`);
-        // Pull a fresh branch right away in case any post-switch hook
-        // moved HEAD again (rare but harmless to re-check).
-        try {
-          const r = await api.getGitInfo(session.window_id);
+      } catch (err) {
+        showToast((err as Error).message, "error");
+        throw err;
+      }
+      // Pull a fresh branch right away in case any post-switch hook
+      // moved HEAD again (rare but harmless to re-check). Fire-and-forget
+      // so the composer can close its popover without waiting.
+      void api
+        .getGitInfo(session.window_id)
+        .then((r) => {
           if (windowIdRef.current === session.window_id) {
             setGitIsRepo(r.is_repo);
             setGitBranch(r.branch);
           }
-        } catch {
+        })
+        .catch(() => {
           /* ignore — the periodic poll will catch up */
-        }
-      } catch (err) {
-        showToast((err as Error).message, "error");
-      } finally {
-        setSwitchingBranch(null);
-      }
+        });
     },
-    [gitBranch, session.window_id, showToast],
+    [session.window_id, showToast],
   );
 
   const handleBotCommand = useCallback(
@@ -2177,34 +2612,16 @@ export function ChatView({
     [session.window_id, showToast],
   );
 
-  const send = useCallback(
-    async (payload: string) => {
-      const caption = payload.trimEnd();
-      const hasAttachments = attachments.length > 0;
-      if (!caption && !hasAttachments) return;
-      closeSlashHints();
-
-      // Slash-commands run only when there are no attachments — otherwise the
-      // user clearly meant to upload, not invoke a bot command.
-      if (!hasAttachments) {
-        const cmd = parseSlashCommand(caption);
-        if (cmd && cmd in BOT_COMMANDS) {
-          const handled = await handleBotCommand(cmd);
-          if (handled) {
-            setText("");
-            textareaRef.current?.focus();
-            return;
-          }
-        }
-      }
-
-      setSending(true);
-      const pendingAttachments = attachments;
+  // Composer submit: optimistic bubble + upload + send. Throws on failure so
+  // the composer can restore the draft; the toast is shown here.
+  const submitMessage = useCallback(
+    async (caption: string, files: File[]) => {
+      const hasAttachments = files.length > 0;
       // Reserve a stable optimistic text so we can find/remove the echo on
       // failure — actual paths are appended once uploads succeed.
       const optimisticText = hasAttachments
-        ? `${caption ? caption + "\n\n" : ""}(uploading ${pendingAttachments.length} image${
-            pendingAttachments.length === 1 ? "" : "s"
+        ? `${caption ? caption + "\n\n" : ""}(uploading ${files.length} image${
+            files.length === 1 ? "" : "s"
           }…)`
         : caption;
       setMessages((prev) => {
@@ -2230,14 +2647,10 @@ export function ChatView({
       scheduleBottomSnap();
       setAwaitingResponse(true);
 
-      // Clear composer immediately so sending feels instant. Restored on error.
-      setText("");
-      setAttachments([]);
-
       try {
         const paths: string[] = [];
-        for (const att of pendingAttachments) {
-          const r = await api.uploadImage(session.window_id, att.file);
+        for (const file of files) {
+          const r = await api.uploadImage(session.window_id, file);
           paths.push(r.path);
         }
         const lines: string[] = [];
@@ -2263,8 +2676,6 @@ export function ChatView({
           });
           return next;
         });
-
-        for (const a of pendingAttachments) URL.revokeObjectURL(a.previewUrl);
 
         // Safety net: some inputs never echo back as a matching transcript
         // user message — notably agent slash-commands like `/plan` on Codex,
@@ -2303,22 +2714,15 @@ export function ChatView({
           });
           return next;
         });
-        setText((cur) => (cur ? cur : payload));
-        setAttachments((cur) => [...pendingAttachments, ...cur]);
         setAwaitingResponse(false);
         showToast((err as Error).message, "error");
-      } finally {
-        setSending(false);
-        textareaRef.current?.focus();
+        throw err;
       }
     },
     [
       session.window_id,
       showToast,
-      handleBotCommand,
-      attachments,
       storeHistoryCache,
-      closeSlashHints,
       scheduleBottomSnap,
     ],
   );
@@ -2344,72 +2748,6 @@ export function ChatView({
     },
     [session.window_id, showToast],
   );
-
-  const onTextareaKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showSlashHints) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashActiveIndex((idx) => (idx + 1) % slashHints.length);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashActiveIndex(
-          (idx) => (idx - 1 + slashHints.length) % slashHints.length,
-        );
-        return;
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        insertSlashHint(slashHints[slashActiveIndex]);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeSlashHints();
-        return;
-      }
-    }
-
-    if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-      e.preventDefault();
-      send(text);
-    }
-  };
-
-  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    const files: File[] = [];
-    for (const item of Array.from(items)) {
-      if (item.kind === "file") {
-        const f = item.getAsFile();
-        if (f && f.type.startsWith("image/")) files.push(f);
-      }
-    }
-    if (files.length > 0) {
-      e.preventDefault();
-      addFiles(files);
-    }
-  };
-
-  const onDragOver = (e: DragEvent<HTMLDivElement>) => {
-    if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files"))
-      return;
-    e.preventDefault();
-    setDragOver(true);
-  };
-
-  const onDragLeave = (e: DragEvent<HTMLDivElement>) => {
-    // Only clear when leaving the composer itself, not bubbling out of a child.
-    if (e.currentTarget === e.target) setDragOver(false);
-  };
-
-  const onDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragOver(false);
-    addFiles(e.dataTransfer?.files ?? null);
-  };
 
   const commitRename = async () => {
     const next = nameDraft.trim();
@@ -2644,13 +2982,6 @@ export function ChatView({
               const isLast =
                 index === displayMessages.length - 1 &&
                 !activeChoiceMessage;
-              const choicePrompt = choicePromptForMessage(m) ?? undefined;
-              const choiceKey = choicePrompt ? promptMessageKey(m) : null;
-              const isActiveChoice = choiceKey === activeChoiceMessageKey;
-              const choicePage =
-                choicePrompt && choiceKey
-                  ? choicePromptPage(choicePrompt, choicePageByKey[choiceKey])
-                  : undefined;
               const searchKey = messageSearchKey(m);
               const isSearchHit =
                 searchKey !== null && searchKey === searchHighlightKey;
@@ -2659,6 +2990,11 @@ export function ChatView({
                 (isFirst ? " messages-row-first" : "") +
                 (isLast ? " messages-row-last" : "") +
                 (isSearchHit ? " search-hit" : "");
+              // The active choice prompt is rendered separately below the
+              // list, so in-list bubbles never show a choice panel — pass no
+              // choice props (and no inline closures) to keep the memo()
+              // shallow-compare effective: on a keystroke or a new message
+              // only rows whose props actually changed re-render.
               return (
                 <div
                   key={m._clientId}
@@ -2672,20 +3008,6 @@ export function ChatView({
                   <MessageBubble
                     m={m}
                     displayText={selectionTextByMessageId.get(m._clientId)}
-                    choicePrompt={isActiveChoice ? choicePrompt : undefined}
-                    choicePage={isActiveChoice ? choicePage : undefined}
-                    choicePending={choiceKey === choiceSendingKey}
-                    choiceDisabled={
-                      choiceSendingKey !== null && choiceKey !== choiceSendingKey
-                    }
-                    onChoicePageChange={(page) => {
-                      if (choicePage) handleChoicePageChange(m, choicePage, page);
-                    }}
-                    onSelectChoice={(option) => {
-                      if (choicePrompt && choicePage) {
-                        handleChoiceSelect(m, choicePrompt, choicePage, option);
-                      }
-                    }}
                   />
                 </div>
               );
@@ -2818,260 +3140,28 @@ export function ChatView({
         </div>
       )}
 
-      <div
-        className={`composer${dragOver ? " drag-over" : ""}`}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-      >
-        {attachments.length > 0 && (
-          <div className="attachments-row">
-            {attachments.map((a) => (
-              <div key={a.id} className="attachment-chip" title={a.file.name}>
-                <img src={a.previewUrl} alt={a.file.name} />
-                <button
-                  type="button"
-                  className="attachment-remove"
-                  aria-label={`Remove ${a.file.name}`}
-                  onClick={() => removeAttachment(a.id)}
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {showSlashHints && (
-          <div
-            id="slash-command-hints"
-            className="slash-hints"
-            role="listbox"
-            aria-label={composerHintLabel}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            <div className="slash-hints-label">{composerHintLabel}</div>
-            {slashHints.map((hint, index) => (
-              <button
-                key={hint.command}
-                ref={(el) => {
-                  slashHintRefs.current[index] = el;
-                }}
-                type="button"
-                role="option"
-                aria-selected={index === slashActiveIndex}
-                className={
-                  "slash-hint-item" +
-                  (index === slashActiveIndex ? " active" : "")
-                }
-                onMouseEnter={() => setSlashActiveIndex(index)}
-                onClick={() => insertSlashHint(hint)}
-              >
-                <span className="slash-hint-command">{hint.command}</span>
-                <span className="slash-hint-description">
-                  {hint.description}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-        <textarea
-          ref={textareaRef}
-          value={text}
-          placeholder="Send a message — Enter to send, Shift+Enter for newline. Paste or drop images to attach."
-          name="chat-message"
-          autoComplete="off"
-          data-1p-ignore="true"
-          data-lpignore="true"
-          data-bwignore="true"
-          aria-controls={showSlashHints ? "slash-command-hints" : undefined}
-          aria-expanded={showSlashHints}
-          aria-autocomplete="list"
-          onChange={(e) => {
-            const next = e.target.value;
-            setText(next);
-            refreshSlashHints(next, e.target.selectionStart);
-          }}
-          onFocus={(e) =>
-            refreshSlashHints(e.currentTarget.value, e.currentTarget.selectionStart)
-          }
-          onSelect={(e) =>
-            refreshSlashHints(e.currentTarget.value, e.currentTarget.selectionStart)
-          }
-          onBlur={closeSlashHints}
-          onKeyDown={onTextareaKeyDown}
-          onPaste={onPaste}
-        />
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          style={{ display: "none" }}
-          onChange={(e) => {
-            addFiles(e.target.files);
-            // Reset value so picking the same file again still fires onChange.
-            e.target.value = "";
-          }}
-        />
-        <div className="composer-controls">
-          {gitIsRepo && gitBranch ? (
-            <div
-              className={`branch-menu${branchMenuOpen ? " open" : ""}`}
-              ref={branchMenuOpen ? branchMenuRef : undefined}
-            >
-              <button
-                type="button"
-                className="branch-button"
-                aria-haspopup="listbox"
-                aria-expanded={branchMenuOpen}
-                title="Switch branch"
-                onClick={() => setBranchMenuOpen((v) => !v)}
-              >
-                branch: {gitBranch}
-              </button>
-              {branchMenuOpen && (
-                <div className="branch-menu-popover" role="listbox">
-                  {branchList === null && (
-                    <div className="branch-menu-empty">Loading…</div>
-                  )}
-                  {branchList !== null && branchList.length === 0 && (
-                    <div className="branch-menu-empty">
-                      {branchLoadError || "No branches"}
-                    </div>
-                  )}
-                  {branchList !== null &&
-                    branchList.map((b) => {
-                      const isCurrent = b === gitBranch;
-                      const isSwitching = switchingBranch === b;
-                      return (
-                        <button
-                          key={b}
-                          type="button"
-                          role="option"
-                          aria-selected={isCurrent}
-                          className={`branch-menu-item${isCurrent ? " current" : ""}`}
-                          disabled={
-                            isCurrent || switchingBranch !== null
-                          }
-                          onClick={() => handleSwitchBranch(b)}
-                        >
-                          <span className="branch-menu-mark">
-                            {isCurrent ? "•" : isSwitching ? "…" : ""}
-                          </span>
-                          <span className="branch-menu-name">{b}</span>
-                        </button>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
-          ) : (
-            <span className="hint">
-              {session.session_id
-                ? `session: ${session.session_id.slice(0, 8)}…`
-                : "session: detecting…"}
-            </span>
-          )}
-          <div className="composer-buttons">
-            <div
-              className={`keys-menu${keysMenuOpen ? " open" : ""}`}
-              ref={keysMenuOpen ? keysMenuRef : undefined}
-            >
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Keys and commands"
-                aria-expanded={keysMenuOpen}
-                title="Keys and commands"
-                onClick={() => setKeysMenuOpen((v) => !v)}
-              >
-                <Keyboard size={ICON} />
-              </button>
-              {keysMenuOpen && (
-                <div className="keys-menu-popover">
-                  <div className="keys-menu-section">
-                    <div className="keys-menu-label">Keys</div>
-                    <div className="keys-menu-grid">
-                      {KEY_BUTTONS.map((kb) => (
-                        <button
-                          key={kb.key}
-                          onClick={() => {
-                            onKey(kb.key);
-                            setKeysMenuOpen(false);
-                          }}
-                          title={kb.key}
-                        >
-                          {kb.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="keys-menu-section">
-                    <div className="keys-menu-label">Agent commands</div>
-                    <div className="keys-menu-grid">
-                      {agentSlashCommands.map((hint) => (
-                        <button
-                          key={hint.command}
-                          onClick={() => {
-                            onCommand(hint.command);
-                            setKeysMenuOpen(false);
-                          }}
-                          title={hint.description}
-                        >
-                          {hint.command}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="keys-menu-section">
-                    <div className="keys-menu-label">Bot commands</div>
-                    <div className="keys-menu-grid">
-                      {BOT_QUICK_COMMANDS.map((cmd) => (
-                        <button
-                          key={cmd}
-                          onClick={() => {
-                            handleBotCommand(cmd);
-                            setKeysMenuOpen(false);
-                          }}
-                          title={BOT_COMMANDS[cmd] || cmd}
-                        >
-                          {cmd}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Attach image"
-              onClick={() => fileInputRef.current?.click()}
-              title="Attach image"
-            >
-              <Paperclip size={ICON} />
-            </button>
-            <button
-              className="primary send-button"
-              disabled={sending || (!text.trim() && attachments.length === 0)}
-              onClick={() => send(text)}
-              title="Send"
-              aria-label="Send"
-            >
-              <SendHorizontal size={ICON} />
-            </button>
-          </div>
-        </div>
-      </div>
+      <Composer
+        ref={composerRef}
+        windowId={session.window_id}
+        runtime={session.runtime}
+        sessionId={session.session_id}
+        gitBranch={gitBranch}
+        gitIsRepo={gitIsRepo}
+        agentSlashCommands={agentSlashCommands}
+        agentSkillHints={agentSkillHints}
+        onSubmit={submitMessage}
+        onBotCommand={handleBotCommand}
+        onSwitchBranch={handleSwitchBranch}
+        onKey={onKey}
+        onCommand={onCommand}
+      />
       {showSkills && (
         <SkillsModal
           runtime={session.runtime}
           onClose={() => setShowSkills(false)}
           onPick={(prefix) => {
-            setText((prev) => (prev ? `${prev} ${prefix}` : prefix));
+            composerRef.current?.insertText(prefix);
             setShowSkills(false);
-            textareaRef.current?.focus();
           }}
         />
       )}
