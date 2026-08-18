@@ -573,6 +573,108 @@ class TestRefreshWindowSession:
         )
 
     @pytest.mark.asyncio
+    async def test_claude_rebinds_when_pane_switched_but_old_transcript_exists(
+        self,
+        mgr: SessionManager,
+        tmp_path,
+    ) -> None:
+        # Regression: /clear, /model and /resume mint a NEW session id in the
+        # same pane, but Claude Code keeps the OLD transcript file on disk. The
+        # stale binding must not survive just because its transcript still
+        # exists — verify against the live pane pid and rebind.
+        stale_transcript = tmp_path / "stale-claude-session.jsonl"
+        stale_transcript.write_text("{}", encoding="utf-8")
+
+        ws = mgr.get_window_state("@1")
+        ws.session_id = "stale-claude-session"
+        ws.cwd = "/tmp"
+        ws.window_name = "codexbot"
+        ws.runtime = "claude"
+
+        mock_runtime = MagicMock()
+        mock_runtime.discover_session_id = AsyncMock(
+            return_value="fresh-claude-session"
+        )
+
+        with (
+            patch.object(mgr, "_refresh_sessions_index", new=AsyncMock()),
+            patch("codexbot.session.get_runtime", return_value=mock_runtime),
+            patch(
+                "codexbot.session.tmux_manager.find_window_by_id",
+                new=AsyncMock(
+                    return_value=type(
+                        "Window",
+                        (),
+                        {
+                            "window_id": "@1",
+                            "window_name": "codexbot",
+                            "cwd": "/tmp",
+                            "pane_current_command": "claude",
+                        },
+                    )()
+                ),
+            ),
+            patch(
+                "codexbot.session.tmux_manager.get_pane_pid",
+                new=AsyncMock(return_value=1234),
+            ),
+        ):
+            mgr._session_index = {"stale-claude-session": stale_transcript}
+            resolved = await mgr.refresh_window_session_if_stale("@1")
+
+        assert resolved == "fresh-claude-session"
+        assert mgr.get_window_state("@1").session_id == "fresh-claude-session"
+        mock_runtime.discover_session_id.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_claude_keeps_binding_within_probe_throttle(
+        self,
+        mgr: SessionManager,
+        tmp_path,
+    ) -> None:
+        # Between probes the live-pane check is throttled: an existing transcript
+        # short-circuits to the stored binding without shelling out to `ps`.
+        transcript = tmp_path / "bound-session.jsonl"
+        transcript.write_text("{}", encoding="utf-8")
+
+        ws = mgr.get_window_state("@1")
+        ws.session_id = "bound-session"
+        ws.cwd = "/tmp"
+        ws.window_name = "codexbot"
+        ws.runtime = "claude"
+
+        mock_runtime = MagicMock()
+        mock_runtime.discover_session_id = AsyncMock(return_value="other-session")
+
+        with (
+            patch.object(mgr, "_refresh_sessions_index", new=AsyncMock()),
+            patch("codexbot.session.get_runtime", return_value=mock_runtime),
+            patch(
+                "codexbot.session.tmux_manager.find_window_by_id",
+                new=AsyncMock(
+                    return_value=type(
+                        "Window",
+                        (),
+                        {
+                            "window_id": "@1",
+                            "window_name": "codexbot",
+                            "cwd": "/tmp",
+                            "pane_current_command": "claude",
+                        },
+                    )()
+                ),
+            ),
+        ):
+            mgr._session_index = {"bound-session": transcript}
+            # Pretend we just probed this window.
+            mgr._status_probe_last_by_window["@1"] = time.monotonic()
+            resolved = await mgr.refresh_window_session_if_stale("@1")
+
+        assert resolved == "bound-session"
+        assert mgr.get_window_state("@1").session_id == "bound-session"
+        mock_runtime.discover_session_id.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_rebinds_when_transcript_missing(
         self,
         mgr: SessionManager,

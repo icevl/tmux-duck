@@ -657,7 +657,19 @@ class SessionManager:
             if transcript and not transcript.exists():
                 transcript = None
             if state.session_id and transcript:
-                return state.session_id
+                # A live transcript file is NOT proof the binding is current:
+                # Claude Code keeps old transcripts on disk after /clear, /model
+                # or /resume, each of which mints a new session id in the SAME
+                # pane. Verify against the live pane process (the authoritative
+                # ~/.claude/sessions/<pid>.json), but throttle so we don't shell
+                # out to `ps` on every poll — fall back to the stored binding
+                # between probes and whenever discovery can't determine an id.
+                now = time.monotonic()
+                min_interval = max(0.0, config.status_probe_min_interval_seconds)
+                last_probe = self._status_probe_last_by_window.get(window_id, 0.0)
+                if now - last_probe < min_interval:
+                    return state.session_id
+                self._status_probe_last_by_window[window_id] = now
 
             runtime = get_runtime("claude")
             pane_pid = await tmux_manager.get_pane_pid(window_id)
