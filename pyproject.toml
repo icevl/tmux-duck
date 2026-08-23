@@ -55,7 +55,10 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0",
-    "ruff>=0.8.0",
+    # <0.16: ruff 0.16 turned on a much wider default rule set (FURB, import
+    # sorting, …) and floods CI with hundreds of new findings. uv.lock is
+    # gitignored, so CI resolves fresh — the ceiling is what actually pins it.
+    "ruff>=0.8.0,<0.16",
 ]
 
 [build-system]
