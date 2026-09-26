@@ -29,6 +29,14 @@ from ..utils import codexbot_dir
 
 logger = logging.getLogger(__name__)
 _SHELL_COMMANDS = {"bash", "fish", "sh", "zsh"}
+# `ps -A` normally returns in milliseconds; under heavy load it can take
+# seconds, and a too-tight limit made every probe look like "no process".
+_PS_TIMEOUT_SECONDS = 5.0
+
+
+class ProcessScanUnavailable(RuntimeError):
+    """`ps` could not be consulted, so the pane's process tree is unknown."""
+
 
 _RE_CLAUDE_VERSION_TITLE = re.compile(r"^\d+\.\d+\.\d+$")
 
@@ -116,40 +124,74 @@ class ClaudeRuntime:
         pane_pid: int | None,
         cwd: str,
         allow_cwd_fallback: bool = True,
+        timeout: float | None = None,
+        advance_startup_prompts: bool = True,
     ) -> str | None:
+        """Resolve the live Claude session id for a pane.
+
+        Retries every `claude_session_detect_interval` until `timeout` (default
+        `claude_session_detect_timeout`) — a fresh window needs a few seconds
+        before Claude writes its sessions file. `timeout=0` makes exactly one
+        attempt, which is all a periodic re-check of an established window
+        needs. `advance_startup_prompts` auto-confirms Claude's first-run
+        prompts between attempts; disable it when the pane is known to be past
+        startup.
+        """
         sessions_dir = self.profile.claude_sessions_path
         if not sessions_dir.exists():
             logger.debug("claude sessions dir does not exist: %s", sessions_dir)
             return None
 
-        deadline = (
-            asyncio.get_running_loop().time() + config.claude_session_detect_timeout
+        wait = (
+            config.claude_session_detect_timeout
+            if timeout is None
+            else max(0.0, timeout)
         )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + wait
         started_at_floor = time.time() - 5.0  # ignore entries written long ago
         last_startup_action_at: dict[str, float] = {}
-        while asyncio.get_running_loop().time() < deadline:
-            await _maybe_advance_startup_prompt(
-                window_id,
-                last_action_at=last_startup_action_at,
-            )
-            sid = await asyncio.to_thread(
-                _read_claude_session_for_pane,
-                pane_pid,
-                cwd,
-                sessions_dir,
-                started_at_floor,
-                allow_cwd_fallback,
-            )
+        scan_unavailable = False
+        while True:
+            if advance_startup_prompts:
+                await _maybe_advance_startup_prompt(
+                    window_id,
+                    last_action_at=last_startup_action_at,
+                )
+            try:
+                sid = await asyncio.to_thread(
+                    _read_claude_session_for_pane,
+                    pane_pid,
+                    cwd,
+                    sessions_dir,
+                    started_at_floor,
+                    allow_cwd_fallback,
+                )
+            except ProcessScanUnavailable:
+                # `ps` didn't answer in time (machine under load). That is
+                # "unknown", not "no session" — never let it look like a
+                # rebind candidate; retry within the deadline if we have one.
+                sid = None
+                scan_unavailable = True
             if sid:
                 return sid
-            await asyncio.sleep(config.claude_session_detect_interval)
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(config.claude_session_detect_interval, remaining))
 
-        logger.warning(
-            "claude session detection timed out for window=%s cwd=%s pane_pid=%s",
-            window_id,
-            cwd,
-            pane_pid,
-        )
+        if wait > 0:
+            logger.warning(
+                "claude session detection timed out for window=%s cwd=%s pane_pid=%s",
+                window_id,
+                cwd,
+                pane_pid,
+            )
+        elif scan_unavailable:
+            logger.debug(
+                "claude session probe skipped (process scan unavailable) window=%s",
+                window_id,
+            )
         return None
 
     def pane_command_matches(self, pane_current_command: str) -> bool:
@@ -257,9 +299,12 @@ def _read_claude_session_for_pane(
     Walks the pane's descendant PIDs and reads
     ``~/.claude/sessions/<pid>.json``; falls back to a cwd-based scan.
     """
-    candidate_pids: list[int] = []
     if pane_pid is not None:
         candidate_pids = _descendant_pids(pane_pid)
+        if candidate_pids is None:
+            if not allow_cwd_fallback:
+                raise ProcessScanUnavailable(pane_pid)
+            candidate_pids = []
         for pid in candidate_pids:
             sid = _read_session_file_for_pid(sessions_dir, pid, cwd)
             if sid:
@@ -324,11 +369,13 @@ def _read_session_file_for_pid(sessions_dir: Path, pid: int, cwd: str) -> str | 
     return None
 
 
-def _descendant_pids(root_pid: int) -> list[int]:
+def _descendant_pids(root_pid: int) -> list[int] | None:
     """Return ``root_pid``'s descendants ordered breadth-first.
 
     Shells out to ``ps`` once and walks the parent/child relations in
-    Python. The list excludes ``root_pid`` itself.
+    Python. The list excludes ``root_pid`` itself. Returns None when ``ps``
+    could not be consulted (timeout under load, exec failure) so callers can
+    tell "unknown" from "no descendants".
     """
     import subprocess
 
@@ -337,10 +384,11 @@ def _descendant_pids(root_pid: int) -> list[int]:
             ["ps", "-A", "-o", "pid=,ppid="],
             text=True,
             stderr=subprocess.DEVNULL,
-            timeout=2.0,
+            timeout=_PS_TIMEOUT_SECONDS,
         )
-    except (subprocess.SubprocessError, OSError):
-        return []
+    except (subprocess.SubprocessError, OSError) as e:
+        logger.debug("ps scan unavailable for pid %s: %s", root_pid, e)
+        return None
 
     children: dict[int, list[int]] = {}
     for line in out.splitlines():

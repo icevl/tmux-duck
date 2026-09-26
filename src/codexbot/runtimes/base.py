@@ -43,11 +43,16 @@ class AgentRuntime(Protocol):
         pane_pid: int | None,
         cwd: str,
         allow_cwd_fallback: bool = True,
+        timeout: float | None = None,
+        advance_startup_prompts: bool = True,
     ) -> str | None:
         """Detect the runtime session id for a freshly created window.
 
         Returns the session id (UUID) or ``None`` if detection failed
-        within the runtime's own timeout. Implementations may inspect
+        within ``timeout`` (``None`` = the runtime's own default; ``0``
+        = a single attempt, for re-checking an established window).
+        ``advance_startup_prompts`` lets the runtime auto-confirm its
+        first-run prompts between attempts. Implementations may inspect
         the pane's process tree, the agent's per-process state files,
         or transcript indices.
         """

@@ -354,6 +354,20 @@ class Config:
             os.getenv("CODEXBOT_MONITOR_NEW_SESSION_TAIL_BYTES", "65536")
         )
 
+        # tmux polling. Every poller (session monitor, pane streaming, status
+        # polling, interactive monitor) shares one cached window list, refreshed
+        # at most once per TTL, and all tmux forks go through a small dedicated
+        # thread pool so they can't starve unrelated blocking work.
+        self.tmux_cache_ttl_seconds = max(
+            0.0, float(os.getenv("CODEXBOT_TMUX_CACHE_TTL_SECONDS", "1.0"))
+        )
+        self.tmux_max_concurrency = max(
+            1, int(os.getenv("CODEXBOT_TMUX_MAX_CONCURRENCY", "4"))
+        )
+        self.tmux_command_timeout_seconds = max(
+            1.0, float(os.getenv("CODEXBOT_TMUX_COMMAND_TIMEOUT_SECONDS", "10"))
+        )
+
         # Display user messages in history and real-time notifications.
         self.show_user_messages = True
 

@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 # Last successful session monitor loop heartbeat (monotonic time).
 _monitor_heartbeat: float = 0.0
 _PARTIAL_JSONL_WARN_RETRY_LIMIT = 3
+# Log once when a window-binding refresh (tmux + ps probes) runs this long.
+_BINDING_REFRESH_WARN_AFTER_SECONDS = 30.0
 
 
 def get_session_monitor_heartbeat_age() -> float | None:
@@ -294,12 +296,12 @@ class SessionMonitor:
 
         from .session import session_manager
 
-        sessions: list[SessionInfo] = []
-        for session_id in active_session_ids:
-            file_path = await session_manager.get_session_file_path(session_id)
-            if file_path:
-                sessions.append(SessionInfo(session_id=session_id, file_path=file_path))
-        return sessions
+        # One index refresh for the whole batch instead of one per session.
+        paths = await session_manager.get_session_file_paths(sorted(active_session_ids))
+        return [
+            SessionInfo(session_id=session_id, file_path=file_path)
+            for session_id, file_path in paths.items()
+        ]
 
     async def _read_new_lines(
         self, session: TrackedSession, file_path: Path
@@ -445,6 +447,16 @@ class SessionMonitor:
                 new_entries = await self._read_new_lines(
                     tracked, session_info.file_path
                 )
+                if self.state.get_session(session_info.session_id) is not tracked:
+                    # The binding refresh (a separate task) untracked this
+                    # session while we were reading — window closed or rebound.
+                    # Don't resurrect it by writing state back.
+                    logger.debug(
+                        "Session %s untracked mid-read; dropping %d entries",
+                        session_info.session_id,
+                        len(new_entries),
+                    )
+                    continue
                 self._file_mtimes[session_info.session_id] = current_mtime
                 self._observe_meta(session_info.session_id, new_entries)
 
@@ -656,24 +668,61 @@ class SessionMonitor:
         self._last_window_sessions = current_map
         return current_map
 
+    async def _refresh_bindings(self) -> dict[str, str]:
+        """Re-resolve window -> session bindings (tmux queries, process probes).
+
+        Runs as its own task so that a slow tmux server or `ps` never delays
+        transcript reads: `_monitor_loop` keeps polling the JSONL files with
+        the last known bindings while a refresh is in flight.
+        """
+        from .session import session_manager
+
+        await session_manager.load_session_map()
+        return await self._detect_and_cleanup_changes()
+
     async def _monitor_loop(self) -> None:
         """Background polling loop."""
         global _monitor_heartbeat
         logger.info("Session monitor started, polling every %ss", self.poll_interval)
 
+        refresh_task: asyncio.Task[dict[str, str]] | None = None
         try:
-            from .session import session_manager
-
             await self._cleanup_all_stale_sessions()
             self._last_window_sessions = await self._load_current_window_sessions()
             bootstrap_cycle = True
+            refresh_started_at = 0.0
+            refresh_warned = False
 
             while self._running:
                 _monitor_heartbeat = time.monotonic()
                 try:
-                    await session_manager.load_session_map()
-                    current_map = await self._detect_and_cleanup_changes()
-                    active_session_ids = set(current_map.values())
+                    if refresh_task is not None and refresh_task.done():
+                        try:
+                            refresh_task.result()
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception as e:
+                            logger.error("Binding refresh error: %s", e)
+                        refresh_task = None
+                    if refresh_task is None:
+                        refresh_task = asyncio.create_task(
+                            self._refresh_bindings(), name="codexbot-monitor-bindings"
+                        )
+                        refresh_started_at = time.monotonic()
+                        refresh_warned = False
+                    elif (
+                        not refresh_warned
+                        and time.monotonic() - refresh_started_at
+                        > _BINDING_REFRESH_WARN_AFTER_SECONDS
+                    ):
+                        refresh_warned = True
+                        logger.warning(
+                            "Window binding refresh has been running for %.0fs; "
+                            "reading transcripts with the last known bindings",
+                            time.monotonic() - refresh_started_at,
+                        )
+
+                    active_session_ids = set(self._last_window_sessions.values())
                     new_messages = await self.check_for_updates(
                         active_session_ids,
                         bootstrap=bootstrap_cycle,
@@ -710,6 +759,9 @@ class SessionMonitor:
         except asyncio.CancelledError:
             logger.info("Session monitor cancelled")
             raise
+        finally:
+            if refresh_task is not None and not refresh_task.done():
+                refresh_task.cancel()
 
     def start(self) -> None:
         if self._running:

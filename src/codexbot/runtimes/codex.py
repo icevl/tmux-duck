@@ -83,6 +83,8 @@ class CodexRuntime:
         pane_pid: int | None,
         cwd: str,
         allow_cwd_fallback: bool = True,
+        timeout: float | None = None,
+        advance_startup_prompts: bool = True,
     ) -> str | None:
         # Codex session detection happens via SessionManager's transcript
         # scanning machinery (`wait_for_session_map_entry`), not through

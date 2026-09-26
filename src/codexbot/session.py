@@ -14,7 +14,7 @@ import re
 import shutil
 import time
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -703,7 +703,8 @@ class SessionManager:
             )
             if transcript and not transcript.exists():
                 transcript = None
-            if state.session_id and transcript:
+            verifying_live_binding = bool(state.session_id and transcript)
+            if verifying_live_binding:
                 # A live transcript file is NOT proof the binding is current:
                 # Claude Code keeps old transcripts on disk after /clear, /model
                 # or /resume, each of which mints a new session id in the SAME
@@ -720,12 +721,29 @@ class SessionManager:
 
             runtime = get_runtime("claude", state.profile)
             pane_pid = await tmux_manager.get_pane_pid(window_id)
-            fresh_sid = await runtime.discover_session_id(
-                window_id=window_id,
-                pane_pid=pane_pid,
-                cwd=state.cwd,
-                allow_cwd_fallback=False,
-            )
+            if verifying_live_binding:
+                # Single-shot check of an established window. The full
+                # detection loop (retries for up to 15s, startup-prompt
+                # auto-advance) exists for windows whose Claude is still
+                # booting; running it for every long-lived window each poll
+                # blocked the session monitor for minutes whenever `ps` or
+                # tmux got slow, and a missed probe just keeps the binding.
+                fresh_sid = await runtime.discover_session_id(
+                    window_id=window_id,
+                    pane_pid=pane_pid,
+                    cwd=state.cwd,
+                    allow_cwd_fallback=False,
+                    timeout=0.0,
+                    advance_startup_prompts=False,
+                )
+            else:
+                fresh_sid = await runtime.discover_session_id(
+                    window_id=window_id,
+                    pane_pid=pane_pid,
+                    cwd=state.cwd,
+                    allow_cwd_fallback=False,
+                )
+            rebound = False
             if fresh_sid and fresh_sid != state.session_id:
                 old_sid = state.session_id
                 state.session_id = fresh_sid
@@ -736,13 +754,18 @@ class SessionManager:
                     old_sid,
                     fresh_sid,
                 )
+                rebound = True
                 await self.schedule_hint_discovery(window_id)
             elif fresh_sid and not state.session_id:
                 state.session_id = fresh_sid
                 self._save_state()
+                rebound = True
                 await self.schedule_hint_discovery(window_id)
 
-            if state.session_id and state.cwd:
+            if rebound and state.cwd:
+                # Make the new transcript path visible to the monitor at once.
+                # (Unconditionally forcing this rescanned the sessions tree once
+                # per window per poll.)
                 await self._refresh_sessions_index(force=True)
             return state.session_id or None
 
@@ -966,11 +989,24 @@ class SessionManager:
 
     async def get_session_file_path(self, session_id: str) -> Path | None:
         """Return transcript file path for a session id, if known."""
+        paths = await self.get_session_file_paths((session_id,))
+        return paths.get(session_id)
+
+    async def get_session_file_paths(
+        self, session_ids: Iterable[str]
+    ) -> dict[str, Path]:
+        """Resolve several session ids to existing transcript paths.
+
+        Rescans the sessions index once for the whole batch (the monitor asks
+        for every active session each poll).
+        """
         await self._refresh_sessions_index(force=True)
-        file_path = self._session_index.get(session_id)
-        if file_path and file_path.exists():
-            return file_path
-        return None
+        resolved: dict[str, Path] = {}
+        for session_id in session_ids:
+            file_path = self._session_index.get(session_id)
+            if file_path and file_path.exists():
+                resolved[session_id] = file_path
+        return resolved
 
     async def wait_for_session_map_entry(
         self, window_id: str, timeout: float = 5.0, interval: float = 0.5
