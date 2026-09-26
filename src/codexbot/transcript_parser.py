@@ -52,6 +52,11 @@ class ParsedEntry:
     )
     transcript_offset: int | None = None
     transcript_index: int | None = None
+    # Whether this entry opens a new agent turn. None = the default rule
+    # (a user entry does, anything else doesn't). A prompt the user queued
+    # mid-turn is a user entry that doesn't; a background-task notification
+    # or /loop wakeup is a non-user entry that does.
+    starts_turn: bool | None = None
 
 
 @dataclass
@@ -78,8 +83,18 @@ class TranscriptParser:
     # Magic string constants
     _NO_CONTENT_PLACEHOLDER = "(no content)"
     _INTERRUPTED_TEXT = "[Request interrupted by user for tool use]"
+    _INTERRUPT_MARKERS = frozenset({"[Request interrupted by user]", _INTERRUPTED_TEXT})
     _MAX_SUMMARY_LENGTH = 200
     TRANSCRIPT_OFFSET_KEY = "__transcript_offset"
+    _STARTS_TURN_KEY = "__starts_turn"
+
+    _RE_TASK_NOTIFICATION = re.compile(
+        r"^\s*<task-notification>(.*?)</task-notification>", re.DOTALL
+    )
+    _RE_NOTIFICATION_FIELD = re.compile(r"<(summary|status)>(.*?)</\1>", re.DOTALL)
+    _RE_AGENT_MESSAGE = re.compile(
+        r"^\s*<agent-message[^>]*>(.*?)</agent-message>\s*$", re.DOTALL
+    )
 
     @staticmethod
     def parse_line(line: str) -> dict | None:
@@ -160,6 +175,183 @@ class TranscriptParser:
                 return {"arguments": arguments}
         return {}
 
+    @staticmethod
+    def _system_notice(
+        data: dict, text: str, *, starts_turn: bool = False
+    ) -> dict[str, Any]:
+        """Wrap a Claude runtime event as an assistant-side `system` notice."""
+        return {
+            "type": "assistant",
+            "timestamp": data.get("timestamp"),
+            "message": {
+                "content": [
+                    {"type": "system_notice", "text": text, "starts_turn": starts_turn}
+                ]
+            },
+        }
+
+    @staticmethod
+    def _plain_user_text(content: Any) -> str | None:
+        """Text of a text-only user message; None if it carries other blocks."""
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            return None
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "")
+                parts.append(text if isinstance(text, str) else "")
+            else:
+                return None
+        return "\n".join(parts)
+
+    @classmethod
+    def _format_task_notification(cls, body: str) -> str:
+        fields = {
+            name: value.strip()
+            for name, value in cls._RE_NOTIFICATION_FIELD.findall(body)
+        }
+        summary = fields.get("summary") or (
+            f"Background task {fields.get('status') or 'updated'}"
+        )
+        return f"🔔 {summary}"
+
+    @classmethod
+    def _normalize_claude_user(cls, data: dict) -> dict | None:
+        # isMeta: harness-injected context (skill bodies, command caveats,
+        # image-scaling notes, /loop prompts). isCompactSummary /
+        # isVisibleInTranscriptOnly: the post-/compact recap. None of these
+        # were typed by the user.
+        if (
+            data.get("isMeta")
+            or data.get("isCompactSummary")
+            or data.get("isVisibleInTranscriptOnly")
+        ):
+            return None
+        message = data.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        text = cls._plain_user_text(content)
+        if text is None:
+            return data
+        if text.strip() in cls._INTERRUPT_MARKERS:
+            # Esc mid-turn: Claude writes no turn_duration, so this marker is
+            # the only end-of-turn signal.
+            return {
+                "type": "assistant",
+                "timestamp": data.get("timestamp"),
+                "message": {
+                    "content": [
+                        {"type": "system_notice", "text": "⏹ Interrupted"},
+                        {"type": "completion"},
+                    ]
+                },
+            }
+        notification = cls._RE_TASK_NOTIFICATION.match(text)
+        if notification:
+            return cls._system_notice(
+                data,
+                cls._format_task_notification(notification.group(1)),
+                starts_turn=True,
+            )
+        return data
+
+    @classmethod
+    def _normalize_claude_system(cls, data: dict) -> dict | None:
+        subtype = data.get("subtype")
+        content = data.get("content")
+        content = content.strip() if isinstance(content, str) else ""
+
+        if subtype == "local_command":
+            # Slash-command output moved from a user record to this one.
+            if not content:
+                return None
+            return {
+                "type": "user",
+                "timestamp": data.get("timestamp"),
+                "message": {"content": content},
+            }
+        if subtype == "compact_boundary":
+            meta = data.get("compactMetadata")
+            meta = meta if isinstance(meta, dict) else {}
+            text = "🗜 Conversation compacted"
+            trigger = meta.get("trigger")
+            if isinstance(trigger, str) and trigger:
+                text += f" ({trigger})"
+            pre, post = meta.get("preTokens"), meta.get("postTokens")
+            if isinstance(pre, int) and isinstance(post, int):
+                text += f": {pre:,} → {post:,} tokens"
+            return cls._system_notice(data, text)
+        if subtype == "api_error":
+            error = data.get("error")
+            error = error if isinstance(error, dict) else {}
+            detail = error.get("formatted") or error.get("message") or "request failed"
+            text = f"⚠️ API error: {detail}"
+            attempt, limit = data.get("retryAttempt"), data.get("maxRetries")
+            if isinstance(attempt, int) and isinstance(limit, int):
+                text += f" — retry {attempt}/{limit}"
+            return cls._system_notice(data, text)
+        if not content:
+            return None
+        if subtype == "model_refusal_fallback":
+            return cls._system_notice(data, f"⚠️ {content}")
+        if subtype == "away_summary":
+            return cls._system_notice(data, f"📝 {content}")
+        if subtype == "scheduled_task_fire":
+            # The wakeup prompt itself is an isMeta user record, so this is
+            # the visible start of the turn.
+            return cls._system_notice(data, f"⏰ {content}", starts_turn=True)
+        return None
+
+    @classmethod
+    def _normalize_claude_attachment(cls, data: dict) -> dict | None:
+        attachment = data.get("attachment")
+        if not isinstance(attachment, dict):
+            return None
+        kind = attachment.get("type")
+
+        if kind == "queued_command":
+            # Input submitted while Claude was busy is injected into the
+            # running turn as this attachment — never as a user record.
+            prompt = attachment.get("prompt")
+            text = cls._plain_user_text(prompt) if prompt is not None else None
+            if not text or not text.strip():
+                return None
+            mode = attachment.get("commandMode")
+            if mode == "task-notification":
+                notification = cls._RE_TASK_NOTIFICATION.match(text)
+                body = notification.group(1) if notification else text
+                return cls._system_notice(data, cls._format_task_notification(body))
+            origin = attachment.get("origin")
+            origin = origin if isinstance(origin, dict) else {}
+            if origin.get("kind") == "peer":
+                sender = origin.get("name") or origin.get("from") or "agent"
+                wrapped = cls._RE_AGENT_MESSAGE.match(text)
+                body = (wrapped.group(1) if wrapped else text).strip()
+                return cls._system_notice(
+                    data,
+                    f"✉️ Message from {sender}\n{cls._format_expandable_quote(body)}",
+                )
+            if mode not in (None, "prompt"):
+                return None
+            return {
+                "type": "user",
+                "timestamp": data.get("timestamp"),
+                "message": {"content": [{"type": "text", "text": text}]},
+                cls._STARTS_TURN_KEY: False,
+            }
+        if kind == "task_status":
+            description = attachment.get("description") or "Background task"
+            status = attachment.get("status") or "updated"
+            text = f"🔔 {description}: {status}"
+            detail = attachment.get("deltaSummary")
+            if isinstance(detail, str) and detail.strip():
+                text += f"\n{detail.strip()}"
+            return cls._system_notice(data, text)
+        return None
+
     @classmethod
     def _normalize_entry_for_parsing(cls, data: dict) -> dict | None:
         """Normalize modern transcript records into legacy-like message records.
@@ -189,7 +381,16 @@ class TranscriptParser:
                 "message": {"content": [{"type": "completion"}]},
             }
 
-        if msg_type in ("user", "assistant"):
+        if msg_type == "system":
+            return cls._normalize_claude_system(data)
+
+        if msg_type == "attachment":
+            return cls._normalize_claude_attachment(data)
+
+        if msg_type == "user":
+            return cls._normalize_claude_user(data)
+
+        if msg_type == "assistant":
             return data
 
         timestamp = data.get("timestamp")
@@ -383,6 +584,74 @@ class TranscriptParser:
             result_lines.append(line.rstrip("\n"))
         return "\n".join(result_lines)
 
+    @staticmethod
+    def _format_structured_patch(patch: Any) -> str:
+        """Render Claude's `structuredPatch` hunks as unified-diff text."""
+        if not isinstance(patch, list):
+            return ""
+        lines: list[str] = []
+        for hunk in patch:
+            if not isinstance(hunk, dict):
+                continue
+            body = hunk.get("lines")
+            if not isinstance(body, list):
+                continue
+            lines.append(
+                f"@@ -{hunk.get('oldStart', 0)},{hunk.get('oldLines', 0)} "
+                f"+{hunk.get('newStart', 0)},{hunk.get('newLines', 0)} @@"
+            )
+            lines.extend(str(line) for line in body)
+        return "\n".join(lines)
+
+    @classmethod
+    def _format_diff_summary(cls, diff_text: str) -> str:
+        diff_lines = diff_text.split("\n")
+        added = sum(
+            1
+            for line in diff_lines
+            if line.startswith("+") and not line.startswith("+++")
+        )
+        removed = sum(
+            1
+            for line in diff_lines
+            if line.startswith("-") and not line.startswith("---")
+        )
+        stats = f"  ⎿  Added {added} lines, removed {removed} lines"
+        return stats + "\n" + cls._format_expandable_quote(diff_text)
+
+    @classmethod
+    def _format_file_change(
+        cls,
+        tool_name: str | None,
+        tool_input: dict | None,
+        structured_result: Any,
+        result_text: str,
+    ) -> str | None:
+        """Diff summary for a file-editing tool result, or None."""
+        if tool_name not in ("Edit", "MultiEdit", "Write"):
+            return None
+        if isinstance(structured_result, dict):
+            diff_text = cls._format_structured_patch(
+                structured_result.get("structuredPatch")
+            )
+            if diff_text:
+                return cls._format_diff_summary(diff_text)
+            written = structured_result.get("content")
+            if (
+                tool_name == "Write"
+                and structured_result.get("type") == "create"
+                and isinstance(written, str)
+            ):
+                return f"  ⎿  Wrote {len(written.splitlines())} lines"
+        if tool_name == "Edit" and tool_input and result_text:
+            old_s = tool_input.get("old_string", "")
+            new_s = tool_input.get("new_string", "")
+            if old_s and new_s:
+                diff_text = cls._format_edit_diff(old_s, new_s)
+                if diff_text:
+                    return cls._format_diff_summary(diff_text)
+        return None
+
     @classmethod
     def format_tool_use_summary(cls, name: str, input_data: dict | Any) -> str:
         """Format a tool_use block into a brief summary line.
@@ -411,8 +680,16 @@ class TranscriptParser:
             summary = input_data.get("command", "")
         elif name == "Grep":
             summary = input_data.get("pattern", "")
-        elif name == "Task":
+        elif name in ("Task", "Agent"):
             summary = input_data.get("description", "")
+        elif name == "TaskCreate":
+            summary = input_data.get("subject", "")
+        elif name == "TaskUpdate":
+            summary = " ".join(
+                str(input_data[k]) for k in ("taskId", "status") if input_data.get(k)
+            )
+        elif name == "ToolSearch":
+            summary = input_data.get("query", "")
         elif name == "WebFetch":
             summary = input_data.get("url", "")
         elif name == "WebSearch":
@@ -714,8 +991,8 @@ class TranscriptParser:
             stats = f"  ⎿  Found {files} files"
             return stats + "\n" + cls._format_expandable_quote(text)
 
-        elif tool_name == "Task":
-            # Task: show output length
+        elif tool_name in ("Task", "Agent"):
+            # Agent (formerly Task): show output length
             if line_count > 0:
                 stats = f"  ⎿  Agent output {line_count} lines"
                 return stats + "\n" + cls._format_expandable_quote(text)
@@ -797,8 +1074,13 @@ class TranscriptParser:
                 if parsed.message_type == "local_command":
                     cmd = parsed.tool_name or last_cmd_name or ""
                     text = parsed.text
+                    if not text and not cmd:
+                        last_cmd_name = None
+                        continue
                     if cmd:
-                        if "\n" in text:
+                        if not text:
+                            formatted = f"❯ `{cmd}`"
+                        elif "\n" in text:
                             formatted = f"❯ `{cmd}`\n```\n{text}\n```"
                         else:
                             formatted = f"❯ `{cmd}`\n`{text}`"
@@ -945,10 +1227,31 @@ class TranscriptParser:
                                 timestamp=entry_timestamp,
                             )
                         )
+                    elif btype == "system_notice":
+                        result.append(
+                            ParsedEntry(
+                                role="assistant",
+                                text=block.get("text", ""),
+                                content_type="system",
+                                timestamp=entry_timestamp,
+                                starts_turn=bool(block.get("starts_turn")),
+                            )
+                        )
 
             elif msg_type == "user":
                 # Check for tool_result blocks and merge with pending tools
                 user_text_parts: list[str] = []
+                # Claude's structured tool output (e.g. Edit's structuredPatch)
+                # sits on the record, so it is only attributable to a record
+                # carrying a single tool_result.
+                tool_result_count = sum(
+                    1
+                    for block in content
+                    if isinstance(block, dict) and block.get("type") == "tool_result"
+                )
+                structured_result = (
+                    data.get("toolUseResult") if tool_result_count == 1 else None
+                )
 
                 for block in content:
                     if not isinstance(block, dict):
@@ -1025,35 +1328,18 @@ class TranscriptParser:
                             )
                         elif tool_summary:
                             entry_text = tool_summary
-                            # For Edit tool, generate diff stats and expandable quote
-                            if tool_name == "Edit" and tool_input_data and result_text:
-                                old_s = tool_input_data.get("old_string", "")
-                                new_s = tool_input_data.get("new_string", "")
-                                if old_s and new_s:
-                                    diff_text = cls._format_edit_diff(old_s, new_s)
-                                    if diff_text:
-                                        added = sum(
-                                            1
-                                            for line in diff_text.split("\n")
-                                            if line.startswith("+")
-                                            and not line.startswith("+++")
-                                        )
-                                        removed = sum(
-                                            1
-                                            for line in diff_text.split("\n")
-                                            if line.startswith("-")
-                                            and not line.startswith("---")
-                                        )
-                                        stats = f"  ⎿  Added {added} lines, removed {removed} lines"
-                                        entry_text += (
-                                            "\n"
-                                            + stats
-                                            + "\n"
-                                            + cls._format_expandable_quote(diff_text)
-                                        )
+                            file_change = cls._format_file_change(
+                                tool_name,
+                                tool_input_data,
+                                structured_result,
+                                result_text,
+                            )
+                            if file_change:
+                                entry_text += "\n" + file_change
                             # For other tools, append formatted result text
                             elif (
-                                result_text
+                                tool_name != "Edit"
+                                and result_text
                                 and cls.EXPANDABLE_QUOTE_START not in tool_summary
                             ):
                                 entry_text += "\n" + cls._format_tool_result_text(
@@ -1097,12 +1383,16 @@ class TranscriptParser:
                     if not cls._RE_LOCAL_STDOUT.search(
                         combined
                     ) and not cls._RE_COMMAND_NAME.search(combined):
+                        starts_turn = data.get(cls._STARTS_TURN_KEY)
                         result.append(
                             ParsedEntry(
                                 role="user",
                                 text=combined,
                                 content_type="text",
                                 timestamp=entry_timestamp,
+                                starts_turn=starts_turn
+                                if isinstance(starts_turn, bool)
+                                else None,
                             )
                         )
             cls._stamp_transcript_order(result, entry_start, entry_offset)

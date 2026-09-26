@@ -1853,6 +1853,13 @@ button.burger {
   font-style: italic;
 }
 
+.bubble.system {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-1);
+  font-size: 12px;
+}
+
 .bubble.pending {
   opacity: 0.6;
 }

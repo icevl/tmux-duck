@@ -371,6 +371,21 @@ def parse_options(content: str) -> ParsedPrompt | None:
 STATUS_SPINNERS = frozenset(["·", "✻", "✽", "✶", "✳", "✢"])
 STATUS_PREFIX_CHARS = STATUS_SPINNERS.union({"•", "●", "○"})
 _RE_ESC_TO_INTERRUPT = re.compile(r"\besc to interrupt\b", re.IGNORECASE)
+# Claude Code ≥ 2.1 dropped "esc to interrupt" from its live status line:
+#   "✽ Billowing… (1m 52s · ↓ 8.8k tokens)"
+# The present-tense verb + ellipsis is what separates it from the past-tense
+# "✻ Brewed for 15s" footer left in scrollback once the turn ends.
+_RE_CLAUDE_LIVE_STATUS = re.compile(r"^\S.*?…\s*(?:\(.*)?$")
+# Rows Claude renders between its status line and the chrome separator
+# (tips, the task list, queued messages) are indented under the status.
+_STATUS_ATTACHMENT_MAX_LINES = 12
+
+
+def _is_live_status(line: str) -> bool:
+    if not line or line[0] not in STATUS_SPINNERS:
+        return False
+    rest = line[1:].strip()
+    return bool(_RE_ESC_TO_INTERRUPT.search(rest) or _RE_CLAUDE_LIVE_STATUS.match(rest))
 
 
 def _parse_status_line_without_chrome(lines: list[str]) -> str | None:
@@ -381,6 +396,8 @@ def _parse_status_line_without_chrome(lines: list[str]) -> str | None:
         if not line:
             continue
         if not _RE_ESC_TO_INTERRUPT.search(line):
+            if _is_live_status(line):
+                return line[1:].strip()
             continue
         # A live status line always starts with a spinner/bullet glyph. Without
         # one, an "esc to interrupt" line is an interactive-prompt footer (e.g.
@@ -419,17 +436,20 @@ def parse_status_line(pane_text: str) -> str | None:
     if chrome_idx is None:
         return _parse_status_line_without_chrome(lines)
 
-    # Check lines just above the separator (skip blanks, up to 4 lines).
-    # A live status line is always spinner + "(esc to interrupt)" — without
-    # the latter, the line is a leftover footer like "✻ Brewed for 15s" that
-    # Claude prints in scrollback after a turn finishes.
-    for i in range(chrome_idx - 1, max(chrome_idx - 5, -1), -1):
-        line = lines[i].strip()
+    # Walk up from the separator past blanks and the indented rows Claude
+    # hangs under its status (tips, task list). The first flush-left line
+    # decides: a live status, or anything else (e.g. the leftover
+    # "✻ Brewed for 15s" footer) → idle.
+    lowest = max(chrome_idx - 1 - _STATUS_ATTACHMENT_MAX_LINES, -1)
+    for i in range(chrome_idx - 1, lowest, -1):
+        raw = lines[i]
+        line = raw.strip()
         if not line:
             continue
-        if line[0] in STATUS_SPINNERS and _RE_ESC_TO_INTERRUPT.search(line):
+        if raw[:1].isspace() and line[0] not in STATUS_SPINNERS:
+            continue
+        if _is_live_status(line):
             return line[1:].strip()
-        # First non-empty line above separator isn't a live status → idle.
         return None
     return None
 

@@ -208,7 +208,13 @@ CODEX_COMMANDS: dict[str, str] = {
     "skills": "↗ List Codex skills",
 }
 
-PROGRESS_CONTENT_TYPES = {"thinking", "tool_use", "tool_result", "local_command"}
+PROGRESS_CONTENT_TYPES = {
+    "thinking",
+    "tool_use",
+    "tool_result",
+    "local_command",
+    "system",
+}
 CLAUDE_HIDDEN_PROGRESS_CONTENT_TYPES = {"tool_result", "local_command"}
 PROGRESS_MAX_LENGTH = 3000
 

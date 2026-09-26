@@ -30,7 +30,7 @@ _HOOK_SCRIPT_NAME = "approval_hook.py"
 _CLAUDE_SETTINGS_NAME = "claude_hook_settings.json"
 # Tools whose calls are routed to the endpoint; reads (Read/Grep/Glob) are
 # deliberately excluded so they never incur hook overhead.
-_HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit|Bash"
+_HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit|Bash|Monitor"
 
 
 def connectors_state_dir() -> Path:

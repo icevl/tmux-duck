@@ -633,6 +633,7 @@ export function App() {
             const isActivity =
               event.type === "stream" ||
               (event.type === "message" &&
+                event.content_type !== "system" &&
                 (event.role === "assistant" ||
                   !!event.tool_name ||
                   !!event.tool_use_id));

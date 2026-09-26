@@ -110,6 +110,10 @@ def _is_activity(event: dict[str, Any]) -> bool:
     if etype == "stream":
         return True
     if etype == "message":
+        # Runtime notices (compaction, recaps, task notifications) can land
+        # while the agent is idle, so they never count as it working.
+        if event.get("content_type") == "system":
+            return False
         return (
             event.get("role") == "assistant"
             or bool(event.get("tool_name"))

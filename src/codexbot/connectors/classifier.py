@@ -37,7 +37,7 @@ WRITE_TOOLS = {
 }
 
 # Shell tool names across runtimes.
-SHELL_TOOLS = {"Bash", "shell", "local_shell"}
+SHELL_TOOLS = {"Bash", "shell", "local_shell", "Monitor"}
 
 # First-token allowlist of read-only shell programs.
 _READ_PROGRAMS = {
@@ -281,6 +281,8 @@ def classify_action(
         command = ""
         if isinstance(tool_input, dict):
             command = str(tool_input.get("command") or tool_input.get("cmd") or "")
+        if tool_name == "Monitor" and not command:
+            return "read"  # watching an agent / waiting on a condition
         return classify_shell(command, extra_reads)
     # Unknown tool → safe default is to ask.
     return "write"

@@ -29,6 +29,8 @@ from ..utils import codexbot_dir
 logger = logging.getLogger(__name__)
 _SHELL_COMMANDS = {"bash", "fish", "sh", "zsh"}
 
+_RE_CLAUDE_VERSION_TITLE = re.compile(r"^\d+\.\d+\.\d+$")
+
 _RE_BYPASS_PERMISSIONS_PROMPT = re.compile(
     r"bypass permissions mode",
     re.IGNORECASE,
@@ -148,9 +150,9 @@ class ClaudeRuntime:
         if not isinstance(pane_current_command, str):
             return False
         cmd = pane_current_command.lower()
-        # `claude` may appear as `node` once the CLI is running; pane_current_command
-        # is unreliable for matching, so this stays conservative.
-        return cmd.startswith("claude") or cmd == "claude"
+        # Claude Code ≥ 2.1 retitles its process to the bare version
+        # ("2.1.282"), so that is what tmux reports as the pane command.
+        return cmd.startswith("claude") or bool(_RE_CLAUDE_VERSION_TITLE.match(cmd))
 
 
 async def _maybe_advance_startup_prompt(

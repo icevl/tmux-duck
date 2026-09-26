@@ -452,7 +452,12 @@ class SessionMonitor:
                             new_messages.append(completion)
                         continue
 
-                    if entry.role == "user":
+                    starts_turn = (
+                        entry.starts_turn
+                        if entry.starts_turn is not None
+                        else entry.role == "user"
+                    )
+                    if starts_turn:
                         if turn_state.active_turn_id is not None:
                             self._queue_completion(
                                 turn_state,
@@ -471,7 +476,7 @@ class SessionMonitor:
                         if turn_state.active_turn_id is None:
                             self._begin_turn(turn_state)
 
-                        if entry.text or entry.image_data:
+                        if entry.role != "user" and (entry.text or entry.image_data):
                             turn_state.active_turn_had_visible_output = True
                         if (
                             turn_state.pending_completion_turn_id is not None
