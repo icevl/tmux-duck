@@ -13,7 +13,6 @@ import {
   Pencil,
   Pin,
   PinOff,
-  Plug,
   Plus,
   Trash2,
   TriangleAlert,
@@ -68,7 +67,8 @@ interface Props {
   onToggleMission: () => void;
   onSelect: (id: string) => void;
   onNew: () => void;
-  onOpenConnectors: () => void;
+  // Connectors dialog stays wired, but its footer button is hidden for now.
+  onOpenConnectors?: () => void;
   onOpenAccounts: () => void;
   // Account namespaces ("" = Main); the list shows only `namespace`'s sessions.
   namespaces: SidebarNamespace[];
@@ -157,7 +157,6 @@ export function Sidebar({
   onToggleMission,
   onSelect,
   onNew,
-  onOpenConnectors,
   onOpenAccounts,
   namespaces,
   namespace,
@@ -683,14 +682,6 @@ export function Sidebar({
           disabled={!notificationsSupported}
         >
           {notificationsEnabled ? <Bell size={ICON} /> : <BellOff size={ICON} />}
-        </button>
-        <button
-          className="icon-button"
-          onClick={onOpenConnectors}
-          title="Connectors"
-          aria-label="Connectors"
-        >
-          <Plug size={ICON} />
         </button>
         <button
           className="icon-button sidebar-accounts"
