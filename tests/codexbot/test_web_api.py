@@ -1395,3 +1395,33 @@ def test_ws_accepts_allowed_origin(authed_client: TestClient) -> None:
 
 # Re-export `json` so the import is not flagged as unused (it documents intent).
 _ = json
+
+
+def test_update_run_logs_output_instead_of_discarding_it(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import subprocess
+
+    from codexbot.web import api as web_api
+
+    monkeypatch.setenv("CODEXBOT_DIR", str(tmp_path))
+    monkeypatch.setattr(config_module.config, "auto_update_enabled", True)
+    monkeypatch.setattr(web_api, "is_repo_dirty", lambda: False)
+    launched: dict[str, Any] = {}
+
+    def fake_popen(args: list[str], **kwargs: Any) -> None:
+        launched["args"] = args
+        launched["kwargs"] = kwargs
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    r = authed_client.post("/api/update/run")
+
+    assert r.status_code == 202, r.text
+    log_path = tmp_path / "logs" / "update.log"
+    assert r.json() == {"started": True, "log": str(log_path)}
+    assert log_path.exists()
+    assert "git pull --ff-only origin main" in launched["args"][2]
+    assert launched["kwargs"]["stderr"] is subprocess.STDOUT
+    assert launched["kwargs"]["stdout"].name == str(log_path)
+    assert launched["kwargs"]["start_new_session"] is True

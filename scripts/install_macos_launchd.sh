@@ -11,7 +11,18 @@ LOG_DIR="${HOME}/.codexbot/logs"
 UV_BIN="${UV_BIN:-$(command -v uv || true)}"
 TMUX_BIN="${TMUX_BIN:-$(command -v tmux || true)}"
 CODEX_BIN="${CODEX_BIN:-$(command -v codex || true)}"
+CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude || true)}"
 PNPM_BIN="${PNPM_BIN:-$(command -v pnpm || true)}"
+
+# Agents are often installed outside the PATH launchd (and the in-app
+# updater) runs with: the Codex desktop app bundles its CLI, and Claude
+# Code's native installer puts it in ~/.local/bin.
+if [ -z "${CODEX_BIN}" ] && [ -x "/Applications/Codex.app/Contents/Resources/codex" ]; then
+    CODEX_BIN="/Applications/Codex.app/Contents/Resources/codex"
+fi
+if [ -z "${CLAUDE_BIN}" ] && [ -x "${HOME}/.local/bin/claude" ]; then
+    CLAUDE_BIN="${HOME}/.local/bin/claude"
+fi
 
 if [ -z "${UV_BIN}" ]; then
     echo "uv not found. Install it first: brew install uv"
@@ -23,10 +34,19 @@ if [ -z "${TMUX_BIN}" ]; then
     exit 1
 fi
 
-if [ -z "${CODEX_BIN}" ]; then
-    echo "codex not found. Install it first: brew install --cask codex"
+if [ -z "${CODEX_BIN}" ] && [ -z "${CLAUDE_BIN}" ]; then
+    echo "No agent CLI found. Install Codex (brew install --cask codex) or Claude Code (https://claude.com/claude-code)."
     exit 1
 fi
+[ -n "${CODEX_BIN}" ] && echo "codex: ${CODEX_BIN}" || echo "codex: not installed (Codex sessions unavailable)"
+[ -n "${CLAUDE_BIN}" ] && echo "claude: ${CLAUDE_BIN}" || echo "claude: not installed (Claude sessions unavailable)"
+
+AGENT_PATH=""
+for agent_bin in "${CODEX_BIN}" "${CLAUDE_BIN}"; do
+    if [ -n "${agent_bin}" ]; then
+        AGENT_PATH="${AGENT_PATH}$(dirname "${agent_bin}"):"
+    fi
+done
 
 mkdir -p "${PLIST_DIR}" "${LOG_DIR}"
 
@@ -43,7 +63,7 @@ if [ -d "${PROJECT_DIR}/web-ui" ]; then
     fi
 fi
 
-PATH_VALUE="$(dirname "${UV_BIN}"):$(dirname "${TMUX_BIN}"):$(dirname "${CODEX_BIN}"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+PATH_VALUE="$(dirname "${UV_BIN}"):$(dirname "${TMUX_BIN}"):${AGENT_PATH}/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 cat > "${PLIST_PATH}" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

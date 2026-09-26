@@ -103,6 +103,9 @@ class LoginRequest(BaseModel):
     totp_code: str | None = None
 
 
+UPDATE_LOG_NAME = "update.log"
+
+
 class CreateSessionRequest(BaseModel):
     cwd: str
     runtime: str = "codex"
@@ -2437,24 +2440,30 @@ def create_app(
         # Detach the child so launchctl bootstrap (inside the install
         # script) can SIGTERM this very process without taking the child
         # down with it. start_new_session=True breaks the process group
-        # link; stdout/stderr go to /dev/null since we won't be around
-        # to read them. The script handles the build and service reload;
-        # this request just kicks it off and returns immediately.
+        # link. We won't be around to read the output, so it goes to
+        # ~/.codexbot/logs/update.log — a failed pull or install is visible
+        # there instead of silently leaving the old version running.
         import subprocess as _subprocess
 
+        log_path = codexbot_dir() / "logs" / UPDATE_LOG_NAME
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         script = "./scripts/install_macos_launchd.sh"
-        _subprocess.Popen(  # noqa: S603
-            [
-                "sh",
-                "-c",
-                f"git pull --ff-only origin main && {script}",
-            ],
-            cwd=str(get_repo_root()),
-            start_new_session=True,
-            stdout=_subprocess.DEVNULL,
-            stderr=_subprocess.DEVNULL,
-        )
-        return {"started": True}
+        with log_path.open("a", encoding="utf-8") as log:
+            _subprocess.Popen(  # noqa: S603
+                [
+                    "sh",
+                    "-c",
+                    'echo "=== update started $(date)"; '
+                    f"git pull --ff-only origin main && {script}; "
+                    'echo "=== update finished with exit code $?"',
+                ],
+                cwd=str(get_repo_root()),
+                start_new_session=True,
+                stdin=_subprocess.DEVNULL,
+                stdout=log,
+                stderr=_subprocess.STDOUT,
+            )
+        return {"started": True, "log": str(log_path)}
 
     # -------------------------------------------------------------------
     # WebSocket: per-session terminal
