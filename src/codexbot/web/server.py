@@ -289,6 +289,10 @@ async def start_web_server(
     app.state.interactive_monitor = interactive_monitor
     await interactive_monitor.start()
 
+    from ..accounts import account_manager
+
+    await account_manager.start(bus)
+
     await status_tracker.start()
     if attention_router is not None:
         await attention_router.start()
@@ -423,6 +427,9 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
             await handle.interactive_monitor.stop()
         except Exception:  # noqa: BLE001
             pass
+    from ..accounts import account_manager
+
+    await account_manager.stop()
     handle.server.should_exit = True
     try:
         await asyncio.wait_for(handle.task, timeout=WEB_SHUTDOWN_TIMEOUT_SECONDS)

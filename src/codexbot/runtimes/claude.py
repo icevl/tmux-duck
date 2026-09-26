@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 
 from ..config import config
+from ..profiles import Profile, default_profile
 from ..tmux_manager import tmux_manager
 from ..utils import codexbot_dir
 
@@ -70,6 +71,9 @@ class ClaudeRuntime:
     display_name = "Claude Code"
     display_emoji = "🧠"
 
+    def __init__(self, profile: Profile | None = None) -> None:
+        self.profile = profile or default_profile(self.name)
+
     def build_start_command(
         self,
         resume_session_id: str | None,
@@ -102,7 +106,8 @@ class ClaudeRuntime:
                 from ..claude_hooks import ensure_event_hook_settings
 
                 cmd = f"{cmd} --settings {shlex.quote(ensure_event_hook_settings())}"
-        return cmd
+        env = " ".join(f"{k}={shlex.quote(v)}" for k, v in self.profile.env().items())
+        return f"{env} {cmd}" if env else cmd
 
     async def discover_session_id(
         self,
@@ -112,7 +117,7 @@ class ClaudeRuntime:
         cwd: str,
         allow_cwd_fallback: bool = True,
     ) -> str | None:
-        sessions_dir = config.claude_sessions_path
+        sessions_dir = self.profile.claude_sessions_path
         if not sessions_dir.exists():
             logger.debug("claude sessions dir does not exist: %s", sessions_dir)
             return None

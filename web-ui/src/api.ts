@@ -72,6 +72,10 @@ export interface SessionSummary {
   permission_mode?: string | null;
   pr_url?: string | null;
   pr_number?: number | null;
+  // Account profile ("" = default login) and whether it is signed in.
+  profile?: string;
+  profile_label?: string | null;
+  profile_logged_in?: boolean | null;
 }
 
 export interface ResumeDormantResponse {
@@ -223,6 +227,38 @@ export interface ResumeSession {
   session_id: string;
   summary: string;
   message_count: number;
+  // Known when the session belonged to a tracked window.
+  runtime?: string | null;
+  profile?: string | null;
+}
+
+export interface AccountLogin {
+  profile_key: string;
+  state:
+    | "starting"
+    | "awaiting_code"
+    | "awaiting_browser"
+    | "succeeded"
+    | "failed"
+    | "cancelled";
+  url: string | null;
+  user_code: string | null;
+  message: string | null;
+  started_at: number;
+}
+
+export interface AccountInfo {
+  key: string;
+  id: string; // "default" for the system-wide login
+  runtime: string;
+  label: string;
+  is_default: boolean;
+  sessions: number;
+  logged_in: boolean | null;
+  email: string | null;
+  detail: string | null;
+  checked_at: number | null;
+  login: AccountLogin | null;
 }
 
 export type SearchIndexState =
@@ -539,7 +575,33 @@ export const api = {
     runtime: string;
     resume_session_id?: string | null;
     name?: string | null;
+    profile?: string;
   }) => request<SessionSummary>("/api/sessions", { method: "POST", json: body }),
+  listAccounts: () =>
+    request<{ accounts: AccountInfo[]; profile_runtimes: string[] }>("/api/accounts"),
+  createAccount: (body: { runtime: string; label: string }) =>
+    request<AccountInfo>("/api/accounts", { method: "POST", json: body }),
+  deleteAccount: (a: AccountInfo) =>
+    request<{ ok: boolean }>(`/api/accounts/${a.runtime}/${a.id}`, {
+      method: "DELETE",
+    }),
+  refreshAccount: (a: AccountInfo) =>
+    request<AccountInfo>(`/api/accounts/${a.runtime}/${a.id}/refresh`, {
+      method: "POST",
+    }),
+  startAccountLogin: (a: AccountInfo) =>
+    request<AccountLogin>(`/api/accounts/${a.runtime}/${a.id}/login`, {
+      method: "POST",
+    }),
+  submitAccountLoginCode: (a: AccountInfo, code: string) =>
+    request<AccountLogin>(`/api/accounts/${a.runtime}/${a.id}/login/code`, {
+      method: "POST",
+      json: { code },
+    }),
+  cancelAccountLogin: (a: AccountInfo) =>
+    request<{ ok: boolean }>(`/api/accounts/${a.runtime}/${a.id}/login`, {
+      method: "DELETE",
+    }),
   killSession: (windowId: string) =>
     request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(windowId)}`, {
       method: "DELETE",
@@ -899,6 +961,8 @@ export type WsEvent =
       seq?: number;
     }
   | { type: "sessions_changed"; ts: number; seq?: number }
+  | { type: "accounts_changed"; ts: number; seq?: number }
+  | (AccountLogin & { type: "account_login"; ts: number; seq?: number })
   | {
       type: "slash_commands_changed";
       runtime: string;

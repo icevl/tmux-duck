@@ -29,11 +29,20 @@ _register(ClaudeRuntime())
 DEFAULT_RUNTIME_NAME = "codex"
 
 
-def get_runtime(name: str | None) -> AgentRuntime:
-    """Return the runtime for ``name``, falling back to the Codex runtime."""
-    if not name:
-        return _REGISTRY[DEFAULT_RUNTIME_NAME]
-    return _REGISTRY.get(name, _REGISTRY[DEFAULT_RUNTIME_NAME])
+def get_runtime(name: str | None, profile: str = "") -> AgentRuntime:
+    """Return the runtime for ``name``, falling back to the Codex runtime.
+
+    A non-default ``profile`` yields a runtime bound to that account's
+    config dir (launch environment, per-process session files).
+    """
+    runtime = _REGISTRY.get(
+        name or DEFAULT_RUNTIME_NAME, _REGISTRY[DEFAULT_RUNTIME_NAME]
+    )
+    if profile and runtime.name == "claude":
+        from ..profiles import profile_store
+
+        return ClaudeRuntime(profile_store.resolve(profile, "claude"))
+    return runtime
 
 
 def all_runtimes() -> list[AgentRuntime]:

@@ -15,7 +15,7 @@ import {
   Separator as PanelResizeHandle,
   useDefaultLayout,
 } from "react-resizable-panels";
-import { api, SessionSummary, WsEvent } from "./api";
+import { AccountInfo, api, SessionSummary, WsEvent } from "./api";
 import { EventStream } from "./ws";
 import { Login } from "./components/Login";
 import { Sidebar } from "./components/Sidebar";
@@ -28,6 +28,7 @@ import { SubagentsPanel } from "./components/SubagentsPanel";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { ConnectorsDialog } from "./components/ConnectorsDialog";
+import { AccountsDialog } from "./components/AccountsDialog";
 import { ScreenshotModal } from "./components/ScreenshotModal";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { RenameDialog } from "./components/RenameDialog";
@@ -280,6 +281,15 @@ export function App() {
   }, [activeId]);
   const [creating, setCreating] = useState(false);
   const [showConnectors, setShowConnectors] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
+  const [accounts, setAccounts] = useState<AccountInfo[]>([]);
+  const refreshAccounts = useCallback(async () => {
+    try {
+      setAccounts((await api.listAccounts()).accounts);
+    } catch {
+      // Non-critical: the sidebar badge and profile picker just stay stale.
+    }
+  }, []);
   const [screenshotFor, setScreenshotFor] = useState<string | null>(null);
   const [killTarget, setKillTarget] = useState<SessionSummary | null>(null);
   const [renameTarget, setRenameTarget] = useState<SessionSummary | null>(null);
@@ -502,6 +512,7 @@ export function App() {
   useEffect(() => {
     if (auth !== "authed") return;
     refreshSessions();
+    refreshAccounts();
     const stream = new EventStream();
     streamRef.current = stream;
     // On WS reconnect, the server hasn't replayed events missed during the
@@ -540,6 +551,9 @@ export function App() {
 
       if (event.type === "sessions_changed") {
         refreshSessions();
+      } else if (event.type === "accounts_changed") {
+        refreshSessions();
+        refreshAccounts();
       } else if (event.type === "session_status") {
         // Server-authoritative status (SessionStatusTracker). Patch it onto the
         // session so Mission Control reflects running/blocked/done/idle live.
@@ -675,7 +689,7 @@ export function App() {
       awaitingInputIds.current = new Set();
       setBusy(new Set());
     };
-  }, [auth, refreshSessions, maybeNotify]);
+  }, [auth, refreshSessions, refreshAccounts, maybeNotify]);
 
   // Keep Mission Control sourced from the backend while it's open: refetch the
   // authoritative status snapshot on open and on a short interval. Live
@@ -847,6 +861,7 @@ export function App() {
       runtime: string;
       resume_session_id?: string | null;
       name?: string | null;
+      profile?: string;
     }) => {
       const created = await api.createSession(body);
       setCreating(false);
@@ -1104,6 +1119,11 @@ export function App() {
           setShowConnectors(true);
           setSidebarOpen(false);
         }}
+        onOpenAccounts={() => {
+          setShowAccounts(true);
+          setSidebarOpen(false);
+        }}
+        accountsNeedSignIn={accounts.some((a) => a.logged_in === false && a.sessions > 0)}
         onLogout={handleLogout}
         onClose={closeSidebar}
         onRename={setRenameTarget}
@@ -1303,7 +1323,24 @@ export function App() {
       )}
 
       {creating && (
-        <NewSessionDialog onClose={() => setCreating(false)} onCreate={handleCreate} />
+        <NewSessionDialog
+          accounts={accounts}
+          onClose={() => setCreating(false)}
+          onCreate={handleCreate}
+          onOpenAccounts={() => {
+            setCreating(false);
+            setShowAccounts(true);
+          }}
+        />
+      )}
+      {showAccounts && (
+        <AccountsDialog
+          onClose={() => setShowAccounts(false)}
+          onChanged={() => {
+            refreshAccounts();
+            refreshSessions();
+          }}
+        />
       )}
       {showConnectors && (
         <ConnectorsDialog onClose={() => setShowConnectors(false)} />

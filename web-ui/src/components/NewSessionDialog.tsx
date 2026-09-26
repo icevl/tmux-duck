@@ -1,24 +1,33 @@
 import { useEffect, useState } from "react";
-import { api, ResumeSession, RuntimeInfo } from "../api";
+import { AccountInfo, api, ResumeSession, RuntimeInfo } from "../api";
 import { DirectoryPicker } from "./DirectoryPicker";
 
 interface Props {
+  accounts: AccountInfo[];
   onClose: () => void;
+  onOpenAccounts: () => void;
   onCreate: (body: {
     cwd: string;
     runtime: string;
     resume_session_id?: string | null;
     name?: string | null;
+    profile?: string;
   }) => Promise<void>;
 }
 
 type Stage = "directory" | "runtime" | "resume";
 
-export function NewSessionDialog({ onClose, onCreate }: Props) {
+// API account id → the session's profile field ("" = system default login).
+function profileOf(account: AccountInfo): string {
+  return account.is_default ? "" : account.id;
+}
+
+export function NewSessionDialog({ accounts, onClose, onOpenAccounts, onCreate }: Props) {
   const [stage, setStage] = useState<Stage>("directory");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
   const [runtime, setRuntime] = useState<string>("codex");
+  const [profile, setProfile] = useState<string>("");
   const [resumeOptions, setResumeOptions] = useState<ResumeSession[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,10 +55,15 @@ export function NewSessionDialog({ onClose, onCreate }: Props) {
     }
   }
 
+  const runtimeAccounts = accounts.filter((a) => a.runtime === runtime);
+  const selectedAccount = runtimeAccounts.find((a) => profileOf(a) === profile);
+  const needsSignIn = selectedAccount?.logged_in === false;
+
   async function submit(body: {
     cwd: string;
     runtime: string;
     resume_session_id?: string | null;
+    profile?: string;
   }) {
     setBusy(true);
     setError(null);
@@ -100,8 +114,9 @@ export function NewSessionDialog({ onClose, onCreate }: Props) {
                   onClick={() =>
                     submit({
                       cwd: selectedPath ?? "",
-                      runtime,
+                      runtime: s.runtime || runtime,
                       resume_session_id: s.session_id,
+                      profile: s.profile ?? "",
                     })
                   }
                 >
@@ -134,23 +149,53 @@ export function NewSessionDialog({ onClose, onCreate }: Props) {
                   <button
                     key={r.name}
                     className={runtime === r.name ? "selected" : ""}
-                    onClick={() => setRuntime(r.name)}
+                    onClick={() => {
+                      setRuntime(r.name);
+                      setProfile("");
+                    }}
                   >
                     {r.emoji} {r.display_name}
                   </button>
                 ))}
               </div>
             </div>
+            {runtimeAccounts.length > 1 && (
+              <div className="modal-row">
+                <label>Account</label>
+                <div className="runtime-buttons">
+                  {runtimeAccounts.map((a) => (
+                    <button
+                      key={a.key}
+                      className={profile === profileOf(a) ? "selected" : ""}
+                      onClick={() => setProfile(profileOf(a))}
+                      title={a.email ?? undefined}
+                    >
+                      {a.label}
+                      {a.logged_in === false ? " · signed out" : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {needsSignIn && (
+              <div className="login-error">
+                This account is signed out.{" "}
+                <button className="link-button" onClick={onOpenAccounts}>
+                  Sign in
+                </button>
+              </div>
+            )}
             <div className="modal-actions">
               <button onClick={() => setStage("directory")}>← Back</button>
               <button
                 className="primary"
-                disabled={busy || !selectedPath}
+                disabled={busy || !selectedPath || needsSignIn}
                 onClick={() =>
                   submit({
                     cwd: selectedPath ?? "",
                     runtime,
                     resume_session_id: null,
+                    profile,
                   })
                 }
               >

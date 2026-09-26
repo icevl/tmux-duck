@@ -58,6 +58,8 @@ from pydantic import BaseModel, Field
 
 from ..config import config
 from ..runtimes import all_runtimes, get_runtime
+from ..accounts import account_manager, profile_key
+from ..profiles import DEFAULT_PROFILE_ID, SUPPORTED_RUNTIMES, profile_store
 from ..transcript_meta import TranscriptMeta, transcript_meta_cache
 from ..search import client as search_client
 from ..search.contracts import SearchRequest
@@ -106,6 +108,17 @@ class CreateSessionRequest(BaseModel):
     runtime: str = "codex"
     resume_session_id: str | None = None
     name: str | None = None
+    # Account profile id ("" = the system default login).
+    profile: str = ""
+
+
+class CreateAccountRequest(BaseModel):
+    runtime: str = "claude"
+    label: str = Field(min_length=1, max_length=60)
+
+
+class AccountLoginCodeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=2000)
 
 
 class PatchSessionRequest(BaseModel):
@@ -885,6 +898,14 @@ def create_app(
         status_snapshot = status_tracker.snapshot() if status_tracker else {}
         transcript_meta = await _claude_transcript_meta()
 
+        def _profile_fields(ws: Any) -> dict[str, Any]:
+            profile = profile_store.resolve(ws.profile, ws.runtime or "codex")
+            return {
+                "profile": profile.id,
+                "profile_label": None if profile.is_default else profile.label,
+                "profile_logged_in": account_manager.status(profile).logged_in,
+            }
+
         def _meta_fields(ws: Any) -> dict[str, Any]:
             meta = transcript_meta.get(ws.session_id) if ws.session_id else None
             return meta.to_payload() if meta else TranscriptMeta().to_payload()
@@ -929,6 +950,7 @@ def create_app(
                     "dormant": False,
                     **_status_fields(w.window_id),
                     **_meta_fields(ws),
+                    **_profile_fields(ws),
                 }
             )
         # Dormant entries (preserved across reboot) ride along in the same list
@@ -963,6 +985,7 @@ def create_app(
                     "dormant": True,
                     **_status_fields(dormant_key),
                     **_meta_fields(ws),
+                    **_profile_fields(ws),
                 }
             )
         # Pinned sessions float to the top; manual order wins inside each
@@ -975,7 +998,16 @@ def create_app(
         req: CreateSessionRequest,
         _user: str = Depends(require_auth),
     ) -> dict[str, Any]:
-        runtime = get_runtime(req.runtime)
+        profile = profile_store.get(req.profile, req.runtime)
+        if profile is None:
+            raise HTTPException(
+                400, detail=f"unknown {req.runtime} profile: {req.profile}"
+            )
+        if account_manager.status(profile).logged_in is False:
+            raise HTTPException(
+                409, detail=f"account {profile.label!r} is signed out — sign in first"
+            )
+        runtime = get_runtime(req.runtime, req.profile)
         path = Path(req.cwd).expanduser()
         if not path.is_absolute():
             path = path.resolve()
@@ -993,6 +1025,7 @@ def create_app(
 
         ws = session_manager.get_window_state(wid)
         ws.runtime = runtime.name
+        ws.profile = req.profile
         ws.cwd = str(path)
         ws.window_name = wname
         ws.sort_order = _next_window_sort_order()
@@ -1107,7 +1140,7 @@ def create_app(
                 409,
                 detail="dormant session is missing session_id or cwd; cannot resume",
             )
-        runtime = get_runtime(ws.runtime or "codex")
+        runtime = get_runtime(ws.runtime or "codex", ws.profile)
         path = Path(ws.cwd).expanduser()
         if not path.exists() or not path.is_dir():
             raise HTTPException(400, detail=f"session cwd no longer exists: {ws.cwd}")
@@ -1866,6 +1899,108 @@ def create_app(
             raise HTTPException(400, detail=msg)
         return {"ok": True, "message": msg}
 
+    # -------------------------------------------------------------------
+    # Accounts (agent login profiles)
+    # -------------------------------------------------------------------
+
+    def _account_profile(runtime: str, profile_id: str) -> Any:
+        pid = DEFAULT_PROFILE_ID if profile_id == "default" else profile_id
+        profile = profile_store.get(pid, runtime)
+        if profile is None:
+            raise HTTPException(404, detail="account not found")
+        return profile
+
+    def _account_payload(profile: Any) -> dict[str, Any]:
+        login = account_manager.login(profile)
+        in_use = sum(
+            1
+            for ws in session_manager.window_states.values()
+            if (ws.runtime or "codex") == profile.runtime and ws.profile == profile.id
+        )
+        return {
+            "key": profile_key(profile),
+            "id": profile.id or "default",
+            "runtime": profile.runtime,
+            "label": profile.label,
+            "is_default": profile.is_default,
+            "sessions": in_use,
+            **account_manager.status(profile).to_payload(),
+            "login": login.to_payload() if login is not None else None,
+        }
+
+    @app.get("/api/accounts")
+    async def list_accounts(_user: str = Depends(require_auth)) -> dict[str, Any]:
+        return {
+            "accounts": [_account_payload(p) for p in profile_store.list()],
+            "profile_runtimes": list(SUPPORTED_RUNTIMES),
+        }
+
+    @app.post("/api/accounts")
+    async def create_account(
+        req: CreateAccountRequest, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        try:
+            profile = profile_store.create(req.runtime, req.label)
+        except ValueError as e:
+            raise HTTPException(400, detail=str(e)) from e
+        await account_manager.refresh(profile)
+        await bus.publish({"type": "accounts_changed"})
+        return _account_payload(profile)
+
+    @app.delete("/api/accounts/{runtime}/{profile_id}")
+    async def delete_account(
+        runtime: str, profile_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        profile = _account_profile(runtime, profile_id)
+        if profile.is_default:
+            raise HTTPException(400, detail="the default account cannot be deleted")
+        if _account_payload(profile)["sessions"]:
+            raise HTTPException(409, detail="account is used by open sessions")
+        account_manager.forget(profile)
+        profile_store.delete(profile.id)
+        await bus.publish({"type": "accounts_changed"})
+        return {"ok": True}
+
+    @app.post("/api/accounts/{runtime}/{profile_id}/refresh")
+    async def refresh_account(
+        runtime: str, profile_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        profile = _account_profile(runtime, profile_id)
+        await account_manager.refresh(profile)
+        return _account_payload(profile)
+
+    @app.post("/api/accounts/{runtime}/{profile_id}/login")
+    async def start_account_login(
+        runtime: str, profile_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        profile = _account_profile(runtime, profile_id)
+        try:
+            flow = await account_manager.start_login(profile)
+        except (RuntimeError, OSError) as e:
+            raise HTTPException(503, detail=str(e)) from e
+        return flow.to_payload()
+
+    @app.post("/api/accounts/{runtime}/{profile_id}/login/code")
+    async def submit_account_login_code(
+        runtime: str,
+        profile_id: str,
+        req: AccountLoginCodeRequest,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        profile = _account_profile(runtime, profile_id)
+        try:
+            flow = await account_manager.submit_code(profile, req.code)
+        except (RuntimeError, ValueError) as e:
+            raise HTTPException(409, detail=str(e)) from e
+        return flow.to_payload()
+
+    @app.delete("/api/accounts/{runtime}/{profile_id}/login")
+    async def cancel_account_login(
+        runtime: str, profile_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        await account_manager.cancel_login(_account_profile(runtime, profile_id))
+        return {"ok": True}
+
     @app.post("/api/hooks/claude")
     async def claude_hook_event(request: Request) -> dict[str, Any]:
         """Lifecycle events forwarded by the Claude hook script (localhost)."""
@@ -2257,12 +2392,24 @@ def create_app(
         cwd: str = Query(...), _user: str = Depends(require_auth)
     ) -> dict[str, Any]:
         items = await session_manager.list_sessions_for_directory(cwd)
+        owners = {
+            ws.session_id: ws
+            for ws in session_manager.window_states.values()
+            if ws.session_id
+        }
+
+        def _owner_field(session_id: str, name: str) -> str | None:
+            owner = owners.get(session_id)
+            return getattr(owner, name) if owner is not None else None
+
         return {
             "sessions": [
                 {
                     "session_id": s.session_id,
                     "summary": s.summary,
                     "message_count": s.message_count,
+                    "runtime": _owner_field(s.session_id, "runtime"),
+                    "profile": _owner_field(s.session_id, "profile"),
                 }
                 for s in items
             ]

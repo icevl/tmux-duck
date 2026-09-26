@@ -22,6 +22,7 @@ from typing import Any
 import aiofiles
 
 from .config import config
+from .profiles import profile_store
 from .runtimes import get_runtime
 from .skill_hints import skill_hint_registry
 from .slash_commands import slash_command_registry
@@ -61,9 +62,10 @@ def _encode_claude_cwd(cwd: str) -> str:
     return cwd.replace("/", "-").replace(".", "-")
 
 
-def claude_transcript_path(session_id: str, cwd: str) -> Path | None:
+def claude_transcript_path(session_id: str, cwd: str, profile: str = "") -> Path | None:
     """Return the expected JSONL path for a Claude Code session.
 
+    ``profile`` selects the account whose config dir holds the transcript.
     Returns ``None`` for empty inputs. The file may not exist yet — callers
     should treat the path as best-effort.
     """
@@ -74,7 +76,8 @@ def claude_transcript_path(session_id: str, cwd: str) -> Path | None:
     except (OSError, RuntimeError, ValueError):
         return None
     encoded = _encode_claude_cwd(_strip_macos_firmlink(str(resolved)))
-    return config.claude_projects_path / encoded / f"{session_id}.jsonl"
+    projects = profile_store.resolve(profile, "claude").claude_projects_path
+    return projects / encoded / f"{session_id}.jsonl"
 
 
 @dataclass
@@ -90,6 +93,8 @@ class WindowState:
     # Set when the window was created by an external connector (Slack, …).
     # Such windows are hidden from the web/Telegram session lists.
     connector_id: str | None = None
+    # Account profile the agent runs under ("" = the system default login).
+    profile: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -105,6 +110,8 @@ class WindowState:
             data["sort_order"] = self.sort_order
         if self.connector_id:
             data["connector_id"] = self.connector_id
+        if self.profile:
+            data["profile"] = self.profile
         return data
 
     @classmethod
@@ -125,6 +132,7 @@ class WindowState:
             pinned=bool(data.get("pinned", False)),
             sort_order=sort_order,
             connector_id=data.get("connector_id") or None,
+            profile=str(data.get("profile") or ""),
         )
 
 
@@ -710,7 +718,7 @@ class SessionManager:
                     return state.session_id
                 self._status_probe_last_by_window[window_id] = now
 
-            runtime = get_runtime("claude")
+            runtime = get_runtime("claude", state.profile)
             pane_pid = await tmux_manager.get_pane_pid(window_id)
             fresh_sid = await runtime.discover_session_id(
                 window_id=window_id,
@@ -883,7 +891,7 @@ class SessionManager:
         for ws in self.window_states.values():
             if ws.runtime != "claude" or not ws.session_id or not ws.cwd:
                 continue
-            claude_path = claude_transcript_path(ws.session_id, ws.cwd)
+            claude_path = claude_transcript_path(ws.session_id, ws.cwd, ws.profile)
             if claude_path is None:
                 continue
             try:

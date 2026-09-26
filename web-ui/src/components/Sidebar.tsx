@@ -16,6 +16,8 @@ import {
   Plug,
   Plus,
   Trash2,
+  TriangleAlert,
+  UserRound,
   X,
 } from "lucide-react";
 import { TunioPlayer } from "tunio-player";
@@ -67,6 +69,9 @@ interface Props {
   onSelect: (id: string) => void;
   onNew: () => void;
   onOpenConnectors: () => void;
+  onOpenAccounts: () => void;
+  // An account with open sessions is signed out.
+  accountsNeedSignIn: boolean;
   onLogout: () => void;
   onClose: () => void;
   onRename: (session: SessionSummary) => void;
@@ -142,6 +147,8 @@ export function Sidebar({
   onSelect,
   onNew,
   onOpenConnectors,
+  onOpenAccounts,
+  accountsNeedSignIn,
   onLogout,
   onClose,
   onRename,
@@ -440,6 +447,19 @@ export function Sidebar({
                         />
                       ) : null}
                       {s.name}
+                      {s.profile_label && (
+                        <span className="session-profile" title={`Account: ${s.profile_label}`}>
+                          {s.profile_label}
+                        </span>
+                      )}
+                      {s.profile_logged_in === false && (
+                        <span
+                          className="session-signed-out"
+                          title="Account signed out — open Accounts to sign in"
+                        >
+                          <TriangleAlert size={12} aria-label="Account signed out" />
+                        </span>
+                      )}
                       {permissionModeLabel(s.permission_mode) && (
                         <span
                           className={`session-mode session-mode-${s.permission_mode}`}
@@ -640,6 +660,15 @@ export function Sidebar({
           aria-label="Connectors"
         >
           <Plug size={ICON} />
+        </button>
+        <button
+          className="icon-button sidebar-accounts"
+          onClick={onOpenAccounts}
+          title={accountsNeedSignIn ? "Accounts — sign-in needed" : "Accounts"}
+          aria-label="Accounts"
+        >
+          <UserRound size={ICON} />
+          {accountsNeedSignIn ? <span className="sidebar-accounts-alert" /> : null}
         </button>
         <button
           type="button"
