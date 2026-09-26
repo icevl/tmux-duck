@@ -1772,6 +1772,14 @@ button.burger {
   gap: 8px;
 }
 
+/* With no session open the placeholder sits directly in .chat-area, which
+   isn't positioned — absolute + inset: 0 there covered the whole viewport,
+   sidebar included, and swallowed its clicks. */
+.chat-area > .empty-state {
+  position: static;
+  flex: 1;
+}
+
 .empty-state h2 {
   font-size: 16px;
   font-weight: 500;
@@ -4833,19 +4841,58 @@ button.primary.send-button {
   background: var(--danger);
 }
 
-.session-profile {
-  margin-left: 6px;
-  padding: 0 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-1);
-  vertical-align: 1px;
-}
-
 .session-signed-out {
   margin-left: 5px;
   color: var(--danger);
   vertical-align: -1px;
+}
+
+/* Account namespace switcher */
+.sidebar-namespaces {
+  display: flex;
+  gap: 4px;
+  margin: 0 12px 8px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.sidebar-namespace {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sidebar-namespace-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-namespace.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-0);
+  font-weight: 600;
+}
+
+.sidebar-namespace.signed-out .sidebar-namespace-label {
+  color: var(--danger);
+}
+
+.sidebar-namespace-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }

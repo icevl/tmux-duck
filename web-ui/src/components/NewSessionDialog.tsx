@@ -4,6 +4,8 @@ import { DirectoryPicker } from "./DirectoryPicker";
 
 interface Props {
   accounts: AccountInfo[];
+  // Sidebar account namespace the session is created in ("" = Main).
+  namespace: string;
   onClose: () => void;
   onOpenAccounts: () => void;
   onCreate: (body: {
@@ -22,12 +24,22 @@ function profileOf(account: AccountInfo): string {
   return account.is_default ? "" : account.id;
 }
 
-export function NewSessionDialog({ accounts, onClose, onOpenAccounts, onCreate }: Props) {
+export function NewSessionDialog({
+  accounts,
+  namespace,
+  onClose,
+  onOpenAccounts,
+  onCreate,
+}: Props) {
   const [stage, setStage] = useState<Stage>("directory");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
-  const [runtime, setRuntime] = useState<string>("codex");
-  const [profile, setProfile] = useState<string>("");
+  const namespaceAccount = namespace
+    ? accounts.find((a) => !a.is_default && a.id === namespace)
+    : undefined;
+  // Extra accounts exist for one runtime only; Main holds every runtime.
+  const namespaceRuntime = namespaceAccount?.runtime ?? null;
+  const [runtime, setRuntime] = useState<string>(namespaceRuntime ?? "codex");
   const [resumeOptions, setResumeOptions] = useState<ResumeSession[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -41,8 +53,9 @@ export function NewSessionDialog({ accounts, onClose, onOpenAccounts, onCreate }
     setBusy(true);
     try {
       const r = await api.listResumeSessions(path);
-      setResumeOptions(r.sessions);
-      if (r.sessions.length > 0) {
+      // Only this account's sessions; untracked ones belong to Main.
+      setResumeOptions(r.sessions.filter((s) => (s.profile ?? "") === profile));
+      if (r.sessions.some((s) => (s.profile ?? "") === profile)) {
         setStage("resume");
       } else {
         setStage("runtime");
@@ -55,8 +68,10 @@ export function NewSessionDialog({ accounts, onClose, onOpenAccounts, onCreate }
     }
   }
 
-  const runtimeAccounts = accounts.filter((a) => a.runtime === runtime);
-  const selectedAccount = runtimeAccounts.find((a) => profileOf(a) === profile);
+  const profile = namespaceAccount ? profileOf(namespaceAccount) : "";
+  const selectedAccount = accounts.find(
+    (a) => a.runtime === runtime && profileOf(a) === profile,
+  );
   const needsSignIn = selectedAccount?.logged_in === false;
 
   async function submit(body: {
@@ -149,31 +164,25 @@ export function NewSessionDialog({ accounts, onClose, onOpenAccounts, onCreate }
                   <button
                     key={r.name}
                     className={runtime === r.name ? "selected" : ""}
-                    onClick={() => {
-                      setRuntime(r.name);
-                      setProfile("");
-                    }}
+                    disabled={namespaceRuntime !== null && r.name !== namespaceRuntime}
+                    title={
+                      namespaceRuntime !== null && r.name !== namespaceRuntime
+                        ? `${namespaceAccount?.label} is a ${namespaceRuntime} account`
+                        : undefined
+                    }
+                    onClick={() => setRuntime(r.name)}
                   >
                     {r.emoji} {r.display_name}
                   </button>
                 ))}
               </div>
             </div>
-            {runtimeAccounts.length > 1 && (
+            {namespaceAccount && (
               <div className="modal-row">
                 <label>Account</label>
-                <div className="runtime-buttons">
-                  {runtimeAccounts.map((a) => (
-                    <button
-                      key={a.key}
-                      className={profile === profileOf(a) ? "selected" : ""}
-                      onClick={() => setProfile(profileOf(a))}
-                      title={a.email ?? undefined}
-                    >
-                      {a.label}
-                      {a.logged_in === false ? " · signed out" : ""}
-                    </button>
-                  ))}
+                <div style={{ color: "var(--text-1)" }}>
+                  {namespaceAccount.label}
+                  {namespaceAccount.email ? ` · ${namespaceAccount.email}` : ""}
                 </div>
               </div>
             )}

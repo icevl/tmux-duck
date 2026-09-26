@@ -77,8 +77,11 @@ class TestProfileStore:
         from codexbot import profiles
 
         created = profiles.profile_store.create("claude", "Work")
-        again = profiles.profile_store.create("claude", "Work")
-        assert again.id != created.id
+        with pytest.raises(ValueError):
+            profiles.profile_store.create("claude", "work")
+        again = profiles.profile_store.create("claude", "Work!")
+        assert (created.id, again.id) == ("work", again.id)
+        assert again.id.startswith("work-")
 
         reloaded = ProfileStore()
         assert [p.id for p in reloaded.list("claude")] == ["", created.id, again.id]

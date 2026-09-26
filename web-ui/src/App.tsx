@@ -39,6 +39,24 @@ import type { SearchHitTarget } from "./components/SessionSearch";
 
 type AuthState = "loading" | "anon" | "authed";
 
+const NAMESPACE_KEY = "codexbot.namespace";
+
+function readStoredNamespace(): string {
+  try {
+    return window.localStorage.getItem(NAMESPACE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function storeNamespace(value: string): void {
+  try {
+    window.localStorage.setItem(NAMESPACE_KEY, value);
+  } catch {
+    // Private mode / blocked storage: the choice just won't persist.
+  }
+}
+
 // Per-topic open-state for the side panels lives in localStorage so
 // reopening the app restores which panels each session had visible. The
 // stored shape is sparse: `{ "<windowId>": { diff?, office?, term? } }`
@@ -203,6 +221,10 @@ export function App() {
   const [activeId, setActiveId] = useState<string | null>(() =>
     readWindowIdFromUrl(),
   );
+  // Account namespace shown in the sidebar ("" = the system logins).
+  const [namespace, setNamespace] = useState<string>(readStoredNamespace);
+  const namespaceRef = useRef(namespace);
+  namespaceRef.current = namespace;
 
   // Keep the URL in sync with the active session. Pushing a new entry
   // means the browser back button navigates between previously-viewed
@@ -495,7 +517,10 @@ export function App() {
       setSessions(r.sessions);
       setActiveId((prev) => {
         if (prev && r.sessions.some((s) => s.window_id === prev)) return prev;
-        return r.sessions[0]?.window_id ?? null;
+        const sameNamespace = r.sessions.find(
+          (s) => (s.profile ?? "") === namespaceRef.current,
+        );
+        return sameNamespace?.window_id ?? null;
       });
     } catch (err) {
       if ((err as Error & { code?: number }).code === 401) {
@@ -729,6 +754,64 @@ export function App() {
     () => sessions.filter((s) => !s.dormant && s.status === "blocked").length,
     [sessions],
   );
+
+  const namespaces = useMemo(() => {
+    const custom = accounts.filter((a) => !a.is_default);
+    const list = [{ id: "", label: "Main", signedOut: false }];
+    for (const a of custom) {
+      if (!list.some((n) => n.id === a.id)) {
+        list.push({ id: a.id, label: a.label, signedOut: a.logged_in === false });
+      }
+    }
+    return list.map((n) => ({
+      ...n,
+      needsAttention: sessions.some(
+        (s) =>
+          (s.profile ?? "") === n.id &&
+          !s.dormant &&
+          (s.status === "blocked" || doneIds.has(s.window_id)),
+      ),
+    }));
+  }, [accounts, sessions, doneIds]);
+
+  const visibleSessions = useMemo(
+    () => sessions.filter((s) => (s.profile ?? "") === namespace),
+    [sessions, namespace],
+  );
+
+  const selectNamespace = useCallback(
+    (next: string) => {
+      setNamespace(next);
+      storeNamespace(next);
+      setActiveId((prev) => {
+        const current = sessions.find((s) => s.window_id === prev);
+        if (current && (current.profile ?? "") === next) return prev;
+        return sessions.find((s) => (s.profile ?? "") === next)?.window_id ?? null;
+      });
+    },
+    [sessions],
+  );
+
+  // Opening a session of another account (deep link, search hit, Mission
+  // Control) switches the sidebar to that account.
+  useEffect(() => {
+    const active = sessions.find((s) => s.window_id === activeId);
+    if (!active) return;
+    const owner = active.profile ?? "";
+    if (owner !== namespaceRef.current) {
+      setNamespace(owner);
+      storeNamespace(owner);
+    }
+  }, [activeId, sessions]);
+
+  // Fall back to Main when the selected account is deleted.
+  useEffect(() => {
+    if (accounts.length === 0 || namespace === "") return;
+    if (!accounts.some((a) => !a.is_default && a.id === namespace)) {
+      setNamespace("");
+      storeNamespace("");
+    }
+  }, [accounts, namespace]);
 
   // Prune panel-open entries for sessions that no longer exist so a
   // window_id that gets reused (very rare with tmux, but possible after
@@ -1099,7 +1182,10 @@ export function App() {
       }`}
     >
       <Sidebar
-        sessions={sessions}
+        sessions={visibleSessions}
+        namespaces={namespaces}
+        namespace={namespace}
+        onNamespaceChange={selectNamespace}
         sessionsLoaded={sessionsLoaded}
         activeId={activeId}
         busyIds={busyIds}
@@ -1325,6 +1411,7 @@ export function App() {
       {creating && (
         <NewSessionDialog
           accounts={accounts}
+          namespace={namespace}
           onClose={() => setCreating(false)}
           onCreate={handleCreate}
           onOpenAccounts={() => {

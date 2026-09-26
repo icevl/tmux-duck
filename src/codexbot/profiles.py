@@ -181,6 +181,8 @@ class ProfileStore:
             raise ValueError("label is required")
         with self._lock:
             profiles = self._load()
+            if any(p.label.casefold() == label.casefold() for p in profiles.values()):
+                raise ValueError(f"an account named {label!r} already exists")
             base = _slugify(label)
             profile_id = base
             while profile_id in profiles:

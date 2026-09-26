@@ -70,6 +70,10 @@ interface Props {
   onNew: () => void;
   onOpenConnectors: () => void;
   onOpenAccounts: () => void;
+  // Account namespaces ("" = Main); the list shows only `namespace`'s sessions.
+  namespaces: SidebarNamespace[];
+  namespace: string;
+  onNamespaceChange: (id: string) => void;
   // An account with open sessions is signed out.
   accountsNeedSignIn: boolean;
   onLogout: () => void;
@@ -124,6 +128,13 @@ function fmtReset(ts: number | null): string {
   });
 }
 
+export interface SidebarNamespace {
+  id: string;
+  label: string;
+  signedOut: boolean;
+  needsAttention: boolean;
+}
+
 const PERMISSION_MODE_LABELS: Record<string, string> = {
   plan: "plan",
   acceptEdits: "auto-edit",
@@ -148,6 +159,9 @@ export function Sidebar({
   onNew,
   onOpenConnectors,
   onOpenAccounts,
+  namespaces,
+  namespace,
+  onNamespaceChange,
   accountsNeedSignIn,
   onLogout,
   onClose,
@@ -314,6 +328,28 @@ export function Sidebar({
           </button>
         </div>
       </div>
+      {namespaces.length > 1 && (
+        <div className="sidebar-namespaces" role="tablist" aria-label="Account">
+          {namespaces.map((n) => (
+            <button
+              key={n.id || "main"}
+              type="button"
+              role="tab"
+              aria-selected={n.id === namespace}
+              className={`sidebar-namespace${n.id === namespace ? " active" : ""}${
+                n.signedOut ? " signed-out" : ""
+              }`}
+              onClick={() => onNamespaceChange(n.id)}
+              title={n.signedOut ? `${n.label} — signed out` : n.label}
+            >
+              <span className="sidebar-namespace-label">{n.label}</span>
+              {n.id !== namespace && n.needsAttention && (
+                <span className="sidebar-namespace-dot" aria-label="Needs attention" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="sidebar-actions">
         <button className="ghost with-icon sidebar-new" onClick={onNew}>
           <Plus size={ICON} />
@@ -447,11 +483,6 @@ export function Sidebar({
                         />
                       ) : null}
                       {s.name}
-                      {s.profile_label && (
-                        <span className="session-profile" title={`Account: ${s.profile_label}`}>
-                          {s.profile_label}
-                        </span>
-                      )}
                       {s.profile_logged_in === false && (
                         <span
                           className="session-signed-out"
