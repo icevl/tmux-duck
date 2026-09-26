@@ -14,6 +14,40 @@ CODEXBOT_SEARCH_DEVICE="${CODEXBOT_SEARCH_DEVICE:-0}"
 MAX_STOP_WAIT=10   # seconds to wait for process to exit
 MAX_START_WAIT=15  # seconds to wait for process to start
 
+LAUNCHD_LABEL="com.codexbot.bot"
+LAUNCHD_ERR_LOG="${HOME}/.codexbot/logs/launchd.err.log"
+
+launchd_pid() {
+    launchctl print "gui/$(id -u)/${LAUNCHD_LABEL}" 2>/dev/null \
+        | awk '$1 == "pid" { print $3; exit }'
+}
+
+# Installed as a LaunchAgent (scripts/install_macos_launchd.sh): launchd owns
+# the process, so restart it there instead of in the tmux window.
+if [ "$(uname -s)" = "Darwin" ] && launchctl print "gui/$(id -u)/${LAUNCHD_LABEL}" >/dev/null 2>&1; then
+    old_pid="$(launchd_pid || true)"
+    echo "Restarting launchd service ${LAUNCHD_LABEL} (pid ${old_pid:-none})..."
+    launchctl kickstart -k "gui/$(id -u)/${LAUNCHD_LABEL}"
+    waited=0
+    new_pid="$(launchd_pid || true)"
+    while { [ -z "$new_pid" ] || [ "$new_pid" = "$old_pid" ]; } && [ "$waited" -lt "$MAX_START_WAIT" ]; do
+        sleep 1
+        waited=$((waited + 1))
+        new_pid="$(launchd_pid || true)"
+    done
+    if [ -z "$new_pid" ] || [ "$new_pid" = "$old_pid" ]; then
+        echo "Warning: ${LAUNCHD_LABEL} did not come back up. Recent logs:"
+        tail -n 30 "$LAUNCHD_ERR_LOG" 2>/dev/null || true
+        exit 1
+    fi
+    sleep 3
+    echo "codexbot restarted (pid ${new_pid}). Recent logs:"
+    echo "----------------------------------------"
+    tail -n 20 "$LAUNCHD_ERR_LOG" 2>/dev/null || true
+    echo "----------------------------------------"
+    exit 0
+fi
+
 # Check if tmux session and window exist
 if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
     echo "Error: tmux session '$TMUX_SESSION' does not exist"

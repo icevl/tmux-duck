@@ -87,6 +87,10 @@ def main() -> None:
         logging.getLogger().setLevel(root_level)
         logging.getLogger("codexbot").setLevel(root_level)
         logging.getLogger("telegram.ext.AIORateLimiter").setLevel(logging.INFO)
+        # httpx logs every request URL at INFO, and Telegram Bot API URLs embed
+        # the bot token (…/bot<token>/getUpdates).
+        for name in ("httpx", "httpcore"):
+            logging.getLogger(name).setLevel(logging.WARNING)
         logger = logging.getLogger(__name__)
 
         logger.info("Codex sessions path: %s", config.codex_sessions_path)
