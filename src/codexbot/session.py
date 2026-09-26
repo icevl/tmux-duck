@@ -1415,7 +1415,7 @@ class SessionManager:
                 and cached.file_path == str(file_path)
                 and cached.session_id == session.session_id
             ):
-                appended = await self._read_transcript_entries(
+                appended, complete_end = await self._read_complete_transcript_entries(
                     file_path, start_byte=cached.size, end_byte=stat.st_size
                 )
                 if appended:
@@ -1424,17 +1424,19 @@ class SessionManager:
                     )
                     cached.messages.extend(_messages_from_parsed(parsed_entries))
                     cached.pending_tools = pending_tools
-                cached.size = stat.st_size
+                cached.size = complete_end
                 cached.mtime_ns = stat.st_mtime_ns
                 self._touch_history_cache(cache_key)
                 return cached
 
-            entries = await self._read_transcript_entries(file_path)
+            entries, complete_end = await self._read_complete_transcript_entries(
+                file_path
+            )
             parsed_entries, pending_tools = TranscriptParser.parse_entries(entries)
             rebuilt = _HistoryCacheEntry(
                 session_id=session.session_id,
                 file_path=str(file_path),
-                size=stat.st_size,
+                size=complete_end,
                 mtime_ns=stat.st_mtime_ns,
                 messages=_messages_from_parsed(parsed_entries),
                 pending_tools=pending_tools,
@@ -1451,29 +1453,47 @@ class SessionManager:
         start_byte: int = 0,
         end_byte: int | None = None,
     ) -> list[dict]:
+        entries, _ = await self._read_complete_transcript_entries(
+            file_path, start_byte=start_byte, end_byte=end_byte
+        )
+        return entries
+
+    async def _read_complete_transcript_entries(
+        self,
+        file_path: Path,
+        *,
+        start_byte: int = 0,
+        end_byte: int | None = None,
+    ) -> tuple[list[dict], int]:
+        """Parse JSONL records in [start_byte, end_byte).
+
+        Returns the records and the byte offset just past the last complete
+        (newline-terminated) line, so a caller caching progress resumes at a
+        line boundary instead of skipping a record still being written.
+        Binary reads keep offsets true byte positions even when a transcript
+        holds multi-byte UTF-8 text.
+        """
         entries: list[dict] = []
-        async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+        offset = start_byte
+        complete_end = start_byte
+        async with aiofiles.open(file_path, "rb") as f:
             if start_byte > 0:
                 await f.seek(start_byte)
-
-            while True:
-                if end_byte is not None:
-                    cur = await f.tell()
-                    if cur >= end_byte:
-                        break
-                    line_offset = cur
-                else:
-                    line_offset = await f.tell()
-
-                line = await f.readline()
-                if not line:
+            while end_byte is None or offset < end_byte:
+                raw = await f.readline()
+                if not raw:
                     break
-
-                data = TranscriptParser.parse_line(line)
+                if not raw.endswith(b"\n"):
+                    break  # partial tail: the agent is still writing it
+                data = TranscriptParser.parse_line(
+                    raw.decode("utf-8", errors="replace")
+                )
                 if data:
-                    data[TranscriptParser.TRANSCRIPT_OFFSET_KEY] = line_offset
+                    data[TranscriptParser.TRANSCRIPT_OFFSET_KEY] = offset
                     entries.append(data)
-        return entries
+                offset += len(raw)
+                complete_end = offset
+        return entries, complete_end
 
     def _touch_history_cache(self, cache_key: str) -> None:
         if cache_key in self._history_cache:

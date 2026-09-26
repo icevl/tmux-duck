@@ -354,14 +354,48 @@ class TestHistoryCache:
 
             with patch.object(
                 mgr,
-                "_read_transcript_entries",
-                wraps=mgr._read_transcript_entries,
+                "_read_complete_transcript_entries",
+                wraps=mgr._read_complete_transcript_entries,
             ) as read_entries:
                 snapshot = await mgr.get_history_snapshot("@1")
 
         assert [m["text"] for m in snapshot.messages] == ["one", "two"]
         assert read_entries.await_args is not None
         assert read_entries.await_args.kwargs["start_byte"] == initial_size
+
+    @pytest.mark.asyncio
+    async def test_history_snapshot_keeps_partial_tail_for_next_read(
+        self,
+        mgr: SessionManager,
+        tmp_path,
+    ) -> None:
+        """A record still being written (cut inside a Cyrillic character) is
+        neither lost nor allowed to break the read; it lands once complete."""
+        transcript = tmp_path / "session.jsonl"
+        first = json.dumps(
+            _message_entry("assistant", "один", "2026-05-19T10:00:00Z"),
+            ensure_ascii=False,
+        ).encode()
+        second = json.dumps(
+            _message_entry("assistant", "два", "2026-05-19T10:00:01Z"),
+            ensure_ascii=False,
+        ).encode()
+        cut = second.index("два".encode()) + 1  # inside the 2-byte "д"
+        transcript.write_bytes(first + b"\n" + second[:cut])
+        session = CodexSession("session-1", "", 1, str(transcript))
+
+        with patch.object(
+            mgr,
+            "resolve_session_for_window",
+            new=AsyncMock(return_value=session),
+        ):
+            snapshot = await mgr.get_history_snapshot("@1")
+            assert [m["text"] for m in snapshot.messages] == ["один"]
+
+            transcript.write_bytes(first + b"\n" + second + b"\n")
+            snapshot = await mgr.get_history_snapshot("@1")
+
+        assert [m["text"] for m in snapshot.messages] == ["один", "два"]
 
     @pytest.mark.asyncio
     async def test_history_snapshot_rebuilds_after_truncate(

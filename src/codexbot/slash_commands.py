@@ -242,12 +242,14 @@ def extract_help_stdout_from_transcript(
     last_command: str | None = None
     last_help_stdout: str | None = None
     try:
-        with transcript_path.open("r", encoding="utf-8") as f:
+        # Binary: start_offset is a byte position that may fall inside a
+        # multi-byte character; a text-mode read would raise there.
+        with transcript_path.open("rb") as f:
             if start_offset > 0:
                 f.seek(start_offset)
-            for line in f:
+            for raw in f:
                 try:
-                    data = json.loads(line)
+                    data = json.loads(raw.decode("utf-8", errors="replace"))
                 except json.JSONDecodeError:
                     continue
                 stdout, last_command = _extract_help_stdout_from_text(

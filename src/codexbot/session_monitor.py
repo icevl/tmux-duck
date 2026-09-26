@@ -89,6 +89,21 @@ class _PartialLineState:
     retries: int = 0
 
 
+async def _next_line_start(file_path: Path, offset: int) -> int:
+    """First line boundary at or after ``offset`` (the file's size if none)."""
+    if offset <= 0:
+        return 0
+    try:
+        async with aiofiles.open(file_path, "rb") as f:
+            await f.seek(offset - 1)
+            if await f.read(1) == b"\n":
+                return offset
+            await f.readline()
+            return await f.tell()
+    except OSError:
+        return offset
+
+
 class SessionMonitor:
     """Monitors Codex sessions for new transcript messages."""
 
@@ -306,10 +321,15 @@ class SessionMonitor:
     async def _read_new_lines(
         self, session: TrackedSession, file_path: Path
     ) -> list[dict]:
-        """Read new JSONL lines from file_path using byte offsets."""
+        """Read new JSONL lines from file_path using byte offsets.
+
+        Binary mode keeps ``last_byte_offset`` a true byte position: text-mode
+        seeks could land inside a multi-byte UTF-8 character (e.g. Cyrillic)
+        and raise UnicodeDecodeError on every poll.
+        """
         new_entries: list[dict] = []
         try:
-            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
+            async with aiofiles.open(file_path, "rb") as f:
                 await f.seek(0, 2)
                 file_size = await f.tell()
 
@@ -326,8 +346,8 @@ class SessionMonitor:
                 await f.seek(session.last_byte_offset)
 
                 if session.last_byte_offset > 0:
-                    first_char = await f.read(1)
-                    if first_char and first_char != "{":
+                    first_byte = await f.read(1)
+                    if first_byte and first_byte != b"{":
                         logger.warning(
                             "Corrupted offset %d in session %s (mid-line), recovering",
                             session.last_byte_offset,
@@ -341,19 +361,20 @@ class SessionMonitor:
 
                 safe_offset = session.last_byte_offset
                 partial_line_seen = False
-                async for line in f:
+                async for raw_line in f:
                     line_offset = safe_offset
+                    line = raw_line.decode("utf-8", errors="replace")
                     data = TranscriptParser.parse_line(line)
                     if data:
                         data[TranscriptParser.TRANSCRIPT_OFFSET_KEY] = line_offset
                         new_entries.append(data)
-                        safe_offset = await f.tell()
+                        safe_offset += len(raw_line)
                     elif line.strip():
                         self._record_partial_line(session.session_id, safe_offset)
                         partial_line_seen = True
                         break
                     else:
-                        safe_offset = await f.tell()
+                        safe_offset += len(raw_line)
 
                 if not partial_line_seen:
                     self._clear_partial_line_state(session.session_id)
@@ -403,7 +424,9 @@ class SessionMonitor:
                         )
                     else:
                         tail_bytes = max(0, config.monitor_new_session_tail_bytes)
-                        start_offset = max(current_size - tail_bytes, 0)
+                        start_offset = await _next_line_start(
+                            session_info.file_path, max(current_size - tail_bytes, 0)
+                        )
                         logger.info(
                             "Started tracking session: %s (tail offset=%d size=%d)",
                             session_info.session_id,
@@ -567,6 +590,11 @@ class SessionMonitor:
             except OSError as e:
                 logger.debug(
                     "Error processing session %s: %s", session_info.session_id, e
+                )
+            except Exception:
+                # One unreadable transcript must not stall every other session.
+                logger.exception(
+                    "Failed to process session %s", session_info.session_id
                 )
 
         self.state.save_if_dirty()

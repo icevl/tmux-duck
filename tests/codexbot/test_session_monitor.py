@@ -918,3 +918,67 @@ class TestSessionMonitorSessionRebinding:
         assert task.done()
         assert task.cancelled()
         assert monitor._task is None
+
+
+class TestMultibyteOffsets:
+    """Transcripts full of Cyrillic must never wedge the monitor."""
+
+    @pytest.mark.asyncio
+    async def test_offset_inside_multibyte_char_recovers(self, tmp_path):
+        monitor = SessionMonitor(
+            projects_path=tmp_path / "projects",
+            state_file=tmp_path / "monitor_state.json",
+        )
+        line1 = json.dumps(
+            {"type": "assistant", "message": {"content": "привет"}}, ensure_ascii=False
+        ).encode()
+        line2 = json.dumps(
+            {"type": "assistant", "message": {"content": "мир"}}, ensure_ascii=False
+        ).encode()
+        jsonl_file = tmp_path / "session.jsonl"
+        jsonl_file.write_bytes(line1 + b"\n" + line2 + b"\n")
+        inside_char = line1.index("привет".encode()) + 1
+        session = TrackedSession(
+            session_id="s", file_path=str(jsonl_file), last_byte_offset=inside_char
+        )
+
+        assert await monitor._read_new_lines(session, jsonl_file) == []
+        assert session.last_byte_offset == len(line1) + 1
+        entries = await monitor._read_new_lines(session, jsonl_file)
+        assert [e["message"]["content"] for e in entries] == ["мир"]
+        assert session.last_byte_offset == jsonl_file.stat().st_size
+
+    @pytest.mark.asyncio
+    async def test_new_session_tail_starts_on_a_line_boundary(
+        self, tmp_path, monkeypatch
+    ):
+        from codexbot.config import config
+
+        monitor = SessionMonitor(
+            projects_path=tmp_path / "projects",
+            state_file=tmp_path / "monitor_state.json",
+        )
+        lines = [
+            json.dumps(
+                {"type": "assistant", "message": {"content": f"строка {i} " * 5}},
+                ensure_ascii=False,
+            ).encode()
+            + b"\n"
+            for i in range(40)
+        ]
+        jsonl_file = tmp_path / "session.jsonl"
+        jsonl_file.write_bytes(b"".join(lines))
+        size = jsonl_file.stat().st_size
+        # A tail window that begins inside a Cyrillic character.
+        tail = size - (len(b"".join(lines[:20])) + 3)
+        monkeypatch.setattr(config, "monitor_new_session_tail_bytes", size - tail)
+        with patch.object(
+            monitor,
+            "_resolve_active_sessions",
+            return_value=[SessionInfo(session_id="s", file_path=jsonl_file)],
+        ):
+            messages = await monitor.check_for_updates({"s"}, bootstrap=False)
+
+        assert [m.text for m in messages] == [
+            (f"строка {i} " * 5).strip() for i in range(21, 40)
+        ]
