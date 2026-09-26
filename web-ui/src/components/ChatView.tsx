@@ -1655,6 +1655,7 @@ export function ChatView({
   } | null>(null);
   const [interactiveSending, setInteractiveSending] = useState(false);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [recapOpen, setRecapOpen] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitIsRepo, setGitIsRepo] = useState(false);
   const [searchHighlightKey, setSearchHighlightKey] = useState<string | null>(null);
@@ -2923,6 +2924,28 @@ export function ChatView({
         </div>
       </div>
 
+      {(session.recap || session.last_prompt) && (
+        <button
+          type="button"
+          className={`session-recap${recapOpen ? " open" : ""}`}
+          onClick={() => setRecapOpen((v) => !v)}
+          aria-expanded={recapOpen}
+          title={recapOpen ? "Collapse" : "What this session is about"}
+        >
+          {session.recap && (
+            <span className="session-recap-text">
+              <span className="session-recap-label">Recap</span>
+              {session.recap}
+            </span>
+          )}
+          {session.last_prompt && (recapOpen || !session.recap) && (
+            <span className="session-recap-text">
+              <span className="session-recap-label">Last request</span>
+              {session.last_prompt}
+            </span>
+          )}
+        </button>
+      )}
       <div className="messages-wrapper">
         <div className="messages" ref={scrollerRef} onScroll={handleScroll}>
         {messages.length === 0 ? (

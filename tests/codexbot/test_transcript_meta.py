@@ -42,6 +42,9 @@ class TestTranscriptMetaCache:
             "permission_mode": "plan",
             "pr_url": "https://github.com/acme/app/pull/29",
             "pr_number": 29,
+            "last_prompt": None,
+            "recap": None,
+            "recap_at": None,
         }
 
     def test_reads_only_appended_bytes(self, tmp_path):
@@ -79,6 +82,9 @@ class TestTranscriptMetaCache:
             "permission_mode": "plan",
             "pr_url": None,
             "pr_number": None,
+            "last_prompt": None,
+            "recap": None,
+            "recap_at": None,
         }
 
     def test_missing_file(self, tmp_path):
@@ -126,3 +132,38 @@ class TestMonitorMetaListener:
             await monitor.check_for_updates({"s"}, bootstrap=False)
             await monitor._notify_meta_listeners()
             assert calls == 2
+
+
+class TestSessionRecap:
+    def test_latest_recap_and_prompt_without_harness_noise(self, tmp_path):
+        path = tmp_path / "s.jsonl"
+        path.write_text(
+            _line({"type": "ai-title", "aiTitle": "Conversation recall"})
+            + _line({"type": "last-prompt", "lastPrompt": "привет"})
+            + _line(
+                {
+                    "type": "system",
+                    "subtype": "away_summary",
+                    "content": "We shipped the fix. (disable recaps in /config)",
+                    "timestamp": "2026-09-26T08:40:19.913Z",
+                }
+            )
+            + _line({"type": "system", "subtype": "turn_duration", "durationMs": 5})
+            + _line(
+                {
+                    "type": "last-prompt",
+                    "lastPrompt": "check this (image attached: /tmp/a.png) please",
+                }
+            ),
+            encoding="utf-8",
+        )
+        meta = TranscriptMetaCache().get(path)
+        assert meta.recap == "We shipped the fix."
+        assert meta.recap_at == "2026-09-26T08:40:19.913Z"
+        assert meta.last_prompt == "check this please"
+        assert meta.title == "Conversation recall"
+
+    def test_other_system_records_do_not_count_as_changes(self):
+        meta = TranscriptMeta()
+        assert not meta.apply({"type": "system", "subtype": "turn_duration"})
+        assert meta.apply({"type": "system", "subtype": "away_summary", "content": "x"})

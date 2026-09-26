@@ -4896,3 +4896,41 @@ button.primary.send-button {
   border-radius: 50%;
   background: var(--accent);
 }
+
+/* Session recap under the chat header */
+.session-recap {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 20px;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text-1);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-recap-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-recap.open .session-recap-text {
+  white-space: normal;
+}
+
+.session-recap-label {
+  margin-right: 6px;
+  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

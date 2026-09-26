@@ -142,6 +142,13 @@ const PERMISSION_MODE_LABELS: Record<string, string> = {
   auto: "auto",
 };
 
+// The auto title is generated once from the first message and goes stale, so
+// prefer Claude's recap of the session, then the latest request.
+function sessionSubtitle(s: SessionSummary): string | null {
+  const text = s.recap || s.last_prompt || (s.title !== s.name ? s.title : null);
+  return text ? text.replace(/\s+/g, " ").trim() : null;
+}
+
 function permissionModeLabel(mode: string | null | undefined): string | null {
   return mode ? (PERMISSION_MODE_LABELS[mode] ?? null) : null;
 }
@@ -511,9 +518,9 @@ export function Sidebar({
                         </a>
                       )}
                     </div>
-                    {s.title && s.title !== s.name && (
-                      <div className="session-title" title={s.title}>
-                        {s.title}
+                    {sessionSubtitle(s) && (
+                      <div className="session-title" title={sessionSubtitle(s) ?? undefined}>
+                        {sessionSubtitle(s)}
                       </div>
                     )}
                   </div>

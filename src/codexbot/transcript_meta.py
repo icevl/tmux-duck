@@ -6,6 +6,13 @@ records to the session JSONL::
     {"type": "ai-title", "aiTitle": "Conversation recall"}
     {"type": "permission-mode", "permissionMode": "bypassPermissions"}
     {"type": "pr-link", "prNumber": 29, "prUrl": "https://…/pull/29", …}
+    {"type": "last-prompt", "lastPrompt": "fix the parser", …}
+    {"type": "system", "subtype": "away_summary", "content": "We fixed …"}
+
+``away_summary`` is Claude's own recap of the session (goal, state, next
+step), written when the user comes back after a break; together with the
+last prompt it tells a returning user what the session is about — the
+auto title is generated once from the first message and goes stale.
 
 The latest of each wins. ``TranscriptMetaCache`` keeps a per-file byte
 offset so repeated lookups (every `/api/sessions` call) only parse what was
@@ -16,17 +23,26 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
-from dataclasses import dataclass, field, replace
+from dataclasses import astuple, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-META_RECORD_TYPES = frozenset({"ai-title", "permission-mode", "pr-link"})
-_META_LINE_MARKERS = tuple(
-    f'"type":"{kind}"'.encode() for kind in sorted(META_RECORD_TYPES)
+META_RECORD_TYPES = frozenset(
+    {"ai-title", "permission-mode", "pr-link", "last-prompt", "system"}
 )
+_META_LINE_MARKERS = (
+    b'"type":"ai-title"',
+    b'"type":"permission-mode"',
+    b'"type":"pr-link"',
+    b'"type":"last-prompt"',
+    b'"subtype":"away_summary"',
+)
+_RECAP_FOOTER = re.compile(r"\s*\(disable recaps in /config\)\s*$")
+_IMAGE_ATTACHMENT = re.compile(r"\s*\(image attached: [^)]*\)")
 _READ_CHUNK_BYTES = 1 << 20
 
 
@@ -36,11 +52,14 @@ class TranscriptMeta:
     permission_mode: str | None = None
     pr_url: str | None = None
     pr_number: int | None = None
+    last_prompt: str | None = None
+    recap: str | None = None
+    recap_at: str | None = None
 
     def apply(self, record: dict[str, Any]) -> bool:
         """Fold one transcript record in; return True if anything changed."""
         kind = record.get("type")
-        before = (self.title, self.permission_mode, self.pr_url, self.pr_number)
+        before = astuple(self)
         if kind == "ai-title":
             title = record.get("aiTitle")
             if isinstance(title, str) and title.strip():
@@ -59,7 +78,21 @@ class TranscriptMeta:
                     if isinstance(number, int) and not isinstance(number, bool)
                     else None
                 )
-        return before != (self.title, self.permission_mode, self.pr_url, self.pr_number)
+        elif kind == "last-prompt":
+            prompt = record.get("lastPrompt")
+            if isinstance(prompt, str):
+                prompt = _IMAGE_ATTACHMENT.sub("", prompt).strip()
+                if prompt:
+                    self.last_prompt = prompt
+        elif kind == "system" and record.get("subtype") == "away_summary":
+            content = record.get("content")
+            if isinstance(content, str):
+                recap = _RECAP_FOOTER.sub("", content).strip()
+                if recap:
+                    self.recap = recap
+                    timestamp = record.get("timestamp")
+                    self.recap_at = timestamp if isinstance(timestamp, str) else None
+        return before != astuple(self)
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -67,6 +100,9 @@ class TranscriptMeta:
             "permission_mode": self.permission_mode,
             "pr_url": self.pr_url,
             "pr_number": self.pr_number,
+            "last_prompt": self.last_prompt,
+            "recap": self.recap,
+            "recap_at": self.recap_at,
         }
 
 

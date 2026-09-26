@@ -72,6 +72,11 @@ export interface SessionSummary {
   permission_mode?: string | null;
   pr_url?: string | null;
   pr_number?: number | null;
+  // What the session is about: Claude's own recap (written when you come
+  // back after a break) and your latest message.
+  last_prompt?: string | null;
+  recap?: string | null;
+  recap_at?: string | null;
   // Account profile ("" = default login) and whether it is signed in.
   profile?: string;
   profile_label?: string | null;
