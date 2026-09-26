@@ -128,6 +128,7 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
         def __init__(self) -> None:
             self.listeners: list[object] = []
             self.removed: list[object] = []
+            self.meta_listeners: list[object] = []
 
         def add_listener(self, listener: object) -> None:
             self.listeners.append(listener)
@@ -135,6 +136,12 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
         def remove_listener(self, listener: object) -> None:
             self.removed.append(listener)
             self.listeners.remove(listener)
+
+        def add_meta_listener(self, listener: object) -> None:
+            self.meta_listeners.append(listener)
+
+        def remove_meta_listener(self, listener: object) -> None:
+            self.meta_listeners.remove(listener)
 
     monitor = FakeMonitor()
     release = asyncio.Event()
@@ -205,3 +212,4 @@ async def test_start_web_server_attaches_and_removes_search_live_listener(
     assert handle.search_listener in monitor.removed
     assert handle.idle_tracker.listener in monitor.removed
     assert monitor.listeners == []
+    assert monitor.meta_listeners == []

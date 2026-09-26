@@ -58,6 +58,7 @@ from pydantic import BaseModel, Field
 
 from ..config import config
 from ..runtimes import all_runtimes, get_runtime
+from ..transcript_meta import TranscriptMeta, transcript_meta_cache
 from ..search import client as search_client
 from ..search.contracts import SearchRequest
 from ..session import session_manager
@@ -860,6 +861,21 @@ def create_app(
     # Sessions
     # -----------------------------------------------------------------------
 
+    async def _claude_transcript_meta() -> dict[str, TranscriptMeta]:
+        """Title / permission mode / PR link of every known Claude session."""
+        paths: dict[str, Path] = {}
+        for ws in session_manager.window_states.values():
+            if ws.runtime != "claude" or not ws.session_id:
+                continue
+            path = session_manager._session_index.get(ws.session_id)
+            if path is not None:
+                paths[ws.session_id] = path
+        if not paths:
+            return {}
+        return await asyncio.to_thread(
+            lambda: {sid: transcript_meta_cache.get(p) for sid, p in paths.items()}
+        )
+
     @app.get("/api/sessions")
     async def list_sessions(_user: str = Depends(require_auth)) -> dict[str, Any]:
         windows = await tmux_manager.list_windows()
@@ -867,6 +883,11 @@ def create_app(
         # activity reflects reality.
         await session_manager._refresh_sessions_index(force=True)
         status_snapshot = status_tracker.snapshot() if status_tracker else {}
+        transcript_meta = await _claude_transcript_meta()
+
+        def _meta_fields(ws: Any) -> dict[str, Any]:
+            meta = transcript_meta.get(ws.session_id) if ws.session_id else None
+            return meta.to_payload() if meta else TranscriptMeta().to_payload()
 
         def _status_fields(window_id: str) -> dict[str, Any]:
             st = status_snapshot.get(window_id)
@@ -907,6 +928,7 @@ def create_app(
                     "sort_order": ws.sort_order,
                     "dormant": False,
                     **_status_fields(w.window_id),
+                    **_meta_fields(ws),
                 }
             )
         # Dormant entries (preserved across reboot) ride along in the same list
@@ -940,6 +962,7 @@ def create_app(
                     "sort_order": ws.sort_order,
                     "dormant": True,
                     **_status_fields(dormant_key),
+                    **_meta_fields(ws),
                 }
             )
         # Pinned sessions float to the top; manual order wins inside each

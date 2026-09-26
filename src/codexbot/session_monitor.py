@@ -20,6 +20,7 @@ import aiofiles
 
 from .config import config
 from .monitor_state import MonitorState, TrackedSession
+from .transcript_meta import META_RECORD_TYPES, TranscriptMeta
 from .transcript_parser import TranscriptParser
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,9 @@ class SessionMonitor:
         self._task: asyncio.Task | None = None
         self._message_callback: Callable[[NewMessage], Awaitable[None]] | None = None
         self._extra_listeners: list[Callable[[NewMessage], Awaitable[None]]] = []
+        self._meta_listeners: list[Callable[[], Awaitable[None]]] = []
+        self._session_meta: dict[str, TranscriptMeta] = {}
+        self._meta_changed = False
         self._pending_tools: dict[str, dict[str, Any]] = {}
         self._pending_initial_offsets: dict[str, int] = {}
         self._last_window_sessions: dict[str, str] = {}
@@ -236,6 +240,35 @@ class SessionMonitor:
             self._extra_listeners.remove(callback)
         except ValueError:
             pass
+
+    def add_meta_listener(self, callback: Callable[[], Awaitable[None]]) -> None:
+        """Register a callback fired when a session's transcript metadata
+        (title, permission mode, PR link) changes."""
+        self._meta_listeners.append(callback)
+
+    def remove_meta_listener(self, callback: Callable[[], Awaitable[None]]) -> None:
+        try:
+            self._meta_listeners.remove(callback)
+        except ValueError:
+            pass
+
+    def _observe_meta(self, session_id: str, entries: list[dict]) -> None:
+        for entry in entries:
+            if entry.get("type") not in META_RECORD_TYPES:
+                continue
+            meta = self._session_meta.setdefault(session_id, TranscriptMeta())
+            if meta.apply(entry):
+                self._meta_changed = True
+
+    async def _notify_meta_listeners(self) -> None:
+        if not self._meta_changed:
+            return
+        self._meta_changed = False
+        for listener in list(self._meta_listeners):
+            try:
+                await listener()
+            except Exception as e:
+                logger.error("Meta listener error: %s", e)
 
     def set_initial_offset(self, session_id: str, offset: int) -> None:
         """Start monitoring a session from a specific byte offset."""
@@ -413,6 +446,7 @@ class SessionMonitor:
                     tracked, session_info.file_path
                 )
                 self._file_mtimes[session_info.session_id] = current_mtime
+                self._observe_meta(session_info.session_id, new_entries)
 
                 carry = self._pending_tools.get(session_info.session_id, {})
                 parsed_entries, remaining = TranscriptParser.parse_entries(
@@ -665,6 +699,7 @@ class SessionMonitor:
                                 await self._message_callback(msg)
                             except Exception as e:
                                 logger.error("Message callback error: %s", e)
+                    await self._notify_meta_listeners()
                 except Exception as e:
                     logger.error("Monitor loop error: %s", e)
 

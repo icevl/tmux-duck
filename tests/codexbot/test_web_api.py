@@ -551,6 +551,50 @@ def test_list_sessions_returns_windows(
     assert "sort_order" in body["sessions"][0]
 
 
+def test_list_sessions_includes_claude_transcript_meta(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    transcript = tmp_path / "s9.jsonl"
+    transcript.write_text(
+        '{"type":"ai-title","aiTitle":"Fix the parser"}\n'
+        '{"type":"permission-mode","permissionMode":"plan"}\n'
+        '{"type":"pr-link","prNumber":7,"prUrl":"https://github.com/a/b/pull/7"}\n',
+        encoding="utf-8",
+    )
+
+    async def fake_list() -> list[TmuxWindow]:
+        return [
+            TmuxWindow(
+                window_id="@9",
+                window_name="work",
+                cwd="/tmp",
+                pane_current_command="2.1.282",
+            )
+        ]
+
+    from codexbot.web import api as web_api
+
+    monkeypatch.setattr(web_api.tmux_manager, "list_windows", fake_list)
+    monkeypatch.setattr(
+        web_api.session_manager, "_refresh_sessions_index", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        web_api.session_manager,
+        "window_states",
+        {"@9": WindowState(session_id="s9", runtime="claude")},
+    )
+    monkeypatch.setattr(web_api.session_manager, "_session_index", {"s9": transcript})
+
+    r = authed_client.get("/api/sessions")
+
+    assert r.status_code == 200, r.text
+    session = r.json()["sessions"][0]
+    assert session["title"] == "Fix the parser"
+    assert session["permission_mode"] == "plan"
+    assert session["pr_url"] == "https://github.com/a/b/pull/7"
+    assert session["pr_number"] == 7
+
+
 def test_list_sessions_does_not_touch_search_runtime(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -100,6 +100,7 @@ class WebServerHandle:
         self.usage_task = usage_task
         self.listener: Listener | None = None
         self.search_listener: Listener | None = None
+        self.meta_listener: Callable[[], Awaitable[None]] | None = None
 
 
 _handle: Optional[WebServerHandle] = None
@@ -154,6 +155,12 @@ async def start_web_server(
 
         monitor.add_listener(_listener)
         listener_ref = _listener
+
+        async def _meta_listener() -> None:
+            await bus.publish_sessions_changed()
+
+        monitor.add_meta_listener(_meta_listener)
+        meta_listener_ref: Callable[[], Awaitable[None]] | None = _meta_listener
         if config.search_enabled:
             search_producer = LiveQueueProducer()
             monitor.add_listener(search_producer.listener)
@@ -169,6 +176,7 @@ async def start_web_server(
     else:
         listener_ref = None
         search_listener_ref = None
+        meta_listener_ref = None
 
     # Server-side status state machine, shared by the session list (enriches
     # /api/sessions) and live `session_status` events. Subscribes internally so
@@ -313,6 +321,7 @@ async def start_web_server(
     )
     handle.listener = listener_ref
     handle.search_listener = search_listener_ref
+    handle.meta_listener = meta_listener_ref
     _handle = handle
     return handle
 
@@ -328,6 +337,8 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
         monitor.remove_listener(handle.listener)
     if monitor is not None and handle.search_listener is not None:
         monitor.remove_listener(handle.search_listener)
+    if monitor is not None and handle.meta_listener is not None:
+        monitor.remove_meta_listener(handle.meta_listener)
     if monitor is not None and handle.idle_tracker is not None:
         handle.idle_tracker.detach(monitor)
     # Stop the bus consumers before closing the bus: once closed, the bus hands

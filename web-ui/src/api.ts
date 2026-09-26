@@ -66,6 +66,12 @@ export interface SessionSummary {
   status_since?: number | null;
   attention?: boolean;
   prompt_summary?: string | null;
+  // Claude transcript metadata: auto-generated title, permission mode and the
+  // PR/MR the session opened. Null for Codex sessions.
+  title?: string | null;
+  permission_mode?: string | null;
+  pr_url?: string | null;
+  pr_number?: number | null;
 }
 
 export interface ResumeDormantResponse {

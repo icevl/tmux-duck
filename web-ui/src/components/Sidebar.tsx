@@ -3,6 +3,7 @@ import {
   Bell,
   BellOff,
   Brain,
+  GitPullRequest,
   GripVertical,
   LayoutGrid,
   Loader2,
@@ -116,6 +117,17 @@ function fmtReset(ts: number | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+const PERMISSION_MODE_LABELS: Record<string, string> = {
+  plan: "plan",
+  acceptEdits: "auto-edit",
+  bypassPermissions: "bypass",
+  auto: "auto",
+};
+
+function permissionModeLabel(mode: string | null | undefined): string | null {
+  return mode ? (PERMISSION_MODE_LABELS[mode] ?? null) : null;
 }
 
 export function Sidebar({
@@ -428,7 +440,32 @@ export function Sidebar({
                         />
                       ) : null}
                       {s.name}
+                      {permissionModeLabel(s.permission_mode) && (
+                        <span
+                          className={`session-mode session-mode-${s.permission_mode}`}
+                          title={`Permission mode: ${s.permission_mode}`}
+                        >
+                          {permissionModeLabel(s.permission_mode)}
+                        </span>
+                      )}
+                      {s.pr_url && (
+                        <a
+                          className="session-pr-link"
+                          href={s.pr_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={s.pr_number ? `PR #${s.pr_number}` : "Pull request"}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <GitPullRequest size={12} />
+                        </a>
+                      )}
                     </div>
+                    {s.title && s.title !== s.name && (
+                      <div className="session-title" title={s.title}>
+                        {s.title}
+                      </div>
+                    )}
                   </div>
                   <div
                     className={`session-menu${isOpen ? " open" : ""}`}

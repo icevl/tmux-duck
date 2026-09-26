@@ -1434,6 +1434,45 @@ button.burger {
   white-space: nowrap;
 }
 
+.session-item .session-title {
+  color: var(--text-2);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-mode {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-1);
+  vertical-align: 1px;
+}
+
+.session-mode-plan {
+  color: var(--accent);
+  border-color: currentColor;
+}
+
+.session-mode-bypassPermissions {
+  color: var(--warn);
+  border-color: currentColor;
+}
+
+.session-pr-link {
+  margin-left: 6px;
+  color: var(--text-2);
+  vertical-align: -1px;
+}
+
+.session-pr-link:hover {
+  color: var(--text-0);
+}
+
 .runtime-icon {
   display: inline-block;
   vertical-align: -2px;
