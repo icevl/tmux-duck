@@ -164,14 +164,22 @@ CLAUDE_UI_PATTERNS: list[UIPattern] = [
             re.compile(r"^\s*❯?\s*\d+\.\s+No,\s+keep\s+planning", re.IGNORECASE),
             re.compile(r"^\s*esc to (cancel|exit|go back)", re.IGNORECASE),
             re.compile(r"^\s*Enter to confirm", re.IGNORECASE),
+            # 2.1.28x: "3. Tell Claude what to change" + "ctrl+g to edit in Vim"
+            re.compile(r"^\s*ctrl\+g to edit in ", re.IGNORECASE),
+            re.compile(r"^\s*❯?\s*\d+\.\s+Tell Claude what to change", re.IGNORECASE),
         ),
         min_gap=2,
     ),
     UIPattern(
         name="WorkspaceTrust",
-        top=(re.compile(r"^\s*Do you trust the files in this folder\?"),),
+        top=(
+            re.compile(r"^\s*Do you trust the files in this folder\?"),
+            # 2.1.28x: unnumbered "❯ No, exit / Yes, I trust this folder"
+            re.compile(r"^\s*Accessing workspace:"),
+        ),
         bottom=(
             re.compile(r"^\s*❯?\s*\d+\.\s+(No,\s+exit|Yes,\s+proceed)", re.IGNORECASE),
+            re.compile(r"^\s*Enter to confirm", re.IGNORECASE),
         ),
         min_gap=2,
     ),
@@ -199,6 +207,14 @@ CLAUDE_UI_PATTERNS: list[UIPattern] = [
             re.compile(r"^\s*\d+\.\s+No,\s+and\s+tell\s+Claude", re.IGNORECASE),
             re.compile(r"^\s*esc to (cancel|exit)", re.IGNORECASE),
         ),
+        min_gap=1,
+    ),
+    UIPattern(
+        # 2.1.28x AskUserQuestion: "☐ Header" tab line over a numbered list,
+        # multi-question forms prefix the tab bar with "←".
+        name="AskUserQuestion",
+        top=(re.compile(r"^\s*(?:←\s+)?[☐✔☒]\s"),),
+        bottom=(re.compile(r"^\s*Enter to select\b", re.IGNORECASE),),
         min_gap=1,
     ),
     UIPattern(
@@ -338,17 +354,29 @@ def parse_options(content: str) -> ParsedPrompt | None:
         return None
     lines = content.split("\n")
 
-    numbered: list[ParsedOption] = []
-    current = -1
+    # Numbered lists inside the prompt body (e.g. the steps of a plan) look
+    # like options too; a restart at "1." begins a new run, and the menu is
+    # the run holding the ❯ cursor (else the last one).
+    runs: list[tuple[list[ParsedOption], int]] = []
+    last_number = 0
     for line in lines:
         m = _RE_NUM_OPTION.match(line)
         if not m:
             continue
+        number = int(m.group(2))
+        if not runs or number != last_number + 1:
+            runs.append(([], -1))
+        options, current = runs[-1]
         if m.group(1) == _OPTION_CURSOR:
-            current = len(numbered)
-        numbered.append(ParsedOption(label=m.group(3).strip()))
-    if numbered:
-        return ParsedPrompt(options=numbered, current_index=max(current, 0))
+            current = len(options)
+        options.append(ParsedOption(label=m.group(3).strip()))
+        runs[-1] = (options, current)
+        last_number = number
+    if runs:
+        options, current = next(
+            (run for run in reversed(runs) if run[1] >= 0), runs[-1]
+        )
+        return ParsedPrompt(options=options, current_index=max(current, 0))
 
     radio: list[ParsedOption] = []
     current = -1

@@ -625,6 +625,45 @@ class SessionManager:
             force_refresh=force_refresh,
         )
 
+    async def bind_claude_session_from_hook(
+        self,
+        window_id: str,
+        session_id: str,
+        *,
+        cwd: str | None = None,
+        transcript_path: Path | None = None,
+    ) -> bool:
+        """Bind a window to the id a Claude ``SessionStart`` hook reported.
+
+        The hook is authoritative (it runs inside the pane's own Claude), so
+        this skips process-tree discovery. Returns True when the binding
+        changed. Windows codexbot doesn't manage are ignored.
+        """
+        state = self.window_states.get(window_id)
+        if state is None or self.is_dormant_key(window_id):
+            return False
+        if transcript_path is not None:
+            self._session_index[session_id] = transcript_path
+        # The hook already verified this pane; don't re-probe it right away.
+        self._status_probe_last_by_window[window_id] = time.monotonic()
+        changed = state.runtime != "claude" or state.session_id != session_id
+        if not changed:
+            return False
+        old_sid = state.session_id
+        state.runtime = "claude"
+        state.session_id = session_id
+        if cwd and not state.cwd:
+            state.cwd = self._normalize_cwd(cwd)
+        self._save_state()
+        logger.info(
+            "window_session_rebound_by_hook window_id=%s old_session=%s new_session=%s",
+            window_id,
+            old_sid,
+            session_id,
+        )
+        await self.schedule_hint_discovery(window_id)
+        return True
+
     async def refresh_window_session_if_stale(self, window_id: str) -> str | None:
         """Refresh window->session mapping using transcript discovery only."""
         state = self.get_window_state(window_id)

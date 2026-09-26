@@ -35,20 +35,16 @@ _RE_BYPASS_PERMISSIONS_PROMPT = re.compile(
     r"bypass permissions mode",
     re.IGNORECASE,
 )
-_RE_BYPASS_ACCEPT_OPTION = re.compile(
-    r"^\s*(?:❯\s*)?2\.\s+Yes\b",
-    re.IGNORECASE | re.MULTILINE,
-)
 _RE_WORKSPACE_TRUST_PROMPT = re.compile(
-    r"do you trust the files in this",
+    # ≤ 2.1.2x: "Do you trust the files in this folder?"
+    # 2.1.28x: "Quick safety check: Is this a project you created or one you
+    # trust?" over an unnumbered "❯ No, exit / Yes, I trust this folder".
+    r"do you trust the files in this|yes, i trust this folder",
     re.IGNORECASE,
 )
-# Accept any "1. Yes…" option (wording varies by version: "Yes, proceed",
-# "Yes, I trust this folder", …).
-_RE_WORKSPACE_TRUST_ACCEPT_OPTION = re.compile(
-    r"^\s*(?:❯\s*)?1\.\s+Yes\b",
-    re.IGNORECASE | re.MULTILINE,
-)
+# A Yes/No menu row, numbered ("❯ 1. Yes, proceed") or not ("  Yes, I trust
+# this folder"). Which row is the default differs per prompt and version.
+_RE_STARTUP_OPTION = re.compile(r"^\s*(❯)?\s*(?:\d+\.\s+)?(yes|no)\b", re.IGNORECASE)
 
 
 def _write_system_prompt_file(system_prompt: str | None) -> str | None:
@@ -98,9 +94,14 @@ class ClaudeRuntime:
                 # into the pane breaks shell quoting (instructions spilled into
                 # the shell as commands). The command line stays single-line.
                 cmd = f"{cmd} --append-system-prompt-file {shlex.quote(prompt_file)}"
-        elif config.claude_auto_approve_dangerous:
-            if "--dangerously-skip-permissions" not in cmd:
-                cmd = f"{cmd} --dangerously-skip-permissions"
+        else:
+            if config.claude_auto_approve_dangerous:
+                if "--dangerously-skip-permissions" not in cmd:
+                    cmd = f"{cmd} --dangerously-skip-permissions"
+            if config.claude_event_hooks and "--settings" not in cmd:
+                from ..claude_hooks import ensure_event_hook_settings
+
+                cmd = f"{cmd} --settings {shlex.quote(ensure_event_hook_settings())}"
         return cmd
 
     async def discover_session_id(
@@ -160,12 +161,13 @@ async def _maybe_advance_startup_prompt(
     *,
     last_action_at: dict[str, float],
 ) -> None:
-    """Advance known Claude startup prompts that block session creation.
+    """Accept the Claude startup prompts that block session creation.
 
-    We only auto-confirm prompts that happen before Claude starts its working
-    session in tmux:
-      - Bypass permissions warning (`2. Yes, I accept`)
-      - Workspace trust prompt (`1. Yes, proceed`)
+    Only the prompts shown before Claude starts its working session:
+      - the bypass-permissions warning (accept),
+      - the workspace trust prompt (trust the folder).
+    The cursor is moved onto the "Yes" row before Enter, since the default row
+    is "No, exit" in some versions.
     """
     window = await tmux_manager.find_window_by_id(window_id)
     if not window:
@@ -177,57 +179,65 @@ async def _maybe_advance_startup_prompt(
     if not pane_text:
         return
 
-    action = _classify_startup_prompt(pane_text)
-    if action is None:
+    prompt = _startup_prompt(pane_text)
+    if prompt is None:
         return
+    action, keys = prompt
 
     now = time.monotonic()
     if now - last_action_at.get(action, 0.0) < 2.0:
         return
 
-    if action == "bypass_permissions":
-        moved = await tmux_manager.send_keys(
-            window_id,
-            "Down",
-            enter=False,
-            literal=False,
-        )
-        if not moved:
+    for index, key in enumerate(keys):
+        if index:
+            await asyncio.sleep(0.2)
+        if not await tmux_manager.send_keys(window_id, key, enter=False, literal=False):
             return
-        await asyncio.sleep(0.2)
-        sent = await tmux_manager.send_keys(
-            window_id,
-            "Enter",
-            enter=False,
-            literal=False,
+    last_action_at[action] = now
+    logger.info(
+        "auto-advanced claude startup prompt window=%s action=%s",
+        window_id,
+        action,
+    )
+
+
+def _keys_to_accept(pane_text: str) -> list[str] | None:
+    """Keys that move the menu cursor onto the "Yes" row and confirm it."""
+    runs: list[list[tuple[bool, bool]]] = [[]]
+    for line in pane_text.splitlines():
+        match = _RE_STARTUP_OPTION.match(line)
+        if match:
+            runs[-1].append((bool(match.group(1)), match.group(2).lower() == "yes"))
+        elif runs[-1]:
+            runs.append([])
+    for options in reversed(runs):
+        cursor = next(
+            (i for i, (has_cursor, _) in enumerate(options) if has_cursor), None
         )
+        target = next((i for i, (_, is_yes) in enumerate(options) if is_yes), None)
+        if cursor is None or target is None or len(options) < 2:
+            continue
+        step = "Down" if target > cursor else "Up"
+        return [step] * abs(target - cursor) + ["Enter"]
+    return None
+
+
+def _startup_prompt(pane_text: str) -> tuple[str, list[str]] | None:
+    """Return (action name, keys to accept) for a startup prompt snapshot."""
+    if _RE_BYPASS_PERMISSIONS_PROMPT.search(pane_text):
+        action = "bypass_permissions"
+    elif _RE_WORKSPACE_TRUST_PROMPT.search(pane_text):
+        action = "workspace_trust"
     else:
-        sent = await tmux_manager.send_keys(
-            window_id,
-            "Enter",
-            enter=False,
-            literal=False,
-        )
-    if sent:
-        last_action_at[action] = now
-        logger.info(
-            "auto-advanced claude startup prompt window=%s action=%s",
-            window_id,
-            action,
-        )
+        return None
+    keys = _keys_to_accept(pane_text)
+    return (action, keys) if keys else None
 
 
 def _classify_startup_prompt(pane_text: str) -> str | None:
     """Return the known startup prompt action name for a pane snapshot."""
-    if _RE_BYPASS_PERMISSIONS_PROMPT.search(
-        pane_text
-    ) and _RE_BYPASS_ACCEPT_OPTION.search(pane_text):
-        return "bypass_permissions"
-    if _RE_WORKSPACE_TRUST_PROMPT.search(
-        pane_text
-    ) and _RE_WORKSPACE_TRUST_ACCEPT_OPTION.search(pane_text):
-        return "workspace_trust"
-    return None
+    prompt = _startup_prompt(pane_text)
+    return prompt[0] if prompt else None
 
 
 def _read_claude_session_for_pane(

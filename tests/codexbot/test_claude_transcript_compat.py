@@ -467,3 +467,171 @@ class TestMonitorToolGate:
 
     def test_monitor_without_command_is_read(self):
         assert classify_action("Monitor", {"agentId": "a1"}) == "read"
+
+
+# Pane snapshots captured from Claude Code 2.1.283 (paths shortened).
+PLAN_PANE = """\
+  ────────────────────────────────────────────────────────────
+   Ready to code?
+   Here is Claude's plan:
+  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+   Add README.md to repo
+   Steps
+   1. Create README.md at the repo root.
+   2. Verify the file was created correctly.
+  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+  ────────────────────────────────────────────────────────────
+   Claude has written up a plan and is ready to execute. Would you like to proceed?
+   ❯ 1. Yes, auto-accept edits
+     2. Yes, manually approve edits
+     3. Tell Claude what to change
+        shift+tab to approve with this feedback
+   ctrl+g to edit in Vim · ~/.claude/plans/velvet-bird.md
+"""
+
+ASK_PANE = """\
+❯ Ask me which color I prefer.
+────────────────────────────────────────────────────────────
+ ☐ Color
+Which color do you prefer?
+❯ 1. Red
+     A bold, warm color
+  2. Green
+     A calming, natural color
+  3. Type something.
+────────────────────────────────────────────────────────────
+  4. Chat about this
+Enter to select · ↑/↓ to navigate · Esc to cancel
+"""
+
+BASH_PERMISSION_PANE = """\
+ Bash command
+   echo hello > a.txt
+   Create a file with "hello" content
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and always allow access to /work from this project
+   3. No
+ Esc to cancel · Tab to amend
+"""
+
+TRUST_PANE = """\
+ Accessing workspace:
+ /work
+ Quick safety check: Is this a project you created or one you trust? (Like your own code,
+ a well-known open source project, or work from your team).
+ Claude Code'll be able to read, edit, and execute files here.
+ Security guide
+ ❯ No, exit
+   Yes, I trust this folder
+ Enter to confirm · Esc to cancel
+"""
+
+
+class TestInteractivePrompts:
+    @pytest.mark.parametrize(
+        ("pane", "name", "labels"),
+        [
+            pytest.param(
+                PLAN_PANE,
+                "ExitPlanMode",
+                [
+                    "Yes, auto-accept edits",
+                    "Yes, manually approve edits",
+                    "Tell Claude what to change",
+                ],
+                id="plan",
+            ),
+            pytest.param(
+                ASK_PANE,
+                "AskUserQuestion",
+                ["Red", "Green", "Type something.", "Chat about this"],
+                id="ask",
+            ),
+            pytest.param(
+                BASH_PERMISSION_PANE,
+                "PermissionPrompt",
+                [
+                    "Yes",
+                    "Yes, and always allow access to /work from this project",
+                    "No",
+                ],
+                id="bash_permission",
+            ),
+        ],
+    )
+    def test_detected_with_options(self, pane, name, labels):
+        from codexbot.terminal_parser import extract_interactive_content, parse_options
+
+        content = extract_interactive_content(pane, runtime="claude")
+        assert content is not None and content.name == name
+        parsed = parse_options(content.content)
+        assert parsed is not None
+        assert [o.label for o in parsed.options] == labels
+
+    def test_trust_prompt_detected(self):
+        from codexbot.terminal_parser import extract_interactive_content
+
+        content = extract_interactive_content(TRUST_PANE, runtime="claude")
+        assert content is not None and content.name == "WorkspaceTrust"
+
+
+class TestStartupPrompts:
+    def test_unnumbered_trust_moves_cursor_to_yes(self):
+        from codexbot.runtimes.claude import _startup_prompt
+
+        assert _startup_prompt(TRUST_PANE) == ("workspace_trust", ["Down", "Enter"])
+
+    @pytest.mark.parametrize(
+        ("pane", "expected"),
+        [
+            pytest.param(
+                "Do you trust the files in this folder?\n\n❯ 1. Yes, proceed\n  2. No, exit\n",
+                ("workspace_trust", ["Enter"]),
+                id="legacy_trust",
+            ),
+            pytest.param(
+                "WARNING: Claude Code running in Bypass Permissions mode\n\n"
+                "❯ 1. No, exit\n  2. Yes, I accept\n",
+                ("bypass_permissions", ["Down", "Enter"]),
+                id="bypass",
+            ),
+            pytest.param(
+                "bypass permissions mode\n 1. No\n ❯ 2. Yes, I accept",
+                ("bypass_permissions", ["Enter"]),
+                id="bypass_cursor_on_yes",
+            ),
+        ],
+    )
+    def test_keys(self, pane, expected):
+        from codexbot.runtimes.claude import _startup_prompt
+
+        assert _startup_prompt(pane) == expected
+
+    @pytest.mark.parametrize("pane", [BASH_PERMISSION_PANE, PLAN_PANE, ASK_PANE])
+    def test_working_prompts_are_not_startup_prompts(self, pane):
+        from codexbot.runtimes.claude import _startup_prompt
+
+        assert _startup_prompt(pane) is None
+
+
+SEPARATOR = "─" * 40
+
+
+class TestLiveStatusFromProbe:
+    def test_status_with_background_hint_and_footer(self):
+        pane = (
+            "⏺ Sleeping for 40 seconds · 19s\n"
+            "  ⎿  $ python3 -c 'import time; time.sleep(40)' (8s)\n"
+            "     (ctrl+b ctrl+b (twice) to run in background)\n"
+            "· Caramelizing… (10s · ↓ 186 tokens)\n"
+            + SEPARATOR
+            + "\n❯ \n"
+            + SEPARATOR
+            + "\n  ⏸ manual mode on · esc to interrupt · ← for agents\n"
+        )
+        assert parse_status_line(pane) == "Caramelizing… (10s · ↓ 186 tokens)"
+
+    def test_done_footer_is_idle(self):
+        pane = f"⏺ Done.\n\n✻ Baked for 3s · done 10:16 AM\n\n{SEPARATOR}\n❯ \n{SEPARATOR}\n"
+        assert parse_status_line(pane) is None

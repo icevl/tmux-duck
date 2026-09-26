@@ -275,6 +275,11 @@ class Config:
             "CLAUDEBOT_AUTO_APPROVE_DANGEROUS", default=True
         )
 
+        # SessionStart / Notification hooks reporting back to the web server.
+        self.claude_event_hooks = _env_flag_enabled(
+            "CODEXBOT_CLAUDE_HOOKS", default=True
+        )
+
         # State files under config_dir.
         self.state_file = self.config_dir / "state.json"
         self.monitor_state_file = self.config_dir / "monitor_state.json"

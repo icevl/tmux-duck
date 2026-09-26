@@ -1866,6 +1866,29 @@ def create_app(
             raise HTTPException(400, detail=msg)
         return {"ok": True, "message": msg}
 
+    @app.post("/api/hooks/claude")
+    async def claude_hook_event(request: Request) -> dict[str, Any]:
+        """Lifecycle events forwarded by the Claude hook script (localhost)."""
+        from ..claude_hooks import handle_hook_event
+        from ..connectors.approval import approval_secret
+
+        provided = request.headers.get("X-Hook-Secret", "")
+        if not provided or not secrets.compare_digest(provided, approval_secret()):
+            raise HTTPException(403, detail="forbidden")
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001
+            payload = None
+        if isinstance(payload, dict):
+            await handle_hook_event(
+                payload,
+                bus=bus,
+                interactive_monitor=getattr(
+                    request.app.state, "interactive_monitor", None
+                ),
+            )
+        return {"ok": True}
+
     @app.post("/api/connectors/approve-tool")
     async def connectors_approve_tool(request: Request) -> dict[str, Any]:
         """Write-gate endpoint called by the Claude PreToolUse hook.

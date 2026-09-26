@@ -42,6 +42,7 @@ class InteractivePromptMonitor:
     # `interactive_prompt_cleared`. A single empty frame (transient capture
     # failure, or a redraw mid-frame) must not retract a still-open prompt.
     _CLEAR_MISS_THRESHOLD = 2
+    _POKE_SETTLE_SECONDS = 0.2
 
     def __init__(
         self,
@@ -64,6 +65,21 @@ class InteractivePromptMonitor:
         # window_id → consecutive empty/no-prompt capture count, for debounced
         # clearing. Reset to 0 whenever a prompt is successfully detected.
         self._miss: dict[str, int] = {}
+        self._pokes: set[asyncio.Task[None]] = set()
+
+    def request_check(self, window_id: str) -> None:
+        """Check one window now instead of at the next poll (hook-driven)."""
+        task = asyncio.create_task(self._poke(window_id))
+        self._pokes.add(task)
+        task.add_done_callback(self._pokes.discard)
+
+    async def _poke(self, window_id: str) -> None:
+        # The hook can fire a frame before the prompt finishes drawing.
+        await asyncio.sleep(self._POKE_SETTLE_SECONDS)
+        try:
+            await self._check_window(window_id)
+        except Exception:
+            logger.exception("Interactive check failed for %s", window_id)
 
     async def start(self) -> None:
         if self._task and not self._task.done():

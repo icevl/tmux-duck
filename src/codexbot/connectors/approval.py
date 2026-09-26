@@ -109,9 +109,15 @@ if __name__ == "__main__":
 def _claude_settings_source(hook_command: str) -> str:
     import json
 
+    from ..claude_hooks import event_hook_settings
+    from ..claude_hooks import hook_command as event_hook_command
+
+    # Connector windows get a single --settings file, so the lifecycle hooks
+    # every Claude window carries ride along with the write-gate.
     return json.dumps(
         {
             "hooks": {
+                **event_hook_settings(event_hook_command()),
                 "PreToolUse": [
                     {
                         "matcher": _HOOK_MATCHER,
@@ -123,7 +129,7 @@ def _claude_settings_source(hook_command: str) -> str:
                             }
                         ],
                     }
-                ]
+                ],
             }
         },
         indent=2,

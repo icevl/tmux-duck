@@ -286,6 +286,7 @@ async def start_web_server(
         logger.info("Attention Router disabled via CODEXBOT_ATTENTION_ENABLED")
 
     interactive_monitor = InteractivePromptMonitor(bus)
+    app.state.interactive_monitor = interactive_monitor
     await interactive_monitor.start()
 
     await status_tracker.start()
