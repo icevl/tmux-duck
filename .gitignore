@@ -80,3 +80,6 @@ web-ui/dist/
 
 # Internal planning workflow (kept out of public repo)
 .planning/
+
+# Playwright MCP browser artifacts
+.playwright-mcp/
