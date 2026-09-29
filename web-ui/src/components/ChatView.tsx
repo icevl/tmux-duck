@@ -17,6 +17,7 @@ import {
 import {
   ArrowUp,
   Bot,
+  Check,
   Brain,
   GitBranch,
   ChevronDown,
@@ -54,7 +55,6 @@ import type { SearchHitTarget } from "./SessionSearch";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -2954,22 +2954,27 @@ export function ChatView({
               Panels
             </DropdownMenuLabel>
             {gitIsRepo && (
-              <DropdownMenuCheckboxItem checked={diffOpen} onSelect={onToggleDiff}>
-                <GitCommit /> Diff
-              </DropdownMenuCheckboxItem>
+              <DropdownMenuItem onSelect={onToggleDiff}>
+              <GitCommit /> Diff
+              {diffOpen && <Check className="ml-auto text-brand" />}
+            </DropdownMenuItem>
             )}
-            <DropdownMenuCheckboxItem checked={officeOpen} onSelect={onToggleOffice}>
+            <DropdownMenuItem onSelect={onToggleOffice}>
               <Users /> Office
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={termOpen} onSelect={onToggleTerm}>
+              {officeOpen && <Check className="ml-auto text-brand" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onToggleTerm}>
               <TerminalIcon /> Terminal
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={filesOpen} onSelect={onToggleFiles}>
+              {termOpen && <Check className="ml-auto text-brand" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onToggleFiles}>
               <FolderTree /> Files
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem checked={subagentsOpen} onSelect={onToggleSubagents}>
+              {filesOpen && <Check className="ml-auto text-brand" />}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onToggleSubagents}>
               <Bot /> Subagents
-            </DropdownMenuCheckboxItem>
+              {subagentsOpen && <Check className="ml-auto text-brand" />}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setEditingName(true)}>
               <Pencil /> Rename
