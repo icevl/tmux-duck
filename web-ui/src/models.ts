@@ -63,10 +63,3 @@ export function modelMatch(
   if (actual.oneM === null) return "version";
   return (option.oneM ?? false) === actual.oneM ? "exact" : null;
 }
-
-export function isCurrentModel(
-  optionId: string,
-  current: string | null | undefined,
-): boolean {
-  return modelMatch(optionId, current) !== null;
-}
