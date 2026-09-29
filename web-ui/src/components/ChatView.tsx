@@ -3035,27 +3035,37 @@ export function ChatView({
             </div>
           ) : (
             <div
-              className="messages-skeleton"
+              className="mx-auto flex w-full max-w-[880px] flex-col gap-6 px-[18px] py-6 max-[760px]:px-3"
               role="status"
               aria-label="Loading history"
             >
+              {/* Mirrors the message layout: user bubbles right, replies as
+                  plain text lines on the left. */}
               {[
-                { side: "left", width: 65 },
-                { side: "right", width: 45 },
-                { side: "left", width: 78 },
-                { side: "right", width: 55 },
-                { side: "left", width: 42 },
-              ].map((row, i) => (
-                <div className={`messages-skeleton-row ${row.side}`} key={i}>
-                  <div
-                    className="skeleton-bubble"
-                    style={{ width: `${row.width}%` }}
-                  >
-                    <div className="skeleton-line skeleton-line-bubble" />
-                    <div className="skeleton-line skeleton-line-bubble short" />
+                { side: "right", lines: [70] },
+                { side: "left", lines: [92, 84, 58] },
+                { side: "right", lines: [45] },
+                { side: "left", lines: [88, 66] },
+              ].map((row, i) =>
+                row.side === "right" ? (
+                  <div key={i} className="flex justify-end">
+                    <div
+                      className="h-11 animate-pulse rounded-2xl rounded-br-md bg-secondary"
+                      style={{ width: `${row.lines[0]}%` }}
+                    />
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <div key={i} className="flex flex-col gap-2.5">
+                    {row.lines.map((w, j) => (
+                      <div
+                        key={j}
+                        className="h-3 animate-pulse rounded-full bg-muted"
+                        style={{ width: `${w}%` }}
+                      />
+                    ))}
+                  </div>
+                ),
+              )}
             </div>
           )
         ) : (
