@@ -595,6 +595,104 @@ def test_list_sessions_includes_claude_transcript_meta(
     assert session["pr_number"] == 7
 
 
+def _patch_model_window(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, runtime: str
+) -> Any:
+    transcript = tmp_path / "m.jsonl"
+    transcript.write_text(
+        '{"type":"turn_context","payload":{"model":"gpt-5.4","effort":"medium"}}\n',
+        encoding="utf-8",
+    )
+    from codexbot.web import api as web_api
+
+    window = TmuxWindow(
+        window_id="@4", window_name="w", cwd="/tmp", pane_current_command="codex"
+    )
+    monkeypatch.setattr(
+        web_api.tmux_manager, "find_window_by_id", AsyncMock(return_value=window)
+    )
+    monkeypatch.setattr(
+        web_api.session_manager,
+        "window_states",
+        {"@4": WindowState(session_id="m", runtime=runtime)},
+    )
+    monkeypatch.setattr(web_api.session_manager, "_session_index", {"m": transcript})
+    switch = AsyncMock(return_value=None)
+    monkeypatch.setattr(web_api, "switch_model", switch)
+    return switch
+
+
+def test_list_sessions_includes_codex_model(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_model_window(monkeypatch, tmp_path, "codex")
+    from codexbot.web import api as web_api
+
+    async def fake_list() -> list[TmuxWindow]:
+        return [
+            TmuxWindow(
+                window_id="@4",
+                window_name="w",
+                cwd="/tmp",
+                pane_current_command="codex",
+            )
+        ]
+
+    monkeypatch.setattr(web_api.tmux_manager, "list_windows", fake_list)
+    monkeypatch.setattr(
+        web_api.session_manager, "_refresh_sessions_index", AsyncMock(return_value=None)
+    )
+
+    session = authed_client.get("/api/sessions").json()["sessions"][0]
+
+    assert (session["model"], session["effort"]) == ("gpt-5.4", "medium")
+
+
+def test_models_endpoint_reports_current_model(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_model_window(monkeypatch, tmp_path, "claude")
+
+    r = authed_client.get("/api/sessions/@4/models")
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["current"] == "gpt-5.4"
+    assert body["restarts"] is False
+    assert any(m["id"] == "claude-opus-5-5" for m in body["models"])
+
+
+def test_switch_model_codex_keeps_current_values(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    switch = _patch_model_window(monkeypatch, tmp_path, "codex")
+
+    r = authed_client.post("/api/sessions/@4/switch-model", json={"effort": "high"})
+
+    assert r.status_code == 200, r.text
+    switch.assert_awaited_once_with("@4", "codex", "m", "gpt-5.4", "high")
+
+
+def test_switch_model_codex_refused_while_busy(
+    web_password: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from codexbot.web.session_status import Status, WindowStatus
+
+    switch = _patch_model_window(monkeypatch, tmp_path, "codex")
+
+    class Tracker:
+        def get(self, _wid: str) -> WindowStatus:
+            return WindowStatus(status=Status.running)
+
+    client = TestClient(create_app(EventBus(), status_tracker=Tracker()))  # type: ignore[arg-type]
+    client.post("/api/login", json={"password": web_password})
+
+    r = client.post("/api/sessions/@4/switch-model", json={"model": "gpt-5.5"})
+
+    assert r.status_code == 409
+    switch.assert_not_awaited()
+
+
 def test_list_sessions_does_not_touch_search_runtime(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -14,6 +14,12 @@ step), written when the user comes back after a break; together with the
 last prompt it tells a returning user what the session is about — the
 auto title is generated once from the first message and goes stale.
 
+The active model comes from the conversation itself: Claude stamps every
+assistant message with ``message.model`` (and a top-level ``effort``) and
+echoes ``/model`` / ``/effort`` as ``<local-command-stdout>Set model to …``
+user records (so a switch shows up before the next reply); Codex writes a ``turn_context`` record carrying
+``model`` and ``effort`` at the start of every turn.
+
 The latest of each wins. ``TranscriptMetaCache`` keeps a per-file byte
 offset so repeated lookups (every `/api/sessions` call) only parse what was
 appended since the previous one, and only lines that can carry metadata.
@@ -32,7 +38,16 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 META_RECORD_TYPES = frozenset(
-    {"ai-title", "permission-mode", "pr-link", "last-prompt", "system"}
+    {
+        "ai-title",
+        "permission-mode",
+        "pr-link",
+        "last-prompt",
+        "system",
+        "assistant",
+        "user",
+        "turn_context",
+    }
 )
 _META_LINE_MARKERS = (
     b'"type":"ai-title"',
@@ -40,9 +55,28 @@ _META_LINE_MARKERS = (
     b'"type":"pr-link"',
     b'"type":"last-prompt"',
     b'"subtype":"away_summary"',
+    b'"type":"turn_context"',
+    b"<local-command-stdout>Set ",
 )
+_ASSISTANT_MARKER = b'"type":"assistant"'
+# The first "model" key of an assistant line is `message.model`; tool inputs
+# (e.g. an Agent call's `"model":"sonnet"`) come later in the record.
+_ASSISTANT_MODEL = re.compile(rb'"model":"([^"\\]+)"')
+# Claude 2.1 stamps the reasoning effort as top-level fields written after
+# `message` (`…,"effort":"medium","perTurnEffort":"medium",…`); matching the
+# pair, in the line's tail, keeps a tool input's own "effort" key out.
+_ASSISTANT_EFFORT = (
+    re.compile(rb'"effort":"([a-z]+)","perTurnEffort":"'),
+    re.compile(rb'"perTurnEffort":"([a-z]+)"'),
+)
+_ASSISTANT_TAIL_BYTES = 1024
+_SIDECHAIN_MARKER = b'"isSidechain":true'
 _RECAP_FOOTER = re.compile(r"\s*\(disable recaps in /config\)\s*$")
 _IMAGE_ATTACHMENT = re.compile(r"\s*\(image attached: [^)]*\)")
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_SET_MODEL = re.compile(r"^<local-command-stdout>Set model to (.+?)(?: and saved\b|$)")
+_SET_EFFORT = re.compile(r"^<local-command-stdout>Set effort level to ([a-z]+)")
+_SYNTHETIC_MODEL = "<synthetic>"
 _READ_CHUNK_BYTES = 1 << 20
 
 
@@ -55,6 +89,10 @@ class TranscriptMeta:
     last_prompt: str | None = None
     recap: str | None = None
     recap_at: str | None = None
+    # A model id ("claude-opus-5-5", "gpt-5.4") or, right after a `/model`
+    # switch and until the next reply, Claude's display name ("Sonnet 5").
+    model: str | None = None
+    effort: str | None = None
 
     def apply(self, record: dict[str, Any]) -> bool:
         """Fold one transcript record in; return True if anything changed."""
@@ -92,7 +130,40 @@ class TranscriptMeta:
                     self.recap = recap
                     timestamp = record.get("timestamp")
                     self.recap_at = timestamp if isinstance(timestamp, str) else None
+        elif kind == "assistant" and not record.get("isSidechain"):
+            message = record.get("message")
+            model = message.get("model") if isinstance(message, dict) else None
+            if isinstance(model, str) and model and model != _SYNTHETIC_MODEL:
+                self.model = model
+                effort = record.get("effort")
+                if isinstance(effort, str) and effort:
+                    self.effort = effort
+        elif kind == "user":
+            message = record.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            if isinstance(content, str):
+                self._apply_local_command(content)
+        elif kind == "turn_context":
+            payload = record.get("payload")
+            if isinstance(payload, dict):
+                model = payload.get("model")
+                if isinstance(model, str) and model:
+                    self.model = model
+                effort = payload.get("effort")
+                if isinstance(effort, str) and effort:
+                    self.effort = effort
         return before != astuple(self)
+
+    def _apply_local_command(self, content: str) -> None:
+        if not content.startswith("<local-command-stdout>Set "):
+            return
+        text = _ANSI.sub("", content).replace("`", "")
+        if match := _SET_MODEL.match(text):
+            model = match.group(1).strip()
+            if model:
+                self.model = model
+        elif match := _SET_EFFORT.match(text):
+            self.effort = match.group(1)
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -103,6 +174,8 @@ class TranscriptMeta:
             "last_prompt": self.last_prompt,
             "recap": self.recap,
             "recap_at": self.recap_at,
+            "model": self.model,
+            "effort": self.effort,
         }
 
 
@@ -116,6 +189,31 @@ def _is_meta_line(line: bytes) -> bool:
     # Claude writes compact JSON, so a substring test avoids parsing the
     # (often multi-megabyte) conversation records.
     return any(marker in line for marker in _META_LINE_MARKERS)
+
+
+def _assistant_model_record(line: bytes) -> dict[str, Any] | None:
+    """Model and effort of an assistant line, without parsing the record.
+
+    Assistant records carry the (large) response content, and only
+    ``message.model`` and ``effort`` matter here, so a regex beats
+    ``json.loads``.
+    """
+    if _ASSISTANT_MARKER not in line or _SIDECHAIN_MARKER in line:
+        return None
+    match = _ASSISTANT_MODEL.search(line)
+    if match is None:
+        return None
+    try:
+        model = match.group(1).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    record: dict[str, Any] = {"type": "assistant", "message": {"model": model}}
+    tail = line[-_ASSISTANT_TAIL_BYTES:]
+    for pattern in _ASSISTANT_EFFORT:
+        if efforts := pattern.findall(tail):
+            record["effort"] = efforts[-1].decode("ascii")
+            break
+    return record
 
 
 class TranscriptMetaCache:
@@ -156,6 +254,9 @@ class TranscriptMetaCache:
                     lines = (pending + chunk).split(b"\n")
                     pending = lines.pop()
                     for line in lines:
+                        if (fast := _assistant_model_record(line)) is not None:
+                            state.meta.apply(fast)
+                            continue
                         if not _is_meta_line(line):
                             continue
                         try:

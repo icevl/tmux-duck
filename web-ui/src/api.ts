@@ -77,10 +77,30 @@ export interface SessionSummary {
   last_prompt?: string | null;
   recap?: string | null;
   recap_at?: string | null;
+  // Active model read from the transcript: a model id ("claude-opus-5-5",
+  // "gpt-5.4") or, right after a Claude `/model`, its display name. Null
+  // until the first reply of a new session.
+  model?: string | null;
+  effort?: string | null;
   // Account profile ("" = default login) and whether it is signed in.
   profile?: string;
   profile_label?: string | null;
   profile_logged_in?: boolean | null;
+}
+
+export interface ModelOption {
+  id: string;
+  label: string;
+  efforts: string[];
+}
+
+export interface ModelCatalog {
+  runtime: string;
+  models: ModelOption[];
+  // Codex has no in-session switch, so the session is relaunched (resumed).
+  restarts: boolean;
+  current: string | null;
+  effort: string | null;
 }
 
 export interface ResumeDormantResponse {
@@ -770,6 +790,16 @@ export const api = {
     request<{ ok: boolean; branch: string; stdout: string }>(
       `/api/sessions/${encodeURIComponent(windowId)}/switch-branch`,
       { method: "POST", json: { branch } },
+    ),
+  listModels: (windowId: string) =>
+    request<ModelCatalog>(`/api/sessions/${encodeURIComponent(windowId)}/models`),
+  switchModel: (
+    windowId: string,
+    body: { model?: string | null; effort?: string | null },
+  ) =>
+    request<{ ok: boolean; model: string | null; effort: string | null }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/switch-model`,
+      { method: "POST", json: body },
     ),
   getOfficeState: () =>
     request<{

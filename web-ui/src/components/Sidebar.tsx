@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bell,
-  BellOff,
   Brain,
   GitPullRequest,
   GripVertical,
-  LayoutGrid,
   Loader2,
-  LogOut,
   Moon,
   MoreVertical,
   Pencil,
@@ -16,11 +12,8 @@ import {
   Plus,
   Trash2,
   TriangleAlert,
-  UserRound,
   X,
 } from "lucide-react";
-import { TunioPlayer } from "tunio-player";
-import "tunio-player/styles.css";
 import {
   AgentUsageSnapshot,
   api,
@@ -28,12 +21,13 @@ import {
   SessionSummary,
   WsEvent,
 } from "../api";
+import { formatModel } from "../models";
 import { DuckLogo } from "./DuckLogo";
+import { UserMenu } from "./UserMenu";
 import { SearchStatusFooter } from "./SearchStatusFooter";
 import { SessionSearch, type SearchHitTarget } from "./SessionSearch";
 
 const ICON = 16;
-const OFFICE_STREAM_ID = "71824d03-660b-4722-843a-5e8fbe9ad4c2";
 const META_ICON = 12;
 
 export function RuntimeIcon({
@@ -151,6 +145,23 @@ function sessionSubtitle(s: SessionSummary): string | null {
 
 function permissionModeLabel(mode: string | null | undefined): string | null {
   return mode ? (PERMISSION_MODE_LABELS[mode] ?? null) : null;
+}
+
+// The badge next to the session name: the active model, falling back to the
+// permission mode until the transcript names a model. The rest goes into the
+// tooltip.
+function sessionBadge(
+  s: SessionSummary,
+): { label: string; title: string } | null {
+  const model = formatModel(s.model);
+  const mode = permissionModeLabel(s.permission_mode);
+  const details = [
+    s.model ? `Model: ${s.model}` : null,
+    s.effort ? `Effort: ${s.effort}` : null,
+    s.permission_mode ? `Permission mode: ${s.permission_mode}` : null,
+  ].filter(Boolean);
+  const label = model ?? mode;
+  return label ? { label, title: details.join(" · ") } : null;
 }
 
 export function Sidebar({
@@ -323,6 +334,18 @@ export function Sidebar({
           TmuxDuck
         </div>
         <div className="sidebar-header-actions">
+          <UserMenu
+            missionActive={missionActive}
+            attentionCount={attentionCount}
+            onToggleMission={onToggleMission}
+            onOpenAccounts={onOpenAccounts}
+            accountsNeedSignIn={accountsNeedSignIn}
+            onLogout={onLogout}
+            notificationsSupported={notificationsSupported}
+            notificationsEnabled={notificationsEnabled}
+            notificationTitle={notificationTitle}
+            onToggleNotifications={onToggleNotifications}
+          />
           <button
             type="button"
             className="sidebar-close icon-button"
@@ -399,6 +422,7 @@ export function Sidebar({
             const isOpen = menuFor === s.window_id;
             const isBusy = busyIds.has(s.window_id);
             const isDone = doneIds.has(s.window_id);
+            const badge = sessionBadge(s);
             return (
               <div
                 key={s.window_id}
@@ -497,12 +521,14 @@ export function Sidebar({
                           <TriangleAlert size={12} aria-label="Account signed out" />
                         </span>
                       )}
-                      {permissionModeLabel(s.permission_mode) && (
+                      {badge && (
                         <span
-                          className={`session-mode session-mode-${s.permission_mode}`}
-                          title={`Permission mode: ${s.permission_mode}`}
+                          className={`session-mode session-mode-${
+                            s.model ? "model" : s.permission_mode
+                          }${s.permission_mode === "plan" ? " session-mode-plan" : ""}`}
+                          title={badge.title}
                         >
-                          {permissionModeLabel(s.permission_mode)}
+                          {badge.label}
                         </span>
                       )}
                       {s.pr_url && (
@@ -671,58 +697,6 @@ export function Sidebar({
           ) : null}
         </div>
       )}
-      <div className="sidebar-footer">
-        <TunioPlayer
-          id={OFFICE_STREAM_ID}
-          theme="dark"
-          buttonOnly
-          buttonOnlyClassName="codi-sidebar-play"
-          buttonOnlySize={28}
-        />
-        <button
-          className={`icon-button notification-toggle${
-            notificationsEnabled ? " active" : ""
-          }`}
-          onClick={onToggleNotifications}
-          title={notificationTitle}
-          aria-label={notificationTitle}
-          disabled={!notificationsSupported}
-        >
-          {notificationsEnabled ? <Bell size={ICON} /> : <BellOff size={ICON} />}
-        </button>
-        <button
-          className="icon-button sidebar-accounts"
-          onClick={onOpenAccounts}
-          title={accountsNeedSignIn ? "Accounts — sign-in needed" : "Accounts"}
-          aria-label="Accounts"
-        >
-          <UserRound size={ICON} />
-          {accountsNeedSignIn ? <span className="sidebar-accounts-alert" /> : null}
-        </button>
-        <button
-          type="button"
-          className={`icon-button sidebar-mission${
-            missionActive ? " active" : ""
-          }`}
-          onClick={onToggleMission}
-          aria-pressed={missionActive}
-          title="Mission Control"
-          aria-label="Mission Control"
-        >
-          <LayoutGrid size={ICON} />
-          {attentionCount > 0 ? (
-            <span className="sidebar-mission-badge">{attentionCount}</span>
-          ) : null}
-        </button>
-        <button
-          className="icon-button"
-          onClick={onLogout}
-          title="Sign out"
-          aria-label="Sign out"
-        >
-          <LogOut size={ICON} />
-        </button>
-      </div>
     </aside>
   );
 }

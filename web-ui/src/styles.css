@@ -359,6 +359,11 @@ a {
 }
 
 .sidebar-header {
+  /* The backdrop-filter makes the header its own stacking context, which
+     positioned session rows below would otherwise paint over — covering the
+     user menu that drops out of it. */
+  position: relative;
+  z-index: 60;
   padding: 14px 16px;
   min-height: 60px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -389,14 +394,175 @@ a {
   gap: 6px;
 }
 
-.notification-toggle.active {
-  background: var(--bg-3);
-  border-color: var(--border-strong);
+/* Avatar + app menu in the sidebar header. */
+.user-menu {
+  position: relative;
+  display: inline-flex;
 }
 
-.notification-toggle.active:hover:not(:disabled) {
-  background: #33353d;
-  border-color: var(--border-strong);
+.user-menu-avatar {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--bg-2);
+  color: var(--text-0);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.user-menu-avatar:hover,
+.user-menu.open > .user-menu-avatar {
+  background: var(--bg-3);
+  border-color: var(--accent-strong);
+}
+
+.user-menu-dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 2px var(--bg-1);
+}
+
+.user-menu-dot.danger {
+  background: var(--danger);
+}
+
+.user-menu-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  /* The sidebar (280px) minus the header's side padding: flush with both
+     edges instead of spilling off the left one. */
+  width: 248px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  z-index: 300;
+}
+
+.user-menu-popover[hidden] {
+  display: none;
+}
+
+.user-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 12px;
+}
+
+.user-menu-head-avatar {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-0);
+}
+
+.user-menu-head-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.user-menu-head-title {
+  color: var(--text-0);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.user-menu-head-sub {
+  color: var(--text-2);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu-section {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+
+.user-menu-section:last-child {
+  padding-bottom: 0;
+}
+
+.user-menu-item {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.user-menu-item:hover:not(:disabled):not(.user-menu-static),
+.user-menu-item.active {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+
+.user-menu-item:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.user-menu-static {
+  cursor: default;
+}
+
+.user-menu-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-menu-value {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.user-menu-value.danger {
+  color: var(--danger);
+}
+
+.user-menu-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--warn);
+  color: #1a1116;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Higher specificity than `button.icon-button` so the hide rule wins on desktop. */
@@ -420,15 +586,6 @@ button.burger {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.sidebar-footer {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
 }
 
 .sidebar-new {
@@ -2424,9 +2581,23 @@ button.burger {
   font-size: 12px;
 }
 
+.composer-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 .branch-menu {
   position: relative;
   display: inline-flex;
+}
+
+.model-menu-note {
+  color: var(--text-2);
+  font-size: 11px;
+  padding: 2px 8px 6px;
 }
 
 .branch-button {
@@ -3608,7 +3779,7 @@ button.primary.send-button {
   transition: none;
 }
 
-/* Sidebar button-only player — match the neighbouring icon-button look. */
+/* Menu button-only player — match the icon-button look. */
 .tunio-player .codi-sidebar-play {
   background-color: var(--bg-2);
   border: 1px solid var(--border);
@@ -4217,6 +4388,16 @@ button.primary.send-button {
     transform: translateX(0);
   }
 
+  /* The drawer is narrower than the menu can assume on small phones, and the
+     close button sits right of the avatar: span the drawer's width instead. */
+  .user-menu-popover {
+    position: fixed;
+    top: 64px;
+    left: 16px;
+    right: auto;
+    width: calc(min(86vw, 320px) - 32px);
+  }
+
   .sidebar-backdrop {
     display: block;
     position: fixed;
@@ -4448,37 +4629,6 @@ button.primary.send-button {
 /* ----------------------------------------------------------------------- */
 /* Mission Control                                                          */
 /* ----------------------------------------------------------------------- */
-
-/* Footer icon-button (matches connectors / logout). `position: relative` so
-   the attention badge can sit in the corner. */
-.sidebar-mission {
-  position: relative;
-}
-
-.sidebar-mission.active {
-  background: var(--bg-3);
-  border-color: var(--border-strong);
-  color: var(--duck-yellow-strong);
-}
-
-.sidebar-mission-badge {
-  position: absolute;
-  top: -3px;
-  right: -3px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--warn);
-  color: #1a1116;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  pointer-events: none;
-}
 
 .mc-summary {
   font-size: 12px;
@@ -4825,20 +4975,6 @@ button.primary.send-button {
   text-decoration: underline;
   cursor: pointer;
   font: inherit;
-}
-
-.sidebar-accounts {
-  position: relative;
-}
-
-.sidebar-accounts-alert {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--danger);
 }
 
 .session-signed-out {

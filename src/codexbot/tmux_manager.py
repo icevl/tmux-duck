@@ -575,6 +575,28 @@ class TmuxManager:
             time.sleep(0.1)
         pane.send_keys("Enter", enter=False, literal=False)
 
+    async def type_start_command(self, window_id: str, cmd: str) -> bool:
+        """Launch ``cmd`` at the shell prompt of an existing window's pane."""
+
+        def _type() -> bool:
+            session = self.get_session()
+            if not session:
+                return False
+            try:
+                window = session.windows.get(window_id=window_id)
+                pane = window.active_pane if window else None
+                if not pane:
+                    return False
+                self._type_start_command(pane, cmd, window_id)
+                return True
+            except Exception as e:
+                logger.error(f"Failed to type start command in {window_id}: {e}")
+                return False
+
+        result = await self._run(_type)
+        self.invalidate_windows_cache()
+        return result
+
     async def create_window(
         self,
         work_dir: str,

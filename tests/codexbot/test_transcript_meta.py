@@ -1,4 +1,4 @@
-"""Claude transcript metadata: title, permission mode, PR link."""
+"""Transcript metadata: title, permission mode, PR link, model."""
 
 import json
 from unittest.mock import patch
@@ -45,6 +45,8 @@ class TestTranscriptMetaCache:
             "last_prompt": None,
             "recap": None,
             "recap_at": None,
+            "model": None,
+            "effort": None,
         }
 
     def test_reads_only_appended_bytes(self, tmp_path):
@@ -85,6 +87,8 @@ class TestTranscriptMetaCache:
             "last_prompt": None,
             "recap": None,
             "recap_at": None,
+            "model": None,
+            "effort": None,
         }
 
     def test_missing_file(self, tmp_path):
@@ -167,3 +171,145 @@ class TestSessionRecap:
         meta = TranscriptMeta()
         assert not meta.apply({"type": "system", "subtype": "turn_duration"})
         assert meta.apply({"type": "system", "subtype": "away_summary", "content": "x"})
+
+
+def _assistant(model: str, **extra: object) -> dict:
+    # Key order follows Claude's: `message` first, `effort` among the
+    # trailing top-level fields.
+    return {
+        "type": "assistant",
+        "message": {
+            "model": model,
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": "Agent",
+                    "input": {"model": "haiku", "effort": "low"},
+                }
+            ],
+        },
+        **extra,
+    }
+
+
+def _stdout(text: str) -> dict:
+    return {
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": f"<local-command-stdout>{text}</local-command-stdout>",
+        },
+    }
+
+
+class TestModel:
+    def test_claude_model_from_latest_reply(self, tmp_path):
+        path = tmp_path / "s.jsonl"
+        path.write_text(
+            _line(_assistant("claude-opus-5-5"))
+            + _line(_assistant("claude-haiku-4-5", isSidechain=True))
+            + _line(_assistant("<synthetic>")),
+            encoding="utf-8",
+        )
+        meta = TranscriptMetaCache().get(path)
+        assert meta.model == "claude-opus-5-5"
+        assert meta.effort is None
+
+    def test_claude_effort_from_latest_reply(self, tmp_path):
+        path = tmp_path / "s.jsonl"
+        path.write_text(
+            _line(_assistant("claude-opus-5-5", effort="high", perTurnEffort="high"))
+            + _line(
+                _assistant("claude-opus-5-5", effort="medium", perTurnEffort="medium")
+            )
+            + _line(
+                _assistant(
+                    "claude-haiku-4-5",
+                    isSidechain=True,
+                    effort="max",
+                    perTurnEffort="max",
+                )
+            ),
+            encoding="utf-8",
+        )
+        meta = TranscriptMetaCache().get(path)
+        assert (meta.model, meta.effort) == ("claude-opus-5-5", "medium")
+
+    def test_effort_in_tool_input_is_ignored(self, tmp_path):
+        path = tmp_path / "s.jsonl"
+        path.write_text(_line(_assistant("claude-opus-5-5")), encoding="utf-8")
+        assert TranscriptMetaCache().get(path).effort is None
+
+    def test_assistant_lines_are_not_json_parsed(self, tmp_path):
+        path = tmp_path / "s.jsonl"
+        path.write_text(_line(_assistant("claude-sonnet-5")), encoding="utf-8")
+        with patch("codexbot.transcript_meta.json.loads", wraps=json.loads) as loads:
+            meta = TranscriptMetaCache().get(path)
+        assert meta.model == "claude-sonnet-5"
+        assert loads.call_count == 0
+
+    def test_claude_model_and_effort_commands(self, tmp_path):
+        path = tmp_path / "s.jsonl"
+        path.write_text(
+            _line(_assistant("claude-opus-5-5"))
+            + _line(
+                _stdout(
+                    "Set model to \x1b[1mSonnet 5\x1b[22m and saved as your "
+                    "default for new sessions"
+                )
+            )
+            + _line(
+                _stdout(
+                    "Set effort level to high (saved as your default for new "
+                    "sessions): Comprehensive implementation"
+                )
+            ),
+            encoding="utf-8",
+        )
+        meta = TranscriptMetaCache().get(path)
+        assert (meta.model, meta.effort) == ("Sonnet 5", "high")
+
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(_line(_stdout("Set model to `Opus 5.5 (1M context)`")))
+            fh.write(_line(_assistant("claude-opus-5-5")))
+        assert TranscriptMetaCache().get(path).model == "claude-opus-5-5"
+
+    def test_user_text_quoting_the_command_is_ignored(self):
+        meta = TranscriptMeta()
+        assert not meta.apply(
+            {
+                "type": "user",
+                "message": {"content": "why does it say Set model to Sonnet 5?"},
+            }
+        )
+        assert not meta.apply(
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "content": "<local-command-stdout>Set model to X",
+                        }
+                    ]
+                },
+            }
+        )
+        assert meta.model is None
+
+    def test_codex_turn_context(self, tmp_path):
+        path = tmp_path / "rollout.jsonl"
+        path.write_text(
+            _line({"type": "session_meta", "payload": {"id": "abc"}})
+            + _line(
+                {
+                    "type": "turn_context",
+                    "payload": {"model": "gpt-5.4", "effort": "medium"},
+                }
+            )
+            + _line({"type": "turn_context", "payload": {"model": "gpt-5.5"}}),
+            encoding="utf-8",
+        )
+        meta = TranscriptMetaCache().get(path)
+        assert (meta.model, meta.effort) == ("gpt-5.5", "medium")

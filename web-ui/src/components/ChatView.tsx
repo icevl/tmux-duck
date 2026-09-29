@@ -14,7 +14,6 @@ import {
 } from "react";
 import {
   Bot,
-  Camera,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -46,6 +45,7 @@ import { SkillsModal } from "./SkillsModal";
 import { Markdown } from "./Markdown";
 import { RuntimeIcon } from "./Sidebar";
 import { DuckLogo } from "./DuckLogo";
+import { EffortMenu, ModelMenu } from "./ModelMenu";
 import type { SearchHitTarget } from "./SessionSearch";
 
 const ICON = 16;
@@ -955,11 +955,15 @@ interface ComposerProps {
   sessionId: string | null;
   gitBranch: string | null;
   gitIsRepo: boolean;
+  model: string | null;
+  effort: string | null;
+  canSwitchModel: boolean;
   agentSlashCommands: SlashCommandHint[];
   agentSkillHints: SkillHint[];
   onSubmit: (caption: string, files: File[]) => Promise<void>;
   onBotCommand: (command: string) => Promise<boolean>;
   onSwitchBranch: (branch: string) => Promise<void>;
+  onSwitchModel: (change: { model?: string; effort?: string }) => Promise<void>;
   onKey: (key: string) => void;
   onCommand: (command: string) => void;
 }
@@ -975,11 +979,15 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
     sessionId,
     gitBranch,
     gitIsRepo,
+    model,
+    effort,
+    canSwitchModel,
     agentSlashCommands,
     agentSkillHints,
     onSubmit,
     onBotCommand,
     onSwitchBranch,
+    onSwitchModel,
     onKey,
     onCommand,
   },
@@ -1457,64 +1465,82 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
         }}
       />
       <div className="composer-controls">
-        {gitIsRepo && gitBranch ? (
-          <div
-            className={`branch-menu${branchMenuOpen ? " open" : ""}`}
-            ref={branchMenuOpen ? branchMenuRef : undefined}
-          >
-            <button
-              type="button"
-              className="branch-button"
-              aria-haspopup="listbox"
-              aria-expanded={branchMenuOpen}
-              title="Switch branch"
-              onClick={() => setBranchMenuOpen((v) => !v)}
+        <div className="composer-meta">
+          {gitIsRepo && gitBranch ? (
+            <div
+              className={`branch-menu${branchMenuOpen ? " open" : ""}`}
+              ref={branchMenuOpen ? branchMenuRef : undefined}
             >
-              branch: {gitBranch}
-            </button>
-            {branchMenuOpen && (
-              <div className="branch-menu-popover" role="listbox">
-                {branchList === null && (
-                  <div className="branch-menu-empty">Loading…</div>
-                )}
-                {branchList !== null && branchList.length === 0 && (
-                  <div className="branch-menu-empty">
-                    {branchLoadError || "No branches"}
-                  </div>
-                )}
-                {branchList !== null &&
-                  branchList.map((b) => {
-                    const isCurrent = b === gitBranch;
-                    const isSwitching = switchingBranch === b;
-                    return (
-                      <button
-                        key={b}
-                        type="button"
-                        role="option"
-                        aria-selected={isCurrent}
-                        className={`branch-menu-item${isCurrent ? " current" : ""}`}
-                        disabled={
-                          isCurrent || switchingBranch !== null
-                        }
-                        onClick={() => handleSwitchBranch(b)}
-                      >
-                        <span className="branch-menu-mark">
-                          {isCurrent ? "•" : isSwitching ? "…" : ""}
-                        </span>
-                        <span className="branch-menu-name">{b}</span>
-                      </button>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-        ) : (
-          <span className="hint">
-            {sessionId
-              ? `session: ${sessionId.slice(0, 8)}…`
-              : "session: detecting…"}
-          </span>
-        )}
+              <button
+                type="button"
+                className="branch-button"
+                aria-haspopup="listbox"
+                aria-expanded={branchMenuOpen}
+                title="Switch branch"
+                onClick={() => setBranchMenuOpen((v) => !v)}
+              >
+                branch: {gitBranch}
+              </button>
+              {branchMenuOpen && (
+                <div className="branch-menu-popover" role="listbox">
+                  {branchList === null && (
+                    <div className="branch-menu-empty">Loading…</div>
+                  )}
+                  {branchList !== null && branchList.length === 0 && (
+                    <div className="branch-menu-empty">
+                      {branchLoadError || "No branches"}
+                    </div>
+                  )}
+                  {branchList !== null &&
+                    branchList.map((b) => {
+                      const isCurrent = b === gitBranch;
+                      const isSwitching = switchingBranch === b;
+                      return (
+                        <button
+                          key={b}
+                          type="button"
+                          role="option"
+                          aria-selected={isCurrent}
+                          className={`branch-menu-item${isCurrent ? " current" : ""}`}
+                          disabled={
+                            isCurrent || switchingBranch !== null
+                          }
+                          onClick={() => handleSwitchBranch(b)}
+                        >
+                          <span className="branch-menu-mark">
+                            {isCurrent ? "•" : isSwitching ? "…" : ""}
+                          </span>
+                          <span className="branch-menu-name">{b}</span>
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <span className="hint">
+              {sessionId
+                ? `session: ${sessionId.slice(0, 8)}…`
+                : "session: detecting…"}
+            </span>
+          )}
+          {canSwitchModel && (
+            <>
+              <ModelMenu
+                windowId={windowId}
+                model={model}
+                effort={effort}
+                onSwitch={onSwitchModel}
+              />
+              <EffortMenu
+                windowId={windowId}
+                model={model}
+                effort={effort}
+                onSwitch={onSwitchModel}
+              />
+            </>
+          )}
+        </div>
         <div className="composer-buttons">
           <div
             className={`keys-menu${keysMenuOpen ? " open" : ""}`}
@@ -2490,6 +2516,35 @@ export function ChatView({
     };
   }, [chatMenuOpen]);
 
+  // The transcript only confirms a switch on the agent's next record, so
+  // show the requested model/effort until the session payload changes.
+  const [modelOverride, setModelOverride] = useState<{
+    model?: string;
+    effort?: string;
+  } | null>(null);
+  useEffect(() => {
+    setModelOverride(null);
+  }, [session.window_id, session.model, session.effort]);
+
+  const handleSwitchModel = useCallback(
+    async (change: { model?: string; effort?: string }) => {
+      try {
+        await api.switchModel(session.window_id, change);
+      } catch (err) {
+        showToast((err as Error).message, "error");
+        throw err;
+      }
+      setModelOverride((prev) => ({ ...prev, ...change }));
+      const what = change.model ?? `effort ${change.effort}`;
+      showToast(
+        session.runtime === "claude"
+          ? `Switched to ${what}`
+          : `Restarting Codex with ${what}…`,
+      );
+    },
+    [session.window_id, session.runtime, showToast],
+  );
+
   const handleSwitchBranch = useCallback(
     async (branch: string) => {
       try {
@@ -2876,16 +2931,6 @@ export function ChatView({
                 type="button"
                 onClick={() => {
                   setChatMenuOpen(false);
-                  onRequestScreenshot();
-                }}
-              >
-                <Camera size={ICON} />
-                <span>Screenshot</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setChatMenuOpen(false);
                   setEditingName(true);
                 }}
               >
@@ -3170,11 +3215,15 @@ export function ChatView({
         sessionId={session.session_id}
         gitBranch={gitBranch}
         gitIsRepo={gitIsRepo}
+        model={modelOverride?.model ?? session.model ?? null}
+        effort={modelOverride?.effort ?? session.effort ?? null}
+        canSwitchModel={!session.dormant}
         agentSlashCommands={agentSlashCommands}
         agentSkillHints={agentSkillHints}
         onSubmit={submitMessage}
         onBotCommand={handleBotCommand}
         onSwitchBranch={handleSwitchBranch}
+        onSwitchModel={handleSwitchModel}
         onKey={onKey}
         onCommand={onCommand}
       />

@@ -13,6 +13,8 @@ Endpoints (all under `/api` unless stated):
   GET  /api/sessions/{wid}/git       {is_repo, branch} for the pane's cwd
   GET  /api/sessions/{wid}/branches  {is_repo, current, branches[]} — local heads
   POST /api/sessions/{wid}/switch-branch {branch} — runs `git switch`
+  GET  /api/sessions/{wid}/models    {runtime, models[], restarts} — model picker
+  POST /api/sessions/{wid}/switch-model {model?, effort?} — switch the agent's model
   GET  /api/sessions/{wid}/diff       uncommitted diff vs HEAD + untracked list
   POST /api/sessions/{wid}/text      {text, enter?, armed_skill?}
   POST /api/sessions/{wid}/keys      {key} — Escape, Up, Down, Enter, C-c, …
@@ -57,6 +59,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ..config import config
+from ..model_switch import ModelSwitchError, model_catalog, switch_model
 from ..runtimes import all_runtimes, get_runtime
 from ..accounts import account_manager, profile_key
 from ..profiles import DEFAULT_PROFILE_ID, SUPPORTED_RUNTIMES, profile_store
@@ -152,6 +155,11 @@ class SendCommandRequest(BaseModel):
 
 class SwitchBranchRequest(BaseModel):
     branch: str = Field(min_length=1, max_length=255)
+
+
+class SwitchModelRequest(BaseModel):
+    model: str | None = Field(default=None, max_length=64)
+    effort: str | None = Field(default=None, max_length=16)
 
 
 class WriteFileRequest(BaseModel):
@@ -877,11 +885,11 @@ def create_app(
     # Sessions
     # -----------------------------------------------------------------------
 
-    async def _claude_transcript_meta() -> dict[str, TranscriptMeta]:
-        """Title / permission mode / PR link of every known Claude session."""
+    async def _transcript_meta() -> dict[str, TranscriptMeta]:
+        """Title / permission mode / PR link / model of every known session."""
         paths: dict[str, Path] = {}
         for ws in session_manager.window_states.values():
-            if ws.runtime != "claude" or not ws.session_id:
+            if not ws.session_id:
                 continue
             path = session_manager._session_index.get(ws.session_id)
             if path is not None:
@@ -899,7 +907,7 @@ def create_app(
         # activity reflects reality.
         await session_manager._refresh_sessions_index(force=True)
         status_snapshot = status_tracker.snapshot() if status_tracker else {}
-        transcript_meta = await _claude_transcript_meta()
+        transcript_meta = await _transcript_meta()
 
         def _profile_fields(ws: Any) -> dict[str, Any]:
             profile = profile_store.resolve(ws.profile, ws.runtime or "codex")
@@ -1476,6 +1484,59 @@ def create_app(
             "branch": branch,
             "stdout": stdout.decode("utf-8", errors="replace").strip(),
         }
+
+    async def _live_window_state(window_id: str) -> Any:
+        if session_manager.is_dormant_key(window_id):
+            raise HTTPException(409, detail="session is sleeping — resume it first")
+        if await tmux_manager.find_window_by_id(window_id) is None:
+            raise HTTPException(404, detail="window not found")
+        return session_manager.get_window_state(window_id)
+
+    async def _window_transcript_meta(ws: Any) -> TranscriptMeta:
+        path = (
+            session_manager._session_index.get(ws.session_id) if ws.session_id else None
+        )
+        if path is None:
+            return TranscriptMeta()
+        return await asyncio.to_thread(transcript_meta_cache.get, path)
+
+    @app.get("/api/sessions/{window_id}/models")
+    async def list_models(
+        window_id: str, _user: str = Depends(require_auth)
+    ) -> dict[str, Any]:
+        ws = await _live_window_state(window_id)
+        runtime = ws.runtime or "codex"
+        catalog = await asyncio.to_thread(model_catalog, runtime)
+        meta = await _window_transcript_meta(ws)
+        return {**catalog, "current": meta.model, "effort": meta.effort}
+
+    @app.post("/api/sessions/{window_id}/switch-model")
+    async def switch_session_model(
+        window_id: str,
+        req: SwitchModelRequest,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        ws = await _live_window_state(window_id)
+        runtime = ws.runtime or "codex"
+        model, effort = req.model, req.effort
+        if runtime != "claude":
+            # Codex is relaunched: that would kill a turn in flight, and flags
+            # left out fall back to config.toml rather than the session's
+            # current model, so carry the current values over.
+            st = status_tracker.get(window_id) if status_tracker else None
+            if st is not None and st.status.value in ("running", "blocked"):
+                raise HTTPException(
+                    409, detail="agent is busy — switch the model once it is idle"
+                )
+            meta = await _window_transcript_meta(ws)
+            model = model or meta.model
+            effort = effort or meta.effort
+        try:
+            await switch_model(window_id, runtime, ws.session_id, model, effort)
+        except ModelSwitchError as e:
+            raise HTTPException(409, detail=str(e))
+        await bus.publish_sessions_changed()
+        return {"ok": True, "model": model, "effort": effort, "runtime": runtime}
 
     @app.get("/api/sessions/{window_id}/diff")
     async def get_diff(
