@@ -129,7 +129,7 @@ def test_sidebar_search_keeps_session_ordering_and_pinned_list() -> None:
         "const moveSession =",
         "void onReorder(next.map((session) => session.window_id))",
         "s.pinned",
-        'className="pin-marker"',
+        'aria-label="Pinned"',
     ]:
         assert existing_list_contract in sidebar_source
 
