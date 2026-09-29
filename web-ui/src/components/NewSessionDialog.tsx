@@ -1,3 +1,4 @@
+import { ModalShell } from "./ModalShell";
 import { useEffect, useState } from "react";
 import { AccountInfo, api, ResumeSession, RuntimeInfo } from "../api";
 import { DirectoryPicker } from "./DirectoryPicker";
@@ -92,9 +93,7 @@ export function NewSessionDialog({
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>New session</h2>
+    <ModalShell title="New session" onClose={onClose} className="sm:max-w-[560px]">
         {error && <div className="login-error" style={{ marginBottom: 10 }}>{error}</div>}
 
         {stage === "directory" && (
@@ -213,7 +212,6 @@ export function NewSessionDialog({
             </div>
           </>
         )}
-      </div>
-    </div>
+      </ModalShell>
   );
 }

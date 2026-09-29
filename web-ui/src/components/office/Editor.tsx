@@ -788,7 +788,9 @@ export function OfficeEditor({
           <div className="office-editor-section">
             <h4>Atlas: room — drag to create object</h4>
             <canvas
-              ref={(el) => (atlasRefs.current.room = el)}
+              ref={(el) => {
+                atlasRefs.current.room = el;
+              }}
               width={ATLAS_URLS.room.cols * 16 * 2}
               height={ATLAS_URLS.room.rows * 16 * 2}
               className="office-editor-atlas"
@@ -801,7 +803,9 @@ export function OfficeEditor({
           <div className="office-editor-section">
             <h4>Atlas: furniture — drag to create object</h4>
             <canvas
-              ref={(el) => (atlasRefs.current.furniture = el)}
+              ref={(el) => {
+                atlasRefs.current.furniture = el;
+              }}
               width={ATLAS_URLS.furniture.cols * 16 * 2}
               height={ATLAS_URLS.furniture.rows * 16 * 2}
               className="office-editor-atlas"

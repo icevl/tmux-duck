@@ -1,3 +1,4 @@
+import { ModalShell } from "./ModalShell";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 
@@ -32,9 +33,7 @@ export function SkillsModal({ runtime, onPick, onClose }: Props) {
   const prefix = runtime === "claude" ? "/" : "$";
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>Skills · {runtime}</h2>
+    <ModalShell title={`Skills · ${runtime}`} onClose={onClose} className="sm:max-w-[560px]">
         <p style={{ color: "var(--text-2)", marginTop: 0 }}>
           Invoke a skill with <code>{prefix}name</code> followed by your prompt.
         </p>
@@ -67,7 +66,6 @@ export function SkillsModal({ runtime, onPick, onClose }: Props) {
             Close
           </button>
         </div>
-      </div>
-    </div>
+      </ModalShell>
   );
 }

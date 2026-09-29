@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -157,7 +157,7 @@ function highlight(haystack: string, needle: string) {
   if (!needle) return haystack;
   const lower = haystack.toLowerCase();
   const target = needle.toLowerCase();
-  const out: (string | JSX.Element)[] = [];
+  const out: (string | ReactElement)[] = [];
   let i = 0;
   let key = 0;
   while (i < haystack.length) {

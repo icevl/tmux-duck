@@ -1,3 +1,4 @@
+import { ModalShell } from "./ModalShell";
 import { useCallback, useEffect, useState } from "react";
 import { AccountInfo, api } from "../api";
 
@@ -88,9 +89,7 @@ export function AccountsDialog({ onClose, onChanged }: Props) {
   const runtimes = Array.from(new Set(accounts.map((a) => a.runtime)));
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="modal accounts-modal" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>Accounts</h2>
+    <ModalShell title="Accounts" onClose={onClose} className="sm:max-w-[560px]">
         {error && <div className="login-error">{error}</div>}
 
         {runtimes.map((runtime) => (
@@ -264,7 +263,6 @@ export function AccountsDialog({ onClose, onChanged }: Props) {
         <div className="modal-actions">
           <button onClick={onClose}>Close</button>
         </div>
-      </div>
-    </div>
+      </ModalShell>
   );
 }

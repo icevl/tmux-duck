@@ -1,3 +1,4 @@
+import { ModalShell } from "./ModalShell";
 import { useEffect, useRef, useState } from "react";
 
 interface Props {
@@ -35,13 +36,7 @@ export function RenameDialog({
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={onCancel}>
-      <div
-        className="modal"
-        style={{ width: 420 }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <h2>{title}</h2>
+    <ModalShell title={title} onClose={onCancel}>
         <div className="modal-row">
           <input
             ref={inputRef}
@@ -71,7 +66,6 @@ export function RenameDialog({
             {confirmLabel}
           </button>
         </div>
-      </div>
-    </div>
+      </ModalShell>
   );
 }

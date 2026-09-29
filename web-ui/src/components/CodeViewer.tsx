@@ -11,6 +11,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { sql } from "@codemirror/lang-sql";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
+import { useTheme } from "@/lib/theme";
 
 interface Props {
   text: string;
@@ -71,11 +72,13 @@ export function CodeViewer({ text, path, editable = false, onChange }: Props) {
     return exts;
   }, [path, editable]);
 
+  const { resolved } = useTheme();
+
   return (
     <CodeMirror
       value={text}
       extensions={extensions}
-      theme={oneDark}
+      theme={resolved === "dark" ? oneDark : "light"}
       readOnly={!editable}
       onChange={onChange}
       basicSetup={{

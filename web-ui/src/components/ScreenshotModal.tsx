@@ -1,3 +1,4 @@
+import { ModalShell } from "./ModalShell";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 
@@ -20,13 +21,7 @@ export function ScreenshotModal({ windowId, onClose }: Props) {
   const url = `${api.screenshotUrl(windowId)}&_=${bust}`;
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div
-        className="modal screenshot-modal"
-        style={{ width: 1000 }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <h2>Screenshot</h2>
+    <ModalShell title="Screenshot" onClose={onClose} className="screenshot-modal sm:max-w-[1000px]">
         <img src={url} alt="Terminal screenshot" />
         <div className="modal-actions">
           <button onClick={() => setBust(Date.now())}>↻ Refresh</button>
@@ -34,7 +29,6 @@ export function ScreenshotModal({ windowId, onClose }: Props) {
             Close
           </button>
         </div>
-      </div>
-    </div>
+      </ModalShell>
   );
 }

@@ -1,3 +1,4 @@
+import { ModalShell } from "./ModalShell";
 interface Props {
   title: string;
   body?: string;
@@ -16,13 +17,7 @@ export function ConfirmDialog({
   onCancel,
 }: Props) {
   return (
-    <div className="modal-backdrop" onMouseDown={onCancel}>
-      <div
-        className="modal"
-        style={{ width: 420 }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <h2>{title}</h2>
+    <ModalShell title={title} onClose={onCancel}>
         {body && <p style={{ color: "var(--text-1)" }}>{body}</p>}
         <div className="modal-actions">
           <button onClick={onCancel}>Cancel</button>
@@ -33,7 +28,6 @@ export function ConfirmDialog({
             {confirmLabel}
           </button>
         </div>
-      </div>
-    </div>
+      </ModalShell>
   );
 }

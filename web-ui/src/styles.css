@@ -37,21 +37,28 @@ body,
   z-index: 1;
 }
 
+/* Legacy buttons, drawn like shadcn's outline / default / destructive
+   variants so un-migrated screens match the new components. */
 button:where(:not([data-slot])) {
   font-family: inherit;
-  font-size: inherit;
-  color: var(--text-0);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--foreground);
+  background: transparent;
+  border: 1px solid var(--input);
+  border-radius: 8px;
   padding: 6px 12px;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
 }
 
 button:where(:not([data-slot])):hover:not(:disabled) {
-  background: var(--bg-3);
-  border-color: var(--border-strong);
+  background: var(--accent);
+}
+
+button:where(:not([data-slot])):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 45%, transparent);
 }
 
 button:where(:not([data-slot])):disabled {
@@ -60,31 +67,28 @@ button:where(:not([data-slot])):disabled {
 }
 
 button.primary {
-  background: #f6b904;
+  background: var(--primary);
   border-color: transparent;
-  color: #1a1c20;
+  color: var(--primary-foreground);
   font-weight: 600;
-  border-radius: 6px;
   padding: 7px 16px;
-  transition: filter 0.12s ease;
 }
 
 button.primary:hover:not(:disabled) {
-  background: #e0a800;
+  background: color-mix(in oklch, var(--primary) 88%, var(--foreground));
 }
 
 button.primary:disabled {
-  filter: grayscale(0.5);
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 button.danger {
-  color: var(--danger);
-  border-color: rgba(255, 107, 107, 0.4);
+  color: var(--destructive);
+  border-color: color-mix(in oklch, var(--destructive) 40%, transparent);
 }
 
 button.danger:hover:not(:disabled) {
-  background: rgba(255, 107, 107, 0.12);
+  background: color-mix(in oklch, var(--destructive) 12%, transparent);
 }
 
 button.with-icon {
@@ -116,19 +120,21 @@ input:where(:not([data-slot])),
 textarea:where(:not([data-slot])),
 select:where(:not([data-slot])) {
   font-family: inherit;
-  font-size: inherit;
-  color: var(--text-0);
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  font-size: 14px;
+  color: var(--foreground);
+  background: transparent;
+  border: 1px solid var(--input);
+  border-radius: 8px;
   padding: 8px 10px;
   outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
 
 input:where(:not([data-slot])):focus,
 textarea:where(:not([data-slot])):focus,
 select:where(:not([data-slot])):focus {
-  border-color: var(--border-strong);
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent);
 }
 
 textarea:where(:not([data-slot])) {
@@ -2608,21 +2614,20 @@ button.primary.send-button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 12px;
 }
 
 .modal-row label {
-  font-size: 12px;
-  color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
 }
 
 .modal-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 14px;
+  margin-top: 4px;
 }
 
 .dir-row {

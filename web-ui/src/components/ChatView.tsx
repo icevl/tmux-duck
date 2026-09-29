@@ -1510,6 +1510,8 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
         value={text}
         placeholder="Message the agent — / for commands, paste or drop images"
         name="chat-message"
+        // Opts out of the legacy global field styles (focus ring, border).
+        data-slot="composer-input"
         autoComplete="off"
         data-1p-ignore="true"
         data-lpignore="true"

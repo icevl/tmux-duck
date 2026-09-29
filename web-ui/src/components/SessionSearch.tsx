@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactElement, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ChevronDown,
@@ -104,7 +104,7 @@ function renderSnippet(snippet: string, highlights: SearchHighlight[]) {
   const sorted = [...highlights]
     .filter((h) => h.start >= 0 && h.end > h.start && h.end <= snippet.length)
     .sort((a, b) => a.start - b.start);
-  const parts: JSX.Element[] = [];
+  const parts: ReactElement[] = [];
   let cursor = 0;
   sorted.forEach((highlight, idx) => {
     if (highlight.start < cursor) return;
