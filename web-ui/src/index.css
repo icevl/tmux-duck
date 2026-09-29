@@ -183,4 +183,9 @@
   body {
     @apply bg-background text-foreground font-sans;
   }
+  /* Tailwind 4's preflight leaves buttons on the default arrow cursor. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
 }
