@@ -21,6 +21,17 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+# Session context Codex writes into the transcript as `user` messages at the
+# start of a session: AGENTS.md, the environment, sandbox permissions.
+CODEX_CONTEXT_PREFIXES = (
+    "# AGENTS.md instructions for",
+    "<environment_context>",
+    "<user_instructions>",
+    "<permissions instructions>",
+    "<collaboration_mode>",
+)
+
+
 @dataclass
 class ParsedMessage:
     """Parsed message from a transcript."""
@@ -145,7 +156,11 @@ class TranscriptParser:
     def _extract_response_item_text_blocks(
         payload: dict[str, Any],
     ) -> list[dict[str, str]]:
-        """Extract text-like blocks from a modern response_item message payload."""
+        """Extract text-like blocks from a modern response_item message payload.
+
+        Codex injects its session context (AGENTS.md, environment, permissions)
+        as `user` messages; those blocks are not something the user wrote.
+        """
         content = payload.get("content", [])
         if not isinstance(content, list):
             return []
@@ -157,6 +172,8 @@ class TranscriptParser:
             if item_type in ("text", "input_text", "output_text"):
                 text = item.get("text", "")
                 if isinstance(text, str) and text:
+                    if text.lstrip().startswith(CODEX_CONTEXT_PREFIXES):
+                        continue
                     blocks.append({"type": "text", "text": text})
         return blocks
 
@@ -405,6 +422,8 @@ class TranscriptParser:
                 if role not in ("user", "assistant"):
                     return None
                 blocks = cls._extract_response_item_text_blocks(payload)
+                if role == "user" and not blocks:
+                    return None  # only injected session context
                 if role == "assistant":
                     # Current Codex (gpt-5.x) emits no task_complete/turn_complete
                     # event. Each completed turn has exactly one assistant
@@ -869,6 +888,8 @@ class TranscriptParser:
                 if role not in ("user", "assistant"):
                     return None
                 content_blocks = cls._extract_response_item_text_blocks(payload)
+                if role == "user" and not content_blocks:
+                    return None  # only injected session context
                 text = cls.extract_text_only(content_blocks)
                 text = cls._RE_ANSI_ESCAPE.sub("", text)
                 return ParsedMessage(message_type=role, text=text)

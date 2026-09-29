@@ -25,7 +25,6 @@ from .config import config
 from .profiles import profile_store
 from .runtimes import get_runtime
 from .skill_hints import skill_hint_registry
-from .slash_commands import slash_command_registry
 from .tmux_manager import tmux_manager
 from .transcript_parser import ParsedEntry, PendingToolInfo, TranscriptParser
 from .utils import atomic_write_json
@@ -520,22 +519,6 @@ class SessionManager:
         self._session_rebind_after_by_window.pop(window_id, None)
         self._excluded_session_ids_by_window.pop(window_id, None)
 
-    async def schedule_slash_command_discovery(self, window_id: str) -> None:
-        """Schedule one-shot runtime slash-command discovery for a ready window."""
-        state = self.get_window_state(window_id)
-        if not state.session_id:
-            return
-        if state.connector_id:
-            return
-        await self._refresh_sessions_index(force=True)
-        transcript_path = self._session_index.get(state.session_id)
-        slash_command_registry.schedule_discovery(
-            runtime=state.runtime,
-            window_id=window_id,
-            session_id=state.session_id,
-            transcript_path=transcript_path,
-        )
-
     async def schedule_skill_hint_discovery(self, window_id: str) -> None:
         """Schedule one-shot Codex skill hint discovery for a ready window."""
         state = self.get_window_state(window_id)
@@ -566,12 +549,11 @@ class SessionManager:
             return
         await self._refresh_sessions_index(force=True)
         transcript_path = self._session_index.get(state.session_id)
-        slash_command_registry.schedule_discovery(
-            runtime=state.runtime,
-            window_id=window_id,
-            session_id=state.session_id,
-            transcript_path=transcript_path,
-        )
+        # No slash-command discovery: it typed `/help` into the new session
+        # and read the answer back from the transcript, but Codex 2.x has no
+        # `/help` ("Unrecognized command" lands in the user's chat) and Claude
+        # 2.1 shows it as an overlay that never reaches the transcript. The
+        # composer uses the built-in command lists instead.
         skill_hint_registry.schedule_discovery(
             runtime=state.runtime,
             window_id=window_id,
