@@ -528,6 +528,26 @@ TRUST_PANE = """\
 """
 
 
+# Claude 2.1.283 multi-select AskUserQuestion, cursor on the unnumbered
+# "Submit" row.
+ASK_MULTISELECT_PANE = """\
+────────────────────────────────────────────────────────────────────────────────
+←  ☒ Color  ☐ Toppings  ✔ Submit  →
+Pick toppings
+  1. [✔] Cheese
+         Cheese topping
+  2. [ ] Olives
+         Olives topping
+  3. [ ] Ham
+         Ham topping
+  4. [ ] Type something
+❯    Submit
+────────────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+Enter to select · Tab/Arrow keys to navigate · Esc to cancel
+"""
+
+
 class TestInteractivePrompts:
     @pytest.mark.parametrize(
         ("pane", "name", "labels"),
@@ -568,6 +588,23 @@ class TestInteractivePrompts:
         parsed = parse_options(content.content)
         assert parsed is not None
         assert [o.label for o in parsed.options] == labels
+
+    def test_multiselect_submit_row_is_an_option(self):
+        from codexbot.terminal_parser import extract_interactive_content, parse_options
+
+        content = extract_interactive_content(ASK_MULTISELECT_PANE, runtime="claude")
+        assert content is not None and content.name == "AskUserQuestion"
+        parsed = parse_options(content.content)
+        assert parsed is not None
+        assert [o.label for o in parsed.options] == [
+            "[✔] Cheese",
+            "[ ] Olives",
+            "[ ] Ham",
+            "[ ] Type something",
+            "Submit",
+            "Chat about this",
+        ]
+        assert parsed.current_index == 4
 
     def test_trust_prompt_detected(self):
         from codexbot.terminal_parser import extract_interactive_content

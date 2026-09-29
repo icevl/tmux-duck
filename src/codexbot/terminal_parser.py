@@ -331,6 +331,10 @@ _OPTION_CURSOR = "❯"
 _RE_NUM_OPTION = re.compile(r"^\s*(❯)?\s*(\d+)\.\s+(.+?)\s*$")
 # Radio option: "  ◯ Option A" / "❯ ◉ Option B".
 _RE_RADIO_OPTION = re.compile(r"^\s*(❯)?\s*[◯◉○●⦿]\s+(.+?)\s*$")
+# A multi-select AskUserQuestion puts an unnumbered "Submit" row inside the
+# numbered menu ("4. [ ] Type something" / "   Submit" / "5. Chat about this").
+# The cursor stops on it like on any option, so it is one.
+_RE_SUBMIT_OPTION = re.compile(r"^\s*(❯)?\s*(Submit)\s*$")
 
 
 @dataclass
@@ -362,6 +366,13 @@ def parse_options(content: str) -> ParsedPrompt | None:
     for line in lines:
         m = _RE_NUM_OPTION.match(line)
         if not m:
+            submit = _RE_SUBMIT_OPTION.match(line) if runs else None
+            if submit:
+                options, current = runs[-1]
+                if submit.group(1) == _OPTION_CURSOR:
+                    current = len(options)
+                options.append(ParsedOption(label=submit.group(2)))
+                runs[-1] = (options, current)
             continue
         number = int(m.group(2))
         if not runs or number != last_number + 1:

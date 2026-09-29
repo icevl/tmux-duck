@@ -1,33 +1,28 @@
 """Tests for interactive-prompt navigation math.
 
-The Claude/Codex selection pickers wrap and advance one option per Down press,
-while Up wraps unpredictably — so option selection navigates forward-only from
-the cursor's real position. `_forward_steps` is that pure calculation.
+The Claude/Codex selection pickers advance one option per arrow press but wrap
+past their ends inconsistently, so option selection moves straight from the
+cursor's real position to the target. `_cursor_moves` is that pure calculation.
 """
 
 from __future__ import annotations
 
-from codexbot.web.interactive_monitor import _forward_steps
+from codexbot.web.interactive_monitor import _cursor_moves
 
 
-def test_forward_steps_no_move() -> None:
-    assert _forward_steps(0, 0, 5) == 0
-    assert _forward_steps(3, 3, 5) == 0
+def test_no_move() -> None:
+    assert _cursor_moves(0, 0) == ("Down", 0)
+    assert _cursor_moves(3, 3) == ("Down", 0)
 
 
-def test_forward_steps_downward() -> None:
-    assert _forward_steps(0, 1, 5) == 1
-    assert _forward_steps(1, 3, 5) == 2
-    assert _forward_steps(0, 4, 5) == 4
+def test_downward() -> None:
+    assert _cursor_moves(0, 1) == ("Down", 1)
+    assert _cursor_moves(1, 3) == ("Down", 2)
+    assert _cursor_moves(0, 4) == ("Down", 4)
 
 
-def test_forward_steps_wraps_forward() -> None:
-    # Target above the cursor: wrap past the bottom rather than press Up.
-    assert _forward_steps(2, 1, 5) == 4  # 2->3->4->0->1
-    assert _forward_steps(4, 0, 5) == 1  # last -> first
-    assert _forward_steps(3, 2, 4) == 3  # 3->0->1->2
-
-
-def test_forward_steps_two_option_menu() -> None:
-    assert _forward_steps(0, 1, 2) == 1
-    assert _forward_steps(1, 0, 2) == 1
+def test_upward_never_wraps() -> None:
+    assert _cursor_moves(2, 1) == ("Up", 1)
+    assert _cursor_moves(4, 0) == ("Up", 4)
+    # From "Chat about this" back to an option: Down would not wrap there.
+    assert _cursor_moves(5, 1) == ("Up", 4)

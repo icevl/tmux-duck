@@ -207,15 +207,17 @@ class InteractivePromptMonitor:
 _MAX_NAV_ATTEMPTS = 4
 
 
-def _forward_steps(current_index: int, target_index: int, total: int) -> int:
-    """Down-key presses to move the cursor from ``current`` to ``target``.
+def _cursor_moves(current_index: int, target_index: int) -> tuple[str, int]:
+    """Key and press count that move the TUI cursor from ``current`` to ``target``.
 
-    The Claude/Codex pickers wrap (Down past the last option returns to the
-    first) and advance exactly one option per press, so a forward-only count
-    reaches any target regardless of where the cursor sits — unlike pressing
-    Up, which we observed wrapping unpredictably.
+    Straight there, never across an edge: the pickers advance exactly one
+    option per press, but wrap past their ends inconsistently (Claude 2.1's
+    AskUserQuestion jumps from the first option to "Type something" on Up and
+    does not move past "Chat about this" on Down).
     """
-    return (target_index - current_index) % total
+    if target_index >= current_index:
+        return "Down", target_index - current_index
+    return "Up", current_index - target_index
 
 
 async def _read_current_prompt(window_id: str) -> ParsedPrompt | None:
@@ -237,10 +239,9 @@ async def _read_current_prompt(window_id: str) -> ParsedPrompt | None:
 async def navigate_and_choose(window_id: str, option_index: int, total: int) -> bool:
     """Move the TUI cursor onto ``option_index`` (0-based) and press Enter.
 
-    Reads the cursor's *actual* position from the live pane and steps Down to
-    the target, then re-reads to confirm before committing. This is resilient
-    to the picker wrapping and to the cursor having moved since the prompt was
-    surfaced. Critically, if we can't confirm the cursor is on the target we
+    Reads the cursor's *actual* position from the live pane and steps straight
+    to the target, then re-reads to confirm before committing. This is
+    resilient to the cursor having moved since the prompt was surfaced. Critically, if we can't confirm the cursor is on the target we
     return False WITHOUT pressing Enter — better to fail the choice than to
     submit the wrong option (the old "press Up to reach the top" approach broke
     exactly here, because Up wraps instead of clamping).
@@ -257,10 +258,10 @@ async def navigate_and_choose(window_id: str, option_index: int, total: int) -> 
             return False  # the menu changed under us
         if parsed.current_index == option_index:
             break
-        steps = _forward_steps(parsed.current_index, option_index, count)
-        for _ in range(steps):
+        key, presses = _cursor_moves(parsed.current_index, option_index)
+        for _ in range(presses):
             if not await tmux_manager.send_keys(
-                window_id, "Down", enter=False, literal=False
+                window_id, key, enter=False, literal=False
             ):
                 return False
             await asyncio.sleep(0.02)
@@ -281,5 +282,5 @@ __all__ = [
     "InteractivePromptMonitor",
     "navigate_and_choose",
     "ParsedOption",
-    "_forward_steps",
+    "_cursor_moves",
 ]
