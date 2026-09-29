@@ -28,6 +28,10 @@ import {
 import { cn } from "@/lib/utils";
 import { useTheme, type ThemePreference } from "@/lib/theme";
 
+// One avatar look for the header button and the menu's own header row.
+const AVATAR =
+  "inline-flex size-7 items-center justify-center rounded-full bg-secondary text-foreground ring-[1.5px] ring-brand/70";
+
 const OFFICE_STREAM_ID = "71824d03-660b-4722-843a-5e8fbe9ad4c2";
 
 const THEMES: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
@@ -82,14 +86,14 @@ export function UserMenu({
           data-slot="avatar-trigger"
           aria-label="Menu"
           title={alert ?? "Menu"}
-          className="relative inline-flex size-9 items-center justify-center rounded-full bg-secondary text-foreground ring-2 ring-brand/70 ring-offset-2 ring-offset-sidebar transition hover:ring-brand data-[state=open]:ring-brand"
+          className={cn(AVATAR, "relative transition hover:ring-brand data-[state=open]:ring-brand")}
         >
-          <UserRound className="size-[18px]" />
+          <UserRound className="size-3.5" />
           {alert && (
             <span
               aria-label={alert}
               className={cn(
-                "absolute -top-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-sidebar",
+                "absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2 ring-sidebar",
                 accountsNeedSignIn ? "bg-destructive" : "bg-warning",
               )}
             />
@@ -104,8 +108,8 @@ export function UserMenu({
         className="w-64 rounded-xl p-1.5 data-[state=closed]:hidden"
       >
         <DropdownMenuLabel className="flex items-center gap-3 px-2 py-2 font-normal">
-          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full ring-2 ring-brand/70">
-            <UserRound className="size-5" />
+          <span className={cn(AVATAR, "shrink-0")}>
+            <UserRound className="size-3.5" />
           </span>
           <span className="flex min-w-0 flex-col">
             <span className="text-sm font-medium">Signed in</span>
