@@ -443,6 +443,26 @@ class SessionMonitor:
                     if bootstrap:
                         continue
 
+                # The transcript moved (Claude relocates it when the session
+                # enters a worktree). The stored offset belongs to the old
+                # file, and replaying from it would re-send everything the
+                # agent wrote meanwhile, so start at the new file's end.
+                if tracked.file_path != str(session_info.file_path):
+                    logger.info(
+                        "Transcript of session %s moved: %s -> %s; "
+                        "advancing to size=%d",
+                        session_info.session_id,
+                        tracked.file_path,
+                        session_info.file_path,
+                        current_size,
+                    )
+                    tracked.file_path = str(session_info.file_path)
+                    tracked.last_byte_offset = current_size
+                    self.state.update_session(tracked)
+                    self._file_mtimes[session_info.session_id] = current_mtime
+                    self._clear_partial_line_state(session_info.session_id)
+                    continue
+
                 # Already-tracked session on the first cycle after restart:
                 # advance the read offset to EOF so the bot doesn't replay
                 # whatever the agent wrote while it was down.

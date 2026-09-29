@@ -864,6 +864,51 @@ class TestSessionMonitorSessionRebinding:
         assert tracked.last_byte_offset == eof_after_restart
 
     @pytest.mark.asyncio
+    async def test_moved_transcript_is_not_replayed(
+        self, tmp_path, make_jsonl_entry
+    ) -> None:
+        """A transcript that moved (session entered a worktree) resumes at
+        the new file's end instead of re-sending it from the old offset."""
+        monitor = SessionMonitor(
+            projects_path=tmp_path / "projects",
+            state_file=tmp_path / "monitor_state.json",
+        )
+        session_id = "sid-moved"
+        old_file = tmp_path / "old" / "sid-moved.jsonl"
+        new_file = tmp_path / "new" / "sid-moved.jsonl"
+        new_file.parent.mkdir()
+        new_file.write_text(
+            "".join(
+                json.dumps(make_jsonl_entry(msg_type="assistant", content=f"old {i}"))
+                + "\n"
+                for i in range(3)
+            ),
+            encoding="utf-8",
+        )
+        monitor.state.update_session(
+            TrackedSession(
+                session_id=session_id, file_path=str(old_file), last_byte_offset=10
+            )
+        )
+
+        with patch.object(
+            monitor,
+            "_resolve_active_sessions",
+            return_value=[SessionInfo(session_id=session_id, file_path=new_file)],
+        ):
+            assert await monitor.check_for_updates({session_id}, bootstrap=False) == []
+            with new_file.open("a", encoding="utf-8") as f:
+                f.write(
+                    json.dumps(make_jsonl_entry(msg_type="assistant", content="live"))
+                    + "\n"
+                )
+            messages = await monitor.check_for_updates({session_id}, bootstrap=False)
+
+        assert [m.text for m in messages if m.message_type == "content"] == ["live"]
+        tracked = monitor.state.get_session(session_id)
+        assert tracked is not None and tracked.file_path == str(new_file)
+
+    @pytest.mark.asyncio
     async def test_tracked_session_delivers_new_content_after_bootstrap(
         self, tmp_path, make_jsonl_entry
     ) -> None:

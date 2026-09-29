@@ -198,6 +198,49 @@ class TestClaudeTranscriptPath:
         assert claude_transcript_path("sid", "") is None
 
 
+class TestLocateClaudeTranscript:
+    SID = "11111111-2222-3333-4444-555555555555"
+
+    def _projects(self, tmp_path, monkeypatch):
+        from codexbot import session as session_module
+
+        projects = tmp_path / "projects"
+        profile = session_module.profile_store.resolve("", "claude")
+        monkeypatch.setattr(
+            type(profile), "claude_projects_path", property(lambda _self: projects)
+        )
+        return projects
+
+    def test_follows_a_transcript_moved_into_a_worktree(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from codexbot.session import locate_claude_transcript
+
+        projects = self._projects(tmp_path, monkeypatch)
+        moved = projects / "-repo--claude-worktrees-feat" / f"{self.SID}.jsonl"
+        moved.parent.mkdir(parents=True)
+        moved.write_text("{}\n", encoding="utf-8")
+
+        assert locate_claude_transcript(self.SID, "/repo") == moved
+
+    def test_prefers_the_launch_cwd_and_falls_back_to_it(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        from codexbot.session import locate_claude_transcript
+
+        projects = self._projects(tmp_path, monkeypatch)
+        expected = projects / "-repo" / f"{self.SID}.jsonl"
+        # Not written yet: still the expected path, for the monitor to pick up.
+        assert locate_claude_transcript(self.SID, "/repo") == expected
+
+        expected.parent.mkdir(parents=True)
+        expected.write_text("{}\n", encoding="utf-8")
+        other = projects / "-elsewhere" / f"{self.SID}.jsonl"
+        other.parent.mkdir()
+        other.write_text("{}\n", encoding="utf-8")
+        assert locate_claude_transcript(self.SID, "/repo") == expected
+
+
 class TestResolveWindowForThread:
     def test_none_thread_id_returns_none(self, mgr: SessionManager) -> None:
         assert mgr.resolve_window_for_thread(100, None) is None

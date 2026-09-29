@@ -80,6 +80,28 @@ def claude_transcript_path(session_id: str, cwd: str, profile: str = "") -> Path
     return projects / encoded / f"{session_id}.jsonl"
 
 
+_UUID_RE = re.compile(r"^[0-9a-fA-F-]{8,64}$")
+
+
+def locate_claude_transcript(
+    session_id: str, cwd: str, profile: str = ""
+) -> Path | None:
+    """Like ``claude_transcript_path``, but follows a session that moved.
+
+    When a session enters a worktree (``EnterWorktree`` →
+    ``<repo>/.claude/worktrees/<name>``) Claude moves its transcript, and
+    the subagents next to it, into that worktree's project dir, so the
+    window's launch cwd no longer names it. Session ids are unique, so any
+    project dir holding ``<session_id>.jsonl`` is the one.
+    """
+    expected = claude_transcript_path(session_id, cwd, profile)
+    if expected is None or expected.exists() or not _UUID_RE.match(session_id):
+        return expected
+    projects = profile_store.resolve(profile, "claude").claude_projects_path
+    moved = next(iter(projects.glob(f"*/{session_id}.jsonl")), None)
+    return moved or expected
+
+
 @dataclass
 class WindowState:
     """Persistent state for a tmux window."""
@@ -914,7 +936,7 @@ class SessionManager:
         for ws in self.window_states.values():
             if ws.runtime != "claude" or not ws.session_id or not ws.cwd:
                 continue
-            claude_path = claude_transcript_path(ws.session_id, ws.cwd, ws.profile)
+            claude_path = locate_claude_transcript(ws.session_id, ws.cwd, ws.profile)
             if claude_path is None:
                 continue
             try:
