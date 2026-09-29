@@ -1175,7 +1175,7 @@ button.burger {
 .messages-skeleton-row.right .skeleton-bubble {
   /* `.bubble.user` overrides the purple `--bubble-user` token with a
      yellow tint; mirror it here so the skeleton previews the real palette. */
-  background: rgba(246, 185, 4, 0.1);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
 }
 
 .skeleton-line-bubble {
@@ -1823,8 +1823,8 @@ button.burger {
 
 
 .bubble.user {
-  background: rgba(246, 185, 4, 0.1);
-  border-color: rgba(246, 185, 4, 0.32);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  border-color: color-mix(in oklch, var(--primary) 32%, transparent);
   color: var(--text-0);
 }
 
@@ -3279,7 +3279,7 @@ button.primary.send-button {
 }
 
 .files-match-hit {
-  background: var(--accent-soft, rgba(246, 185, 4, 0.22));
+  background: var(--accent-soft);
   color: inherit;
   padding: 0 1px;
   border-radius: 2px;
@@ -3311,7 +3311,7 @@ button.primary.send-button {
 }
 
 .files-row.selected {
-  background: var(--accent-soft, rgba(246, 185, 4, 0.12));
+  background: var(--accent-soft);
 }
 
 .files-row-chevron {
@@ -3426,7 +3426,7 @@ button.primary.send-button {
 }
 
 .files-viewer-mode button.active {
-  background: var(--accent-soft, rgba(246, 185, 4, 0.12));
+  background: var(--accent-soft);
   color: var(--text-0);
 }
 

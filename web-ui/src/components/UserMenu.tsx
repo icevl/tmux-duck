@@ -1,5 +1,6 @@
 import {
   Bell,
+  Binary,
   BellOff,
   LayoutGrid,
   LogOut,
@@ -33,6 +34,7 @@ const THEMES: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
   { value: "system", label: "System", icon: Monitor },
+  { value: "matrix", label: "The Matrix", icon: Binary },
 ];
 
 interface UserMenuProps {
@@ -147,7 +149,10 @@ export function UserMenu({
         </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            {preference === "light" ? <Sun /> : preference === "dark" ? <Moon /> : <Monitor />}
+            {(() => {
+              const Icon = THEMES.find((t) => t.value === preference)?.icon ?? Monitor;
+              return <Icon />;
+            })()}
             <span className="flex-1">Theme</span>
             <span className="text-xs text-muted-foreground">{themeLabel}</span>
           </DropdownMenuSubTrigger>

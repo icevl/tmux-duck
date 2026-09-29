@@ -91,6 +91,17 @@
   --shadow-color: oklch(0 0 0 / 0.5);
 }
 
+/* The Matrix: the dark theme with the film's phosphor green (#00ff41) as
+ * the one accent. Applied together with `.dark`. */
+.dark.theme-matrix {
+  --primary: oklch(0.869 0.278 144.5);
+  --primary-foreground: oklch(0.16 0.04 145);
+  --ring: oklch(0.8 0.24 144.5);
+  --brand: oklch(0.869 0.278 144.5);
+  --brand-soft: oklch(0.869 0.278 144.5 / 0.14);
+  --success: oklch(0.869 0.278 144.5);
+}
+
 @theme {
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

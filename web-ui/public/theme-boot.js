@@ -6,7 +6,10 @@
   } catch (e) {}
   var dark =
     pref === "dark" ||
+    pref === "matrix" ||
     (pref !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", dark);
-  document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  var root = document.documentElement;
+  root.classList.toggle("dark", dark);
+  root.classList.toggle("theme-matrix", pref === "matrix");
+  root.style.colorScheme = dark ? "dark" : "light";
 })();

@@ -9,6 +9,20 @@ import {
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { useTheme } from "@/lib/theme";
+
+// xterm takes literal colours, not CSS variables: the app accent per theme.
+const ACCENT = { default: "#f6b904", matrix: "#00ff41" } as const;
+
+function terminalTheme(accent: string) {
+  return {
+    background: "#0e0f12",
+    foreground: "#ececef",
+    cursor: accent,
+    cursorAccent: "#0e0f12",
+    selectionBackground: `${accent}4d`,
+  };
+}
 
 const ICON = 16;
 
@@ -133,6 +147,14 @@ export function TerminalPanel({
   const [reconnectKey, setReconnectKey] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<XTerm | null>(null);
+  const { preference } = useTheme();
+  const accent = preference === "matrix" ? ACCENT.matrix : ACCENT.default;
+  // Read when the terminal is created; the effect below retints a live one.
+  const accentRef = useRef(accent);
+  accentRef.current = accent;
+  useEffect(() => {
+    if (termRef.current) termRef.current.options.theme = terminalTheme(accent);
+  }, [accent]);
   const wsRef = useRef<WebSocket | null>(null);
   const encoderRef = useRef(new TextEncoder());
   // Survives across the effect re-runs that auto-reconnect triggers,
@@ -179,13 +201,7 @@ export function TerminalPanel({
       convertEol: false,
       scrollback: 5000,
       allowProposedApi: true,
-      theme: {
-        background: "#0e0f12",
-        foreground: "#ececef",
-        cursor: "#f6b904",
-        cursorAccent: "#0e0f12",
-        selectionBackground: "rgba(246,185,4,0.3)",
-      },
+      theme: terminalTheme(accentRef.current),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
