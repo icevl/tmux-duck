@@ -15,6 +15,7 @@ Endpoints (all under `/api` unless stated):
   POST /api/sessions/{wid}/switch-branch {branch} — runs `git switch`
   GET  /api/sessions/{wid}/models    {runtime, models[], restarts} — model picker
   POST /api/sessions/{wid}/switch-model {model?, effort?} — switch the agent's model
+  GET  /api/sessions/{wid}/interactive-prompt  {prompt} — the pane's open prompt, if any
   GET  /api/sessions/{wid}/diff       uncommitted diff vs HEAD + untracked list
   POST /api/sessions/{wid}/text      {text, enter?, armed_skill?}
   POST /api/sessions/{wid}/keys      {key} — Escape, Up, Down, Enter, C-c, …
@@ -1920,6 +1921,15 @@ def create_app(
         if not ok:
             raise HTTPException(400, detail="send_keys failed")
         return {"ok": True}
+
+    @app.get("/api/sessions/{window_id}/interactive-prompt")
+    async def get_interactive_prompt(
+        window_id: str,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        from .interactive_monitor import current_prompt_event
+
+        return {"prompt": await current_prompt_event(window_id)}
 
     @app.post("/api/sessions/{window_id}/choose")
     async def choose_option(

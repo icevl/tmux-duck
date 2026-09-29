@@ -870,6 +870,14 @@ export const api = {
   runUpdate: () =>
     request<{ started: boolean }>("/api/update/run", { method: "POST" }),
 
+  getInteractivePrompt: (windowId: string) =>
+    request<{
+      prompt: {
+        ui_name: string;
+        options: Array<{ label: string }>;
+        current_index: number;
+      } | null;
+    }>(`/api/sessions/${encodeURIComponent(windowId)}/interactive-prompt`),
   chooseOption: (windowId: string, optionIndex: number, total: number) =>
     request<{ ok: boolean }>(
       `/api/sessions/${encodeURIComponent(windowId)}/choose`,

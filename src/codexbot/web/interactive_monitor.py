@@ -236,6 +236,37 @@ async def _read_current_prompt(window_id: str) -> ParsedPrompt | None:
     return parse_options(content.content)
 
 
+async def current_prompt_event(window_id: str) -> dict | None:
+    """The live prompt of ``window_id`` as an ``interactive_prompt`` event.
+
+    The monitor publishes a prompt once, when it appears; a client that opens
+    the session later (page load, switching back to it) asks here instead.
+    """
+    from ..session import session_manager
+
+    state = session_manager.window_states.get(window_id)
+    if state is None:
+        return None
+    pane_text = await tmux_manager.capture_pane(window_id)
+    content = (
+        extract_interactive_content(pane_text, runtime=state.runtime)
+        if pane_text
+        else None
+    )
+    parsed = parse_options(content.content) if content is not None else None
+    if content is None or parsed is None or not parsed.options:
+        return None
+    return {
+        "type": "interactive_prompt",
+        "window_id": window_id,
+        "runtime": state.runtime,
+        "ui_name": content.name,
+        "options": [{"label": o.label} for o in parsed.options],
+        "current_index": parsed.current_index,
+        "content": content.content,
+    }
+
+
 async def navigate_and_choose(window_id: str, option_index: int, total: int) -> bool:
     """Move the TUI cursor onto ``option_index`` (0-based) and press Enter.
 
@@ -280,6 +311,7 @@ async def navigate_and_choose(window_id: str, option_index: int, total: int) -> 
 
 __all__ = [
     "InteractivePromptMonitor",
+    "current_prompt_event",
     "navigate_and_choose",
     "ParsedOption",
     "_cursor_moves",

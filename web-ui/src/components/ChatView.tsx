@@ -2087,6 +2087,31 @@ export function ChatView({
     setSearchHighlightKey(null);
   }, [session.window_id, session.session_id, session.name]);
 
+  // The monitor announces a prompt once, when it appears; opening the session
+  // later (page load, switching back) would miss it, so ask for the live one.
+  useEffect(() => {
+    const windowId = session.window_id;
+    let cancelled = false;
+    api
+      .getInteractivePrompt(windowId)
+      .then(({ prompt }) => {
+        if (cancelled || !prompt || windowIdRef.current !== windowId) return;
+        setInteractivePrompt((current) =>
+          current ?? {
+            uiName: prompt.ui_name,
+            options: prompt.options,
+            currentIndex: prompt.current_index,
+          },
+        );
+      })
+      .catch(() => {
+        // Older backend or window gone — the live event path still works.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session.window_id]);
+
   useEffect(() => {
     return () => {
       if (searchHighlightTimerRef.current !== null) {
@@ -3175,18 +3200,29 @@ export function ChatView({
       </div>
 
       {interactivePrompt && (
-        <div className="interactive-prompt" role="dialog" aria-label="Agent is waiting">
-          <div className="interactive-prompt-header">
+        <div
+          className="mx-auto mb-2 w-[calc(100%-36px)] max-w-[880px] rounded-2xl border border-brand/30 bg-card p-3 shadow-[0_8px_30px_var(--shadow-color)] max-[760px]:w-[calc(100%-24px)]"
+          role="dialog"
+          aria-label="Agent is waiting"
+        >
+          <div className="mb-2 flex items-center gap-2 px-1 text-xs font-medium text-brand">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand/60" />
+              <span className="relative inline-flex size-2 rounded-full bg-brand" />
+            </span>
             Agent is waiting for your choice
           </div>
-          <div className="interactive-prompt-options">
+          <div className="flex max-h-[40vh] flex-col gap-1 overflow-y-auto">
             {interactivePrompt.options.map((opt, idx) => (
               <button
                 key={`${idx}-${opt.label}`}
                 type="button"
-                className={`interactive-prompt-option${
-                  idx === interactivePrompt.currentIndex ? " current" : ""
-                }`}
+                data-slot="prompt-option"
+                className={cn(
+                  "flex min-h-10 w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors",
+                  "hover:border-border hover:bg-accent disabled:opacity-50",
+                  idx === interactivePrompt.currentIndex && "border-border bg-muted/60",
+                )}
                 disabled={interactiveSending}
                 onClick={async () => {
                   setInteractiveSending(true);
@@ -3204,8 +3240,10 @@ export function ChatView({
                   }
                 }}
               >
-                <span className="interactive-prompt-option-num">{idx + 1}.</span>
-                <span className="interactive-prompt-option-label">{opt.label}</span>
+                <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-secondary font-mono text-xs text-muted-foreground">
+                  {idx + 1}
+                </span>
+                <span className="min-w-0 flex-1 break-words">{opt.label}</span>
               </button>
             ))}
           </div>

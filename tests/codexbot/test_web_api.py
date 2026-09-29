@@ -1523,3 +1523,52 @@ def test_update_run_logs_output_instead_of_discarding_it(
     assert launched["kwargs"]["stderr"] is subprocess.STDOUT
     assert launched["kwargs"]["stdout"].name == str(log_path)
     assert launched["kwargs"]["start_new_session"] is True
+
+
+ASK_PANE = """\
+────────────────────────────────────────────────────────────────────────────────
+ ☐ Fruit
+
+Pick a fruit
+
+❯ 1. Apple
+     Apple
+  2. Pear
+     Pear
+  3. Type something.
+────────────────────────────────────────────────────────────────────────────────
+  4. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel
+"""
+
+
+def test_interactive_prompt_endpoint_reads_the_pane(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.web import interactive_monitor
+
+    monkeypatch.setattr(
+        interactive_monitor.tmux_manager,
+        "capture_pane",
+        AsyncMock(return_value=ASK_PANE),
+    )
+    from codexbot.web import api as web_api
+
+    monkeypatch.setattr(
+        web_api.session_manager,
+        "window_states",
+        {"@7": WindowState(session_id="s7", runtime="claude")},
+    )
+
+    prompt = authed_client.get("/api/sessions/@7/interactive-prompt").json()["prompt"]
+
+    assert prompt["ui_name"] == "AskUserQuestion"
+    assert [o["label"] for o in prompt["options"]][:2] == ["Apple", "Pear"]
+    assert prompt["current_index"] == 0
+
+    monkeypatch.setattr(
+        interactive_monitor.tmux_manager, "capture_pane", AsyncMock(return_value="$ ")
+    )
+    r = authed_client.get("/api/sessions/@7/interactive-prompt")
+    assert r.json() == {"prompt": None}
