@@ -3116,11 +3116,14 @@ export function ChatView({
             })}
             {awaitingResponse && (
               <div className="messages-row waiting-duck-row">
-                <DuckLogo
-                  width={40}
-                  height={40}
-                  className="duck-levitate waiting-duck"
-                />
+                {/* Same centred column as the messages, not the row's edge. */}
+                <div className="mx-auto w-full max-w-[880px]">
+                  <DuckLogo
+                    width={40}
+                    height={40}
+                    className="duck-levitate waiting-duck"
+                  />
+                </div>
               </div>
             )}
             {activeChoiceMessage && (

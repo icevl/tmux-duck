@@ -5,13 +5,10 @@ import {
   LogOut,
   Monitor,
   Moon,
-  Music,
   Sun,
   UserRound,
   Users,
 } from "lucide-react";
-import { TunioPlayer } from "tunio-player";
-import "tunio-player/styles.css";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,8 +29,6 @@ import { useTheme, type ThemePreference } from "@/lib/theme";
 const AVATAR =
   "inline-flex size-7 items-center justify-center rounded-full bg-secondary text-foreground ring-[1.5px] ring-brand/70";
 
-const OFFICE_STREAM_ID = "71824d03-660b-4722-843a-5e8fbe9ad4c2";
-
 const THEMES: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
@@ -53,9 +48,7 @@ interface UserMenuProps {
   onToggleNotifications: () => void;
 }
 
-// Avatar button in the sidebar header with the app menu. The content is
-// force-mounted and only hidden while closed: the music player lives in it
-// and would stop playing on unmount.
+// Avatar button in the sidebar header with the app menu.
 export function UserMenu({
   missionActive,
   attentionCount,
@@ -68,7 +61,7 @@ export function UserMenu({
   notificationTitle,
   onToggleNotifications,
 }: UserMenuProps) {
-  const { preference, resolved, setPreference } = useTheme();
+  const { preference, setPreference } = useTheme();
   const themeLabel = THEMES.find((t) => t.value === preference)?.label;
 
   // What the old footer icons signalled on their own now marks the avatar.
@@ -101,11 +94,10 @@ export function UserMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        forceMount
         align="end"
         sideOffset={8}
         collisionPadding={12}
-        className="w-64 rounded-xl p-1.5 data-[state=closed]:hidden"
+        className="w-64 rounded-xl p-1.5"
       >
         <DropdownMenuLabel className="flex items-center gap-3 px-2 py-2 font-normal">
           <span className={cn(AVATAR, "shrink-0")}>
@@ -120,18 +112,6 @@ export function UserMenu({
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        {/* Not a menu item: the play button toggles the stream in place. */}
-        <div className="flex h-10 items-center gap-2 rounded-md px-2 text-sm">
-          <Music className="size-4 text-muted-foreground" />
-          <span className="flex-1">Office radio</span>
-          <TunioPlayer
-            id={OFFICE_STREAM_ID}
-            theme={resolved}
-            buttonOnly
-            buttonOnlyClassName="codi-sidebar-play"
-            buttonOnlySize={28}
-          />
-        </div>
         <DropdownMenuItem
           disabled={!notificationsSupported}
           title={notificationTitle}
