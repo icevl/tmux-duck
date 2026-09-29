@@ -175,20 +175,22 @@ def test_search_mobile_styles_and_highlight_contract() -> None:
 
     # `.search-details-toggle` was replaced by the bottom `.search-status-footer`
     # widget, which lives in SearchStatusFooter rather than inside the search
-    # results panel. The remaining selectors are still load-bearing.
+    # results panel. Results render as a session tree (`.search-tree-row`);
+    # the older flat `.search-result-hit` list and its styles are gone.
     for selector in [
         ".session-search",
         ".search-status-footer",
         ".search-status-details",
         ".search-detail-row",
-        ".search-result-hit",
+        ".search-tree-row.hit",
+        ".search-tree-row .tree-snippet",
         ".messages-row.search-hit",
         ".search-hit-label",
     ]:
         assert selector in styles
 
     assert "overflow-wrap: anywhere" in styles
-    assert "-webkit-line-clamp: 3" in styles
+    assert "-webkit-line-clamp: 2" in styles
 
     mobile = styles[styles.index("@media (max-width: 760px)") :]
     assert ".session-search" in mobile
@@ -198,5 +200,3 @@ def test_search_mobile_styles_and_highlight_contract() -> None:
     assert ".search-filter-row" in mobile
     assert ".search-results" in mobile
     assert "max-height: calc(100dvh - 270px)" in mobile
-    assert ".search-hit-snippet" in mobile
-    assert "-webkit-line-clamp: 4" in mobile
