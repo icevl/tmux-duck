@@ -1615,7 +1615,9 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
             </>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        {/* ml-auto: on phones the row wraps and the buttons get a line of
+            their own — keep them on the right there too. */}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           <Popover open={keysMenuOpen} onOpenChange={setKeysMenuOpen}>
             <PopoverTrigger asChild>
               <Button
