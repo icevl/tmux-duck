@@ -1,0 +1,184 @@
+/* Tailwind 4 + shadcn/ui entry.
+ *
+ * Layer order: the pre-Tailwind stylesheet (styles.css) sits in `legacy`,
+ * above preflight so it keeps its look, and below utilities so a Tailwind
+ * class always wins over it — components move to utilities one by one and
+ * their legacy rules get deleted as they go.
+ */
+@layer theme, base, legacy, components, utilities;
+
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./styles.css" layer(legacy);
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── Theme tokens ──────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+  --radius: 0.625rem;
+
+  --background: oklch(0.985 0.002 286);
+  --foreground: oklch(0.21 0.006 286);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.006 286);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.006 286);
+  /* Duck yellow — the brand's primary action colour. */
+  --primary: oklch(0.83 0.17 84);
+  --primary-foreground: oklch(0.22 0.03 70);
+  --secondary: oklch(0.955 0.003 286);
+  --secondary-foreground: oklch(0.25 0.006 286);
+  --muted: oklch(0.955 0.003 286);
+  --muted-foreground: oklch(0.52 0.012 286);
+  --accent: oklch(0.94 0.004 286);
+  --accent-foreground: oklch(0.21 0.006 286);
+  --destructive: oklch(0.58 0.22 22);
+  --border: oklch(0.915 0.004 286);
+  --input: oklch(0.89 0.005 286);
+  --ring: oklch(0.62 0.19 293);
+  /* Violet: selection, the user's messages, links. */
+  --brand: oklch(0.55 0.21 293);
+  --brand-soft: oklch(0.55 0.21 293 / 0.1);
+  --success: oklch(0.6 0.14 160);
+  --warning: oklch(0.7 0.16 60);
+
+  --sidebar: oklch(0.975 0.002 286);
+  --sidebar-foreground: oklch(0.21 0.006 286);
+  --sidebar-accent: oklch(0.93 0.004 286);
+  --sidebar-accent-foreground: oklch(0.21 0.006 286);
+  --sidebar-border: oklch(0.915 0.004 286);
+
+  --code: oklch(0.97 0.003 286);
+  --shadow-color: oklch(0.2 0.02 286 / 0.12);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.17 0.005 286);
+  --foreground: oklch(0.95 0.002 286);
+  --card: oklch(0.205 0.006 286);
+  --card-foreground: oklch(0.95 0.002 286);
+  --popover: oklch(0.215 0.006 286);
+  --popover-foreground: oklch(0.95 0.002 286);
+  --primary: oklch(0.84 0.17 84);
+  --primary-foreground: oklch(0.2 0.03 70);
+  --secondary: oklch(0.25 0.006 286);
+  --secondary-foreground: oklch(0.95 0.002 286);
+  --muted: oklch(0.25 0.006 286);
+  --muted-foreground: oklch(0.66 0.012 286);
+  --accent: oklch(0.27 0.007 286);
+  --accent-foreground: oklch(0.95 0.002 286);
+  --destructive: oklch(0.7 0.19 18);
+  --border: oklch(1 0 0 / 0.08);
+  --input: oklch(1 0 0 / 0.13);
+  --ring: oklch(0.72 0.16 293);
+  --brand: oklch(0.74 0.15 293);
+  --brand-soft: oklch(0.74 0.15 293 / 0.14);
+  --success: oklch(0.78 0.13 165);
+  --warning: oklch(0.8 0.14 70);
+
+  --sidebar: oklch(0.19 0.006 286);
+  --sidebar-foreground: oklch(0.95 0.002 286);
+  --sidebar-accent: oklch(0.255 0.007 286);
+  --sidebar-accent-foreground: oklch(0.95 0.002 286);
+  --sidebar-border: oklch(1 0 0 / 0.07);
+
+  --code: oklch(0.14 0.004 286);
+  --shadow-color: oklch(0 0 0 / 0.5);
+}
+
+@theme {
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-code: var(--code);
+}
+
+/* ── Legacy variables, derived from the tokens ─────────────────────────
+ * styles.css was written against these; mapping them here gives the whole
+ * app both themes before every component is migrated. */
+:root {
+  --bg-0: var(--background);
+  --bg-1: var(--sidebar);
+  --bg-2: var(--secondary);
+  --bg-3: var(--accent);
+  --bg-elevated: var(--popover);
+  --border-strong: var(--input);
+  --text-0: var(--foreground);
+  --text-1: color-mix(in oklch, var(--foreground) 78%, var(--background));
+  --text-2: var(--muted-foreground);
+  --accent-soft: var(--brand-soft);
+  --accent-strong: var(--brand);
+  --duck-yellow: var(--primary);
+  --duck-yellow-strong: var(--primary);
+  --duck-yellow-soft: color-mix(in oklch, var(--primary) 14%, transparent);
+  --accent-pink: oklch(0.66 0.22 355);
+  --accent-gradient: linear-gradient(135deg, var(--brand) 0%, oklch(0.66 0.22 355) 100%);
+  --accent-gradient-soft: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--brand) 20%, transparent) 0%,
+    oklch(0.66 0.22 355 / 0.2) 100%
+  );
+  --danger: var(--destructive);
+  --warn: var(--warning);
+  --ok: var(--success);
+  --user: var(--brand);
+  --assistant: var(--text-1);
+  --tool: var(--brand);
+  --bubble-user: var(--brand-soft);
+  --bubble-assistant: var(--card);
+  --bubble-tool: color-mix(in oklch, var(--brand) 6%, transparent);
+  --code-bg: var(--code);
+  --shadow: 0 12px 32px var(--shadow-color), 0 2px 8px var(--shadow-color);
+}
+
+/* `--accent` means "hover surface" to shadcn but "violet" to styles.css;
+ * inside legacy rules it keeps its old meaning via this alias. */
+:root {
+  --legacy-accent: var(--brand);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}

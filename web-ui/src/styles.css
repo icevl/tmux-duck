@@ -1,47 +1,3 @@
-:root {
-  color-scheme: dark;
-  /* Neutral charcoal palette — violet/pink lives only in --accent-*. */
-  --bg-0: #15161a;
-  --bg-1: #1a1c20;
-  --bg-2: #22242a;
-  --bg-3: #2a2c33;
-  --bg-elevated: #1f2126;
-  --border: rgba(255, 255, 255, 0.07);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --text-0: #ececef;
-  --text-1: #c4c4c9;
-  --text-2: #8b8b93;
-  --accent: #a78bfa;
-  --accent-soft: rgba(167, 139, 250, 0.14);
-  --accent-strong: #c4a8ff;
-  --duck-yellow: #f6b904;
-  --duck-yellow-strong: #ffd23f;
-  --duck-yellow-soft: rgba(246, 185, 4, 0.12);
-  --accent-pink: #ec4899;
-  --accent-gradient: linear-gradient(135deg, #a78bfa 0%, #ec4899 100%);
-  --accent-gradient-soft: linear-gradient(
-    135deg,
-    rgba(167, 139, 250, 0.2) 0%,
-    rgba(236, 72, 153, 0.2) 100%
-  );
-  --danger: #ff6b8a;
-  --warn: #ffb454;
-  --ok: #4ed4a0;
-  --user: #c4a8ff;
-  --assistant: #c4c4c9;
-  --tool: #d8b4fe;
-  --bubble-user: rgba(167, 139, 250, 0.14);
-  --bubble-assistant: rgba(255, 255, 255, 0.04);
-  --bubble-tool: rgba(216, 180, 254, 0.07);
-  --code-bg: #0e0f12;
-  --shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
-
-  --font-sans: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "Helvetica Neue", Arial, sans-serif;
-  --font-mono: "Roboto Mono", "JetBrains Mono", "SF Mono", "Menlo", "Consolas",
-    monospace;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -81,7 +37,7 @@ body,
   z-index: 1;
 }
 
-button {
+button:where(:not([data-slot])) {
   font-family: inherit;
   font-size: inherit;
   color: var(--text-0);
@@ -93,12 +49,12 @@ button {
   transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
-button:hover:not(:disabled) {
+button:where(:not([data-slot])):hover:not(:disabled) {
   background: var(--bg-3);
   border-color: var(--border-strong);
 }
 
-button:disabled {
+button:where(:not([data-slot])):disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -140,7 +96,7 @@ button.with-icon {
 button.with-icon.active {
   background: var(--bg-3);
   border-color: var(--border-strong);
-  color: var(--accent);
+  color: var(--legacy-accent);
 }
 
 button.icon-button {
@@ -156,9 +112,9 @@ button svg {
   flex-shrink: 0;
 }
 
-input,
-textarea,
-select {
+input:where(:not([data-slot])),
+textarea:where(:not([data-slot])),
+select:where(:not([data-slot])) {
   font-family: inherit;
   font-size: inherit;
   color: var(--text-0);
@@ -169,19 +125,19 @@ select {
   outline: none;
 }
 
-input:focus,
-textarea:focus,
-select:focus {
+input:where(:not([data-slot])):focus,
+textarea:where(:not([data-slot])):focus,
+select:where(:not([data-slot])):focus {
   border-color: var(--border-strong);
 }
 
-textarea {
+textarea:where(:not([data-slot])) {
   resize: vertical;
   font-family: var(--font-mono);
 }
 
-a {
-  color: var(--accent);
+a:where(:not([data-slot])) {
+  color: var(--legacy-accent);
 }
 
 /* Boot splash — pre-auth-resolution loading state. Intentionally a bare
@@ -334,7 +290,7 @@ a {
 .panel-resize-handle:hover::after,
 .panel-resize-handle:active::after,
 .panel-resize-handle:focus-visible::after {
-  background: var(--accent);
+  background: var(--legacy-accent);
 }
 
 /* Vertical splitter between top/bottom rows: same look, rotated cursor. */
@@ -406,7 +362,7 @@ a {
   height: 34px;
   padding: 0;
   border-radius: 50%;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--legacy-accent);
   background: var(--bg-2);
   color: var(--text-0);
   display: inline-flex;
@@ -469,7 +425,7 @@ a {
   height: 40px;
   flex-shrink: 0;
   border-radius: 50%;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--legacy-accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -739,7 +695,7 @@ button.burger {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-2);
-  color: var(--accent);
+  color: var(--legacy-accent);
   font-family: var(--font-mono);
   font-size: 12px;
   overflow-wrap: anywhere;
@@ -1257,7 +1213,7 @@ button.burger {
   display: block;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  color: var(--accent);
+  color: var(--legacy-accent);
   padding: 4px 6px;
   background: var(--bg-1);
   border: 1px solid var(--border);
@@ -1434,7 +1390,7 @@ button.burger {
 
 .session-item.drag-over {
   background: rgba(167, 139, 250, 0.11);
-  border-left-color: var(--accent);
+  border-left-color: var(--legacy-accent);
 }
 
 .session-item.dormant {
@@ -1480,7 +1436,7 @@ button.burger {
   display: inline-block;
   vertical-align: -2px;
   margin-right: 4px;
-  color: var(--accent);
+  color: var(--legacy-accent);
   opacity: 0.9;
 }
 
@@ -1611,7 +1567,7 @@ button.burger {
 }
 
 .session-mode-plan {
-  color: var(--accent);
+  color: var(--legacy-accent);
   border-color: currentColor;
 }
 
@@ -1638,7 +1594,7 @@ button.burger {
 }
 
 .runtime-icon-codex {
-  color: var(--accent);
+  color: var(--legacy-accent);
 }
 
 .runtime-icon-claude {
@@ -1870,8 +1826,8 @@ button.burger {
 }
 
 .messages-row.search-hit {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--legacy-accent) 10%, transparent);
+  border-left: 3px solid var(--legacy-accent);
   padding-left: 15px;
   scroll-margin-block: 96px;
   animation: search-hit-pulse 1.35s ease-out 2;
@@ -1885,23 +1841,23 @@ button.burger {
   max-width: 100%;
   margin: 0 0 6px 0;
   padding: 2px 7px;
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--legacy-accent) 55%, var(--border));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-0));
-  color: var(--accent);
+  background: color-mix(in srgb, var(--legacy-accent) 14%, var(--bg-0));
+  color: var(--legacy-accent);
   font-size: 11px;
   font-weight: 650;
 }
 
 @keyframes search-hit-pulse {
   0% {
-    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    background: color-mix(in srgb, var(--legacy-accent) 22%, transparent);
   }
   55% {
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    background: color-mix(in srgb, var(--legacy-accent) 15%, transparent);
   }
   100% {
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    background: color-mix(in srgb, var(--legacy-accent) 10%, transparent);
   }
 }
 
@@ -1948,7 +1904,7 @@ button.burger {
   width: 28px;
   height: 28px;
   border: 3px solid rgba(255, 255, 255, 0.12);
-  border-top-color: var(--accent);
+  border-top-color: var(--legacy-accent);
   border-radius: 50%;
   animation: diff-spin 0.8s linear infinite;
 }
@@ -2280,6 +2236,19 @@ button.burger {
   padding-left: 22px;
 }
 
+/* Tailwind's preflight strips list markers; chat Markdown needs them. */
+.md ul {
+  list-style: disc;
+}
+
+.md ol {
+  list-style: decimal;
+}
+
+.md ul ul {
+  list-style: circle;
+}
+
 .md li {
   margin: 2px 0;
 }
@@ -2400,7 +2369,7 @@ button.burger {
 }
 
 .interactive-prompt-option.current {
-  border-color: var(--accent);
+  border-color: var(--legacy-accent);
 }
 
 .interactive-prompt-option-num {
@@ -2682,7 +2651,7 @@ button.burger {
   width: 10px;
   display: inline-block;
   text-align: center;
-  color: var(--accent);
+  color: var(--legacy-accent);
 }
 
 .branch-menu-name {
@@ -3822,7 +3791,7 @@ button.primary.send-button {
   width: 28px;
   height: 28px;
   border: 3px solid rgba(255, 255, 255, 0.12);
-  border-top-color: var(--accent);
+  border-top-color: var(--legacy-accent);
   border-radius: 50%;
   animation: diff-spin 0.8s linear infinite;
 }
@@ -3869,7 +3838,7 @@ button.primary.send-button {
 }
 
 .office-editor-status-staged {
-  color: var(--accent);
+  color: var(--legacy-accent);
   font-weight: 600;
 }
 
@@ -3990,7 +3959,7 @@ button.primary.send-button {
   position: absolute;
   top: 2px;
   left: 4px;
-  color: var(--accent);
+  color: var(--legacy-accent);
   font-size: 14px;
   line-height: 1;
 }
@@ -4016,7 +3985,7 @@ button.primary.send-button {
 }
 
 .catalog-tile-wrap:hover {
-  border-color: var(--accent);
+  border-color: var(--legacy-accent);
 }
 
 .catalog-tile-label {
@@ -4048,7 +4017,7 @@ button.primary.send-button {
 
 .catalog-tile-actions .icon-button:hover {
   background: var(--bg-2);
-  border-color: var(--accent);
+  border-color: var(--legacy-accent);
 }
 
 .office-editor-atlas {
@@ -4178,7 +4147,7 @@ button.primary.send-button {
 }
 
 .office-modal-mask-buttons button:hover {
-  border-color: var(--accent);
+  border-color: var(--legacy-accent);
 }
 
 .office-modal-mask-canvas {
@@ -4960,7 +4929,7 @@ button.primary.send-button {
 }
 
 .account-ok {
-  color: var(--accent);
+  color: var(--legacy-accent);
 }
 
 .account-cancel {
@@ -4971,7 +4940,7 @@ button.primary.send-button {
   background: none;
   border: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--legacy-accent);
   text-decoration: underline;
   cursor: pointer;
   font: inherit;
@@ -5030,7 +4999,7 @@ button.primary.send-button {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--legacy-accent);
 }
 
 /* Session recap under the chat header */
