@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Brain,
   GitPullRequest,
@@ -22,12 +22,21 @@ import {
   WsEvent,
 } from "../api";
 import { formatModel } from "../models";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import { DuckLogo } from "./DuckLogo";
 import { UserMenu } from "./UserMenu";
 import { SearchStatusFooter } from "./SearchStatusFooter";
 import { SessionSearch, type SearchHitTarget } from "./SessionSearch";
 
-const ICON = 16;
 const META_ICON = 12;
 
 export function RuntimeIcon({
@@ -164,6 +173,43 @@ function sessionBadge(
   return label ? { label, title: details.join(" · ") } : null;
 }
 
+function UsageRow({
+  agent,
+  percent,
+  text,
+  title,
+}: {
+  agent: string;
+  percent: number | null;
+  text: string;
+  title: string;
+}) {
+  return (
+    <div className="flex items-center gap-3" title={title}>
+      <span className="w-12 shrink-0 font-medium text-foreground/80">{agent}</span>
+      {percent !== null && (
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn(
+              "h-full rounded-full transition-[width]",
+              percent >= 80 ? "bg-destructive" : "bg-primary",
+            )}
+            style={{ width: `${Math.min(100, percent)}%` }}
+          />
+        </div>
+      )}
+      <span
+        className={cn(
+          "shrink-0 text-muted-foreground tabular-nums",
+          percent === null && "flex-1 text-left",
+        )}
+      >
+        {text}
+      </span>
+    </div>
+  );
+}
+
 export function Sidebar({
   sessions,
   sessionsLoaded,
@@ -204,7 +250,6 @@ export function Sidebar({
     [ordered],
   );
 
-  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [searchActive, setSearchActive] = useState(false);
@@ -218,7 +263,11 @@ export function Sidebar({
   // snapshot via REST; live updates via `agent_usage` events (server polls
   // local files every ~2.5 min — no provider API calls involved).
   const [usage, setUsage] = useState<AgentUsageSnapshot | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
+  // Touch screens have no hover: keep the row actions visible there.
+  const isTouch = useMemo(
+    () => window.matchMedia("(hover: none)").matches,
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -279,24 +328,6 @@ export function Sidebar({
     };
   }, [subscribeWs]);
 
-  // Close the popover on outside click / Escape / scroll inside the list.
-  useEffect(() => {
-    if (!menuFor) return;
-    const onDocClick = (e: MouseEvent) => {
-      const el = menuRef.current;
-      if (el && !el.contains(e.target as Node)) setMenuFor(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuFor(null);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuFor]);
-
   const notificationTitle = !notificationsSupported
     ? "Browser notifications are unavailable"
     : notificationsEnabled
@@ -327,13 +358,13 @@ export function Sidebar({
   };
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-header">
-        <div className="brand">
-          <DuckLogo width={28} height={28} className="brand-icon" />
+    <aside className="sidebar flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="flex h-15 shrink-0 items-center justify-between gap-2 px-4">
+        <div className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
+          <DuckLogo width={28} height={28} className="text-warning" />
           TmuxDuck
         </div>
-        <div className="sidebar-header-actions">
+        <div className="flex items-center gap-2">
           <UserMenu
             missionActive={missionActive}
             attentionCount={attentionCount}
@@ -346,44 +377,63 @@ export function Sidebar({
             notificationTitle={notificationTitle}
             onToggleNotifications={onToggleNotifications}
           />
-          <button
-            type="button"
-            className="sidebar-close icon-button"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="sidebar-close hidden max-[760px]:inline-flex"
             onClick={onClose}
             title="Close menu"
             aria-label="Close menu"
           >
-            <X size={ICON} />
-          </button>
+            <X />
+          </Button>
         </div>
       </div>
       {namespaces.length > 1 && (
-        <div className="sidebar-namespaces" role="tablist" aria-label="Account">
-          {namespaces.map((n) => (
-            <button
-              key={n.id || "main"}
-              type="button"
-              role="tab"
-              aria-selected={n.id === namespace}
-              className={`sidebar-namespace${n.id === namespace ? " active" : ""}${
-                n.signedOut ? " signed-out" : ""
-              }`}
-              onClick={() => onNamespaceChange(n.id)}
-              title={n.signedOut ? `${n.label} — signed out` : n.label}
-            >
-              <span className="sidebar-namespace-label">{n.label}</span>
-              {n.id !== namespace && n.needsAttention && (
-                <span className="sidebar-namespace-dot" aria-label="Needs attention" />
-              )}
-            </button>
-          ))}
+        <div
+          className="mx-3 mb-2 flex gap-1 rounded-lg bg-secondary p-1"
+          role="tablist"
+          aria-label="Account"
+        >
+          {namespaces.map((n) => {
+            const active = n.id === namespace;
+            return (
+              <button
+                key={n.id || "main"}
+                type="button"
+                role="tab"
+                data-slot="tab"
+                aria-selected={active}
+                onClick={() => onNamespaceChange(n.id)}
+                title={n.signedOut ? `${n.label} — signed out` : n.label}
+                className={cn(
+                  "relative flex-1 truncate rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition",
+                  "hover:text-foreground",
+                  active && "bg-background text-foreground shadow-sm",
+                  n.signedOut && "text-destructive",
+                )}
+              >
+                {n.label}
+                {!active && n.needsAttention && (
+                  <span
+                    className="absolute top-1 right-1 size-1.5 rounded-full bg-warning"
+                    aria-label="Needs attention"
+                  />
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
-      <div className="sidebar-actions">
-        <button className="ghost with-icon sidebar-new" onClick={onNew}>
-          <Plus size={ICON} />
-          <span>New session</span>
-        </button>
+      <div className="px-3 pb-2">
+        <Button
+          variant="outline"
+          className="w-full justify-center gap-2 bg-background/60 dark:bg-input/20"
+          onClick={onNew}
+        >
+          <Plus />
+          New session
+        </Button>
       </div>
       {searchEnabled !== false && (
         <SessionSearch
@@ -397,42 +447,45 @@ export function Sidebar({
         />
       )}
       <div
-        className="session-list"
+        className="session-list flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-1"
         style={searchActive ? { display: "none" } : undefined}
       >
         {ordered.length === 0 ? (
           sessionsLoaded ? (
-            <div className="session-list-empty">No sessions yet.</div>
+            <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+              No sessions yet.
+            </div>
           ) : (
-            <div
-              className="session-list-skeleton"
-              role="status"
-              aria-label="Loading sessions"
-            >
+            <div className="flex flex-col gap-1 p-1" role="status" aria-label="Loading sessions">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div className="session-skeleton-row" key={i}>
-                  <div className="skeleton-line skeleton-line-name" />
-                  <div className="skeleton-line skeleton-line-meta" />
+                <div key={i} className="flex flex-col gap-2 rounded-lg px-3 py-2.5">
+                  <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+                  <div className="h-2.5 w-5/6 animate-pulse rounded bg-muted/70" />
                 </div>
               ))}
             </div>
           )
         ) : (
           ordered.map((s) => {
-            const isOpen = menuFor === s.window_id;
+            const active = s.window_id === activeId;
             const isBusy = busyIds.has(s.window_id);
             const isDone = doneIds.has(s.window_id);
             const badge = sessionBadge(s);
+            const subtitle = sessionSubtitle(s);
             return (
               <div
                 key={s.window_id}
-                className={`session-item${
-                  s.window_id === activeId ? " active" : ""
-                }${s.pinned ? " pinned" : ""}${
-                  s.dormant ? " dormant" : ""
-                }${
-                  draggingId === s.window_id ? " dragging" : ""
-                }${dragOverId === s.window_id ? " drag-over" : ""}`}
+                role="button"
+                tabIndex={0}
+                aria-current={active ? "true" : undefined}
+                className={cn(
+                  "group relative flex cursor-pointer items-start gap-1 rounded-lg py-2 pr-1.5 pl-1 transition-colors max-[760px]:pl-3",
+                  "hover:bg-sidebar-accent/70 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+                  active && "bg-sidebar-accent hover:bg-sidebar-accent",
+                  s.dormant && "opacity-60 hover:opacity-100",
+                  draggingId === s.window_id && "opacity-40",
+                  dragOverId === s.window_id && "ring-1 ring-brand/60",
+                )}
                 draggable={!s.dormant}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";
@@ -441,23 +494,18 @@ export function Sidebar({
                   setDragOverId(null);
                 }}
                 onDragOver={(e) => {
-                  const dragging = draggingId
-                    ? orderedById.get(draggingId)
-                    : null;
+                  const dragging = draggingId ? orderedById.get(draggingId) : null;
                   if (!dragging || dragging.pinned !== s.pinned) return;
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
                   setDragOverId(s.window_id);
                 }}
                 onDragLeave={() => {
-                  setDragOverId((current) =>
-                    current === s.window_id ? null : current,
-                  );
+                  setDragOverId((current) => (current === s.window_id ? null : current));
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
-                  const sourceId =
-                    draggingId || e.dataTransfer.getData("text/plain");
+                  const sourceId = draggingId || e.dataTransfer.getData("text/plain");
                   const rect = e.currentTarget.getBoundingClientRect();
                   const placement =
                     e.clientY > rect.top + rect.height / 2 ? "after" : "before";
@@ -468,6 +516,13 @@ export function Sidebar({
                 onDragEnd={() => {
                   setDraggingId(null);
                   setDragOverId(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.currentTarget.click();
+                  }
                 }}
                 onClick={async () => {
                   if (s.dormant) {
@@ -482,136 +537,130 @@ export function Sidebar({
                   onSelect(s.window_id);
                 }}
               >
-                <div className="session-row">
-                  <span
-                    className="session-drag-handle"
-                    title={s.dormant ? "Dormant — click to resume" : "Drag to reorder"}
-                    aria-hidden="true"
-                  >
-                    {s.dormant ? <Moon size={14} /> : <GripVertical size={14} />}
-                  </span>
-                  <div className="session-text">
-                    <div className="session-name">
-                      {s.pinned && (
-                        <Pin
-                          size={12}
-                          className="pin-marker"
-                          aria-label="Pinned"
-                        />
-                      )}
-                      {isBusy ? (
-                        <Loader2
-                          size={12}
-                          className="activity-spinner"
-                          aria-label="Agent is working"
-                        />
-                      ) : isDone ? (
-                        <span
-                          className="activity-done"
-                          title="Agent finished — click to open"
-                          aria-label="Finished"
-                        />
-                      ) : null}
-                      {s.name}
-                      {s.profile_logged_in === false && (
-                        <span
-                          className="session-signed-out"
-                          title="Account signed out — open Accounts to sign in"
-                        >
-                          <TriangleAlert size={12} aria-label="Account signed out" />
-                        </span>
-                      )}
-                      {badge && (
-                        <span
-                          className={`session-mode session-mode-${
-                            s.model ? "model" : s.permission_mode
-                          }${s.permission_mode === "plan" ? " session-mode-plan" : ""}`}
-                          title={badge.title}
-                        >
-                          {badge.label}
-                        </span>
-                      )}
-                      {s.pr_url && (
-                        <a
-                          className="session-pr-link"
-                          href={s.pr_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={s.pr_number ? `PR #${s.pr_number}` : "Pull request"}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <GitPullRequest size={12} />
-                        </a>
-                      )}
-                    </div>
-                    {sessionSubtitle(s) && (
-                      <div className="session-title" title={sessionSubtitle(s) ?? undefined}>
-                        {sessionSubtitle(s)}
-                      </div>
+                {active && (
+                  <span className="absolute top-2 bottom-2 left-0 w-0.5 rounded-full bg-brand" />
+                )}
+                <span
+                  className={cn(
+                    "mt-0.5 flex w-4 shrink-0 justify-center text-muted-foreground/60",
+                    !s.dormant &&
+                      "cursor-grab opacity-0 group-hover:opacity-100 active:cursor-grabbing max-[760px]:hidden",
+                  )}
+                  title={s.dormant ? "Dormant — click to resume" : "Drag to reorder"}
+                  aria-hidden="true"
+                >
+                  {s.dormant ? <Moon size={13} /> : <GripVertical size={13} />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    {s.pinned && (
+                      <Pin size={12} className="shrink-0 text-muted-foreground" aria-label="Pinned" />
                     )}
-                  </div>
-                  <div
-                    className={`session-menu${isOpen ? " open" : ""}`}
-                    ref={isOpen ? menuRef : undefined}
-                  >
-                    <button
-                      type="button"
-                      className="session-menu-trigger"
-                      title="More actions"
-                      aria-label="Session actions"
-                      aria-expanded={isOpen}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMenuFor(isOpen ? null : s.window_id);
-                      }}
+                    {isBusy ? (
+                      <Loader2
+                        size={12}
+                        className="shrink-0 animate-spin text-brand"
+                        aria-label="Agent is working"
+                      />
+                    ) : isDone ? (
+                      <span
+                        className="size-2 shrink-0 rounded-full bg-success"
+                        title="Agent finished — click to open"
+                        aria-label="Finished"
+                      />
+                    ) : null}
+                    <span
+                      className={cn(
+                        "truncate text-sm font-medium",
+                        active ? "text-foreground" : "text-foreground/90",
+                      )}
                     >
-                      <MoreVertical size={ICON} />
-                    </button>
-                    {isOpen && (
-                      <div
-                        className="session-menu-popover"
+                      {s.name}
+                    </span>
+                    {s.profile_logged_in === false && (
+                      <span
+                        className="shrink-0 text-destructive"
+                        title="Account signed out — open Accounts to sign in"
+                      >
+                        <TriangleAlert size={12} aria-label="Account signed out" />
+                      </span>
+                    )}
+                    {badge && (
+                      <Badge
+                        variant="outline"
+                        title={badge.title}
+                        className={cn(
+                          "h-[18px] shrink-0 rounded-md px-1.5 text-[10.5px] font-medium text-muted-foreground",
+                          s.permission_mode === "plan" && "border-brand/50 text-brand",
+                        )}
+                      >
+                        {badge.label}
+                      </Badge>
+                    )}
+                    {s.pr_url && (
+                      <a
+                        data-slot="link"
+                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                        href={s.pr_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={s.pr_number ? `PR #${s.pr_number}` : "Pull request"}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMenuFor(null);
-                            onRename(s);
-                          }}
-                        >
-                          <Pencil size={ICON} /> Rename
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMenuFor(null);
-                            onPin(s, !s.pinned);
-                          }}
-                        >
-                          {s.pinned ? (
-                            <>
-                              <PinOff size={ICON} /> Unpin
-                            </>
-                          ) : (
-                            <>
-                              <Pin size={ICON} /> Pin
-                            </>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() => {
-                            setMenuFor(null);
-                            onDelete(s);
-                          }}
-                        >
-                          <Trash2 size={ICON} /> Delete
-                        </button>
-                      </div>
+                        <GitPullRequest size={12} />
+                      </a>
                     )}
                   </div>
+                  {subtitle && (
+                    <div
+                      className="mt-0.5 truncate text-xs text-muted-foreground"
+                      title={subtitle}
+                    >
+                      {subtitle}
+                    </div>
+                  )}
                 </div>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={cn(
+                        "size-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+                        (active || isTouch) && "opacity-100",
+                      )}
+                      title="More actions"
+                      aria-label="Session actions"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreVertical />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-40"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <DropdownMenuItem onSelect={() => onRename(s)}>
+                      <Pencil /> Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onPin(s, !s.pinned)}>
+                      {s.pinned ? (
+                        <>
+                          <PinOff /> Unpin
+                        </>
+                      ) : (
+                        <>
+                          <Pin /> Pin
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => onDelete(s)}>
+                      <Trash2 /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             );
           })
@@ -619,81 +668,53 @@ export function Sidebar({
       </div>
       {searchEnabled !== false && <SearchStatusFooter status={searchStatus} />}
       {(usage?.codex?.primary || usage?.claude) && (
-        <div className="sidebar-usage">
+        <div className="flex shrink-0 flex-col gap-1.5 border-t border-sidebar-border px-4 py-3 text-xs">
           {usage?.codex?.primary && (
-            <div
-              className="usage-row"
+            <UsageRow
+              agent="Codex"
+              percent={usage.codex.primary.used_percent}
+              text={`${Math.round(usage.codex.primary.used_percent)}% 5h${
+                usage.codex.secondary
+                  ? ` · ${Math.round(usage.codex.secondary.used_percent)}% wk`
+                  : ""
+              }`}
               title={`5h window resets ${fmtReset(usage.codex.primary.resets_at)}${
                 usage.codex.secondary
                   ? ` · weekly resets ${fmtReset(usage.codex.secondary.resets_at)}`
                   : ""
               }`}
-            >
-              <span className="usage-agent">Codex</span>
-              <div className="usage-bar">
-                <div
-                  className={`usage-bar-fill${
-                    usage.codex.primary.used_percent >= 80 ? " high" : ""
-                  }`}
-                  style={{
-                    width: `${Math.min(100, usage.codex.primary.used_percent)}%`,
-                  }}
-                />
-              </div>
-              <span className="usage-text">
-                {Math.round(usage.codex.primary.used_percent)}% 5h
-                {usage.codex.secondary
-                  ? ` · ${Math.round(usage.codex.secondary.used_percent)}% wk`
-                  : ""}
-              </span>
-            </div>
+            />
           )}
           {usage?.claude?.limits?.five_hour ? (
             // Official account-wide percentages (matches the console).
-            <div
-              className="usage-row"
-              title={`5h window resets ${fmtReset(
-                usage.claude.limits.five_hour.resets_at,
-              )}${
+            <UsageRow
+              agent="Claude"
+              percent={usage.claude.limits.five_hour.used_percent}
+              text={`${Math.round(usage.claude.limits.five_hour.used_percent)}% 5h${
+                usage.claude.limits.seven_day
+                  ? ` · ${Math.round(usage.claude.limits.seven_day.used_percent)}% wk`
+                  : ""
+              }`}
+              title={`5h window resets ${fmtReset(usage.claude.limits.five_hour.resets_at)}${
                 usage.claude.limits.seven_day
                   ? ` · weekly resets ${fmtReset(usage.claude.limits.seven_day.resets_at)}`
                   : ""
               } · this Mac today: ${fmtTokens(usage.claude.today.input)} in / ${fmtTokens(
                 usage.claude.today.output,
               )} out`}
-            >
-              <span className="usage-agent">Claude</span>
-              <div className="usage-bar">
-                <div
-                  className={`usage-bar-fill${
-                    usage.claude.limits.five_hour.used_percent >= 80 ? " high" : ""
-                  }`}
-                  style={{
-                    width: `${Math.min(100, usage.claude.limits.five_hour.used_percent)}%`,
-                  }}
-                />
-              </div>
-              <span className="usage-text">
-                {Math.round(usage.claude.limits.five_hour.used_percent)}% 5h
-                {usage.claude.limits.seven_day
-                  ? ` · ${Math.round(usage.claude.limits.seven_day.used_percent)}% wk`
-                  : ""}
-              </span>
-            </div>
+            />
           ) : usage?.claude ? (
             // Fallback: local token counters (this machine only).
-            <div
-              className="usage-row"
+            <UsageRow
+              agent="Claude"
+              percent={null}
+              text={`today ${fmtTokens(usage.claude.today.input)} in · ${fmtTokens(
+                usage.claude.today.output,
+              )} out`}
               title={`This Mac only. Last 5h: ${fmtTokens(
                 usage.claude.last_5h.input,
               )} in / ${fmtTokens(usage.claude.last_5h.output)} out`}
-            >
-              <span className="usage-agent">Claude</span>
-              <span className="usage-text">
-                today {fmtTokens(usage.claude.today.input)} in ·{" "}
-                {fmtTokens(usage.claude.today.output)} out
-              </span>
-            </div>
+            />
           ) : null}
         </div>
       )}

@@ -1,6 +1,16 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useState, type ComponentProps, type ReactNode } from "react";
+import { Gauge, Sparkles } from "lucide-react";
 import { api, type ModelCatalog } from "../api";
-import { formatModel, isCurrentModel, modelMatch } from "../models";
+import { formatModel, modelMatch } from "../models";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 type ModelChange = { model?: string; effort?: string };
 
@@ -11,196 +21,166 @@ interface PickerProps {
   onSwitch: (change: ModelChange) => Promise<void>;
 }
 
-// Popover state shared by the model and effort pickers: open/close on
-// outside click or Escape (like the branch popover), and the catalog fetched
-// on open (Codex's list comes from its own models cache and can change
-// between releases).
-function usePicker(windowId: string, onSwitch: PickerProps["onSwitch"]) {
-  const [open, setOpen] = useState(false);
-  const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [switching, setSwitching] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement | null>(null);
+// The small labelled buttons in the composer footer (branch, model, effort).
+export const ComposerChip = forwardRef<
+  HTMLButtonElement,
+  ComponentProps<"button"> & { icon: ReactNode }
+>(function ComposerChip({ icon, className, children, ...props }, ref) {
+  return (
+    <button
+      ref={ref}
+      type="button"
+      data-slot="composer-chip"
+      className={cn(
+        "inline-flex h-7 max-w-[14rem] items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors",
+        "hover:bg-accent hover:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+        "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
+        "[&_svg]:size-3.5 [&_svg]:shrink-0",
+        className,
+      )}
+      {...props}
+    >
+      {icon}
+      <span className="truncate">{children}</span>
+    </button>
+  );
+});
 
+// Catalog fetched on open: Codex's list comes from its own models cache and
+// can change between releases.
+function useCatalog(windowId: string, open: boolean) {
+  const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setCatalog(null);
-    setLoadError(null);
+    setError(null);
     api
       .listModels(windowId)
-      .then((c) => {
-        if (!cancelled) setCatalog(c);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setLoadError(err.message);
-      });
+      .then((c) => !cancelled && setCatalog(c))
+      .catch((err: Error) => !cancelled && setError(err.message));
     return () => {
       cancelled = true;
     };
   }, [open, windowId]);
+  return { catalog, error };
+}
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      const el = ref.current;
-      if (el && !el.contains(e.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  const switchTo = async (key: string, change: ModelChange) => {
+function useSwitch(onSwitch: PickerProps["onSwitch"], close: () => void) {
+  const [switching, setSwitching] = useState<string | null>(null);
+  const run = async (key: string, change: ModelChange) => {
     setSwitching(key);
     try {
       await onSwitch(change);
-      setOpen(false);
+      close();
     } catch {
       // Parent already surfaced the error; keep the menu open for retry.
     } finally {
       setSwitching(null);
     }
   };
-
-  return { open, setOpen, catalog, loadError, switching, switchTo, ref };
+  return { switching, run };
 }
 
-function PickerShell({
-  picker,
-  className,
-  title,
-  label,
-  children,
-}: {
-  picker: ReturnType<typeof usePicker>;
-  className: string;
-  title: string;
-  label: string;
-  children: ReactNode;
-}) {
-  const { open, setOpen, catalog, loadError, ref } = picker;
+function CatalogNote({ catalog }: { catalog: ModelCatalog }) {
   return (
-    <div className={`branch-menu ${className}${open ? " open" : ""}`} ref={ref}>
-      <button
-        type="button"
-        className="branch-button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        title={title}
-        onClick={() => setOpen((v) => !v)}
-      >
-        {label}
-      </button>
-      {open && (
-        <div className="branch-menu-popover" role="listbox">
-          {catalog === null ? (
-            <div className="branch-menu-empty">{loadError ?? "Loading…"}</div>
-          ) : (
-            <>
-              {children}
-              <div className="model-menu-note">
-                {catalog.restarts
-                  ? "Codex restarts the session to switch (history is kept)."
-                  : "Claude also saves it as the default for new sessions."}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
+    <>
+      <DropdownMenuSeparator />
+      <p className="px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+        {catalog.restarts
+          ? "Codex restarts the session to switch (history is kept)."
+          : "Claude also saves it as the default for new sessions."}
+      </p>
+    </>
   );
 }
 
-function PickerItem({
-  label,
-  isCurrent,
-  isSwitching,
-  disabled,
-  onPick,
-}: {
-  label: string;
-  isCurrent: boolean;
-  isSwitching: boolean;
-  disabled: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="option"
-      aria-selected={isCurrent}
-      className={`branch-menu-item${isCurrent ? " current" : ""}`}
-      disabled={disabled}
-      onClick={onPick}
-    >
-      <span className="branch-menu-mark">
-        {isCurrent ? "•" : isSwitching ? "…" : ""}
-      </span>
-      <span className="branch-menu-name">{label}</span>
-    </button>
-  );
+function Status({ error }: { error: string | null }) {
+  return <p className="px-2 py-1.5 text-xs text-muted-foreground">{error ?? "Loading…"}</p>;
 }
 
-// Composer popover next to the branch switcher: the agent's model.
+// Composer picker for the agent's model.
 export function ModelMenu({ windowId, model, onSwitch }: PickerProps) {
-  const picker = usePicker(windowId, onSwitch);
+  const [open, setOpen] = useState(false);
+  const { catalog, error } = useCatalog(windowId, open);
+  const { switching, run } = useSwitch(onSwitch, () => setOpen(false));
   return (
-    <PickerShell
-      picker={picker}
-      className="model-menu"
-      title="Switch model"
-      label={`model: ${formatModel(model) ?? "default"}`}
-    >
-      {picker.catalog?.models.map((m) => {
-        const match = modelMatch(m.id, model);
-        return (
-          <PickerItem
-            key={m.id}
-            label={m.label}
-            isCurrent={match !== null}
-            isSwitching={picker.switching === m.id}
-            // Only a sure match is disabled: a 1M-or-not unknown keeps both
-            // context-window variants pickable.
-            disabled={match === "exact" || picker.switching !== null}
-            onPick={() => void picker.switchTo(m.id, { model: m.id })}
-          />
-        );
-      })}
-    </PickerShell>
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
+      <DropdownMenuTrigger asChild>
+        <ComposerChip icon={<Sparkles />} title="Switch model">
+          {formatModel(model) ?? "Default model"}
+        </ComposerChip>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="w-60">
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+          Model
+        </DropdownMenuLabel>
+        {!catalog && <Status error={error} />}
+        {catalog?.models.map((m) => {
+          const match = modelMatch(m.id, model);
+          return (
+            <DropdownMenuItem
+              key={m.id}
+              // Only a sure match is disabled: a 1M-or-not unknown keeps both
+              // context-window variants pickable.
+              disabled={match === "exact" || switching !== null}
+              onSelect={(e) => {
+                e.preventDefault();
+                void run(m.id, { model: m.id });
+              }}
+            >
+              <span className="flex w-3 justify-center text-brand">
+                {match ? "•" : switching === m.id ? "…" : ""}
+              </span>
+              <span className={cn(match && "font-medium")}>{m.label}</span>
+            </DropdownMenuItem>
+          );
+        })}
+        {catalog && <CatalogNote catalog={catalog} />}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 // Reasoning effort, offered per the current model's supported levels.
 export function EffortMenu({ windowId, model, effort, onSwitch }: PickerProps) {
-  const picker = usePicker(windowId, onSwitch);
-  const models = picker.catalog?.models ?? [];
+  const [open, setOpen] = useState(false);
+  const { catalog, error } = useCatalog(windowId, open);
+  const { switching, run } = useSwitch(onSwitch, () => setOpen(false));
+  const models = catalog?.models ?? [];
   const efforts =
-    (models.find((m) => isCurrentModel(m.id, model)) ?? models[0])?.efforts ?? [];
+    (models.find((m) => modelMatch(m.id, model) !== null) ?? models[0])?.efforts ?? [];
   return (
-    <PickerShell
-      picker={picker}
-      className="effort-menu"
-      title="Switch reasoning effort"
-      label={`effort: ${effort ?? "default"}`}
-    >
-      {efforts.length === 0 && <div className="branch-menu-empty">No levels</div>}
-      {efforts.map((e) => (
-        <PickerItem
-          key={e}
-          label={e}
-          isCurrent={e === effort}
-          isSwitching={picker.switching === e}
-          disabled={e === effort || picker.switching !== null}
-          onPick={() => void picker.switchTo(e, { effort: e })}
-        />
-      ))}
-    </PickerShell>
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
+      <DropdownMenuTrigger asChild>
+        <ComposerChip icon={<Gauge />} title="Switch reasoning effort">
+          {effort ?? "Default effort"}
+        </ComposerChip>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top" className="w-52">
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+          Reasoning effort
+        </DropdownMenuLabel>
+        {!catalog && <Status error={error} />}
+        {catalog && efforts.length === 0 && <Status error="No levels" />}
+        {efforts.map((e) => (
+          <DropdownMenuItem
+            key={e}
+            disabled={e === effort || switching !== null}
+            onSelect={(ev) => {
+              ev.preventDefault();
+              void run(e, { effort: e });
+            }}
+          >
+            <span className="flex w-3 justify-center text-brand">
+              {e === effort ? "•" : switching === e ? "…" : ""}
+            </span>
+            <span className={cn("capitalize", e === effort && "font-medium")}>{e}</span>
+          </DropdownMenuItem>
+        ))}
+        {catalog && <CatalogNote catalog={catalog} />}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

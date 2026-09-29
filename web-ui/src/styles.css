@@ -350,177 +350,6 @@ a:where(:not([data-slot])) {
   gap: 6px;
 }
 
-/* Avatar + app menu in the sidebar header. */
-.user-menu {
-  position: relative;
-  display: inline-flex;
-}
-
-.user-menu-avatar {
-  position: relative;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border-radius: 50%;
-  border: 2px solid var(--legacy-accent);
-  background: var(--bg-2);
-  color: var(--text-0);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
-}
-
-.user-menu-avatar:hover,
-.user-menu.open > .user-menu-avatar {
-  background: var(--bg-3);
-  border-color: var(--accent-strong);
-}
-
-.user-menu-dot {
-  position: absolute;
-  top: -1px;
-  right: -1px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--warn);
-  box-shadow: 0 0 0 2px var(--bg-1);
-}
-
-.user-menu-dot.danger {
-  background: var(--danger);
-}
-
-.user-menu-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  /* The sidebar (280px) minus the header's side padding: flush with both
-     edges instead of spilling off the left one. */
-  width: 248px;
-  max-width: calc(100vw - 32px);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
-  padding: 6px;
-  z-index: 300;
-}
-
-.user-menu-popover[hidden] {
-  display: none;
-}
-
-.user-menu-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 10px 12px;
-}
-
-.user-menu-head-avatar {
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: 2px solid var(--legacy-accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-0);
-}
-
-.user-menu-head-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.user-menu-head-title {
-  color: var(--text-0);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.user-menu-head-sub {
-  color: var(--text-2);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-menu-section {
-  border-top: 1px solid var(--border);
-  padding: 4px 0;
-}
-
-.user-menu-section:last-child {
-  padding-bottom: 0;
-}
-
-.user-menu-item {
-  width: 100%;
-  min-height: 40px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-1);
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.user-menu-item:hover:not(:disabled):not(.user-menu-static),
-.user-menu-item.active {
-  background: var(--bg-3);
-  color: var(--text-0);
-}
-
-.user-menu-item:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.user-menu-static {
-  cursor: default;
-}
-
-.user-menu-label {
-  flex: 1;
-  min-width: 0;
-}
-
-.user-menu-value {
-  color: var(--text-2);
-  font-size: 13px;
-}
-
-.user-menu-value.danger {
-  color: var(--danger);
-}
-
-.user-menu-badge {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--warn);
-  color: #1a1116;
-  font-size: 11px;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
 /* Higher specificity than `button.icon-button` so the hide rule wins on desktop. */
 button.sidebar-close {
   display: none;
@@ -2056,24 +1885,37 @@ button.burger {
 }
 
 .bubble code,
-.bubble pre {
+.bubble pre,
+.md code,
+.md pre {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 0.86em;
   background: var(--code-bg);
-  padding: 2px 4px;
-  border-radius: 4px;
+  padding: 1px 5px;
+  border-radius: 5px;
 }
 
-.bubble pre {
-  padding: 10px 12px;
+.md :not(pre) > code {
+  border: 1px solid var(--border);
+}
+
+.bubble pre,
+.md pre {
+  padding: 12px 14px;
   overflow-x: auto;
   max-width: 100%;
-  margin: 4px 0;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
-.bubble pre code {
+.bubble pre code,
+.md pre code {
   padding: 0;
   background: transparent;
+  font-size: inherit;
 }
 
 .choice-panel {
@@ -4355,16 +4197,6 @@ button.primary.send-button {
 
   .app-shell.sidebar-open .sidebar {
     transform: translateX(0);
-  }
-
-  /* The drawer is narrower than the menu can assume on small phones, and the
-     close button sits right of the avatar: span the drawer's width instead. */
-  .user-menu-popover {
-    position: fixed;
-    top: 64px;
-    left: 16px;
-    right: auto;
-    width: calc(min(86vw, 320px) - 32px);
   }
 
   .sidebar-backdrop {

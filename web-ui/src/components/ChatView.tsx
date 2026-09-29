@@ -1,9 +1,11 @@
 import {
   ClipboardEvent,
+  type ComponentProps,
   DragEvent,
   forwardRef,
   KeyboardEvent,
   memo,
+  type ReactNode,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -13,7 +15,10 @@ import {
   useState,
 } from "react";
 import {
+  ArrowUp,
   Bot,
+  Brain,
+  GitBranch,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -25,11 +30,10 @@ import {
   MoreVertical,
   Paperclip,
   Pencil,
-  SendHorizontal,
   Terminal as TerminalIcon,
   Trash2,
-  User,
   Users,
+  Wrench,
   X,
 } from "lucide-react";
 import {
@@ -45,8 +49,21 @@ import { SkillsModal } from "./SkillsModal";
 import { Markdown } from "./Markdown";
 import { RuntimeIcon } from "./Sidebar";
 import { DuckLogo } from "./DuckLogo";
-import { EffortMenu, ModelMenu } from "./ModelMenu";
+import { ComposerChip, EffortMenu, ModelMenu } from "./ModelMenu";
 import type { SearchHitTarget } from "./SessionSearch";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 const ICON = 16;
 
@@ -817,6 +834,54 @@ function formatMessageTime(iso: string | undefined): {
   return { short, full: d.toLocaleString() };
 }
 
+function KeysSection({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        {label}
+      </div>
+      <div className="flex flex-wrap gap-1">{children}</div>
+    </div>
+  );
+}
+
+function KeyButton(props: ComponentProps<"button">) {
+  return (
+    <button
+      type="button"
+      data-slot="key-button"
+      className="h-7 rounded-md border bg-background px-2.5 font-mono text-xs transition-colors hover:bg-accent"
+      {...props}
+    />
+  );
+}
+
+function RecapLabel({ children }: { children: string }) {
+  return (
+    <span className="mr-2 rounded bg-background px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-foreground/70 uppercase ring-1 ring-border">
+      {children}
+    </span>
+  );
+}
+
+type MessageKind = "user" | "assistant" | "tool" | "thinking" | "note";
+
+function messageKind(m: ChatMessage, isUser: boolean): MessageKind {
+  if (isUser) return "user";
+  switch (m.content_type) {
+    case "tool":
+    case "tool_use":
+    case "tool_result":
+      return "tool";
+    case "thinking":
+      return "thinking";
+    case "local_command":
+    case "system":
+      return "note";
+  }
+  return m.role === "system" ? "note" : "assistant";
+}
+
 // Memoized per-message bubble. Virtuoso re-renders the visible window on
 // every scroll tick; without `memo` every bubble would re-parse its
 // Markdown each time and large chats would lock the main thread.
@@ -846,28 +911,62 @@ const MessageBubble = memo(function MessageBubble({
   const nextPage =
     choicePrompt && choicePage ? nextChoicePage(choicePrompt, choicePage) : null;
   const pageLabel = choicePage ? choicePageLabel(choicePage) : "";
+  const kind = messageKind(m, isUser);
+  const time = t && (
+    <time
+      dateTime={m.timestamp}
+      title={t.full}
+      className="font-mono text-[10.5px] text-muted-foreground tabular-nums"
+    >
+      {t.short}
+    </time>
+  );
   return (
-    <div className={`message-line ${isUser ? "user" : "assistant"}`}>
-      <div className="message-avatar" aria-hidden="true">
-        {isUser ? <User size={16} /> : <Bot size={16} />}
-      </div>
-      <div
-        className={`bubble ${m.role} ${m.content_type}${m.pending ? " pending" : ""}`.trim()}
-      >
-        <div className="meta">
-          <span>
-            {m.role}
-            {m.content_type && m.content_type !== "text"
-              ? ` · ${m.content_type}`
-              : ""}
-            {m.pending ? " · sending…" : ""}
-          </span>
-          {t && (
-            <time className="bubble-time" dateTime={m.timestamp} title={t.full}>
-              {t.short}
-            </time>
+    <div
+      className={cn(
+        "group/msg mx-auto flex w-full max-w-[880px] min-w-0 flex-col py-1",
+        kind === "user" ? "items-end" : "items-start",
+        m.pending && "opacity-60",
+      )}
+    >
+      {(kind === "tool" || kind === "note") && (
+        <div className="mb-1 flex items-center gap-1.5 pl-0.5 text-[11px] text-muted-foreground">
+          {m.content_type === "tool_result" ? (
+            <TerminalIcon className="size-3" />
+          ) : kind === "tool" ? (
+            <Wrench className="size-3" />
+          ) : (
+            <Bot className="size-3" />
           )}
+          <span className="font-medium">
+            {m.content_type === "tool_result"
+              ? "Result"
+              : kind === "tool"
+                ? "Tool"
+                : m.content_type === "local_command"
+                  ? "Command"
+                  : "System"}
+          </span>
+          <span className="opacity-0 transition-opacity group-hover/msg:opacity-100">
+            {time}
+          </span>
         </div>
+      )}
+      <div
+        className={cn(
+          "relative min-w-0 break-words [overflow-wrap:anywhere]",
+          kind === "user" &&
+            "max-w-[85%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[15px] leading-relaxed text-secondary-foreground",
+          kind === "assistant" && "w-full px-0.5 text-[15px] leading-relaxed",
+          kind === "tool" &&
+            "max-w-full rounded-lg border bg-card/60 px-3 py-2 font-mono text-xs leading-relaxed text-foreground/85 [&_.md_pre]:my-1.5 [&_.md_pre]:text-xs",
+          kind === "thinking" &&
+            "flex max-w-full gap-2 text-sm text-muted-foreground italic",
+          kind === "note" &&
+            "max-w-full rounded-lg border border-dashed px-3 py-2 font-mono text-xs text-muted-foreground",
+        )}
+      >
+        {kind === "thinking" && <Brain className="mt-1 size-3.5 shrink-0 not-italic" />}
         <Markdown text={displayText ?? m.text} />
         {choicePrompt && choicePage && onSelectChoice && (
           <div className={`choice-panel ${choicePrompt.kind}`}>
@@ -923,6 +1022,20 @@ const MessageBubble = memo(function MessageBubble({
           </div>
         )}
       </div>
+      {(kind === "user" || kind === "assistant" || kind === "thinking") && (
+        <div
+          className={cn(
+            "mt-1 flex h-4 items-center gap-2 px-1 opacity-0 transition-opacity group-hover/msg:opacity-100",
+            m.pending && "opacity-100",
+          )}
+        >
+          {m.pending ? (
+            <span className="text-[11px] text-muted-foreground">sending…</span>
+          ) : (
+            time
+          )}
+        </div>
+      )}
     </div>
   );
 });
@@ -1010,8 +1123,6 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const slashHintRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const keysMenuRef = useRef<HTMLDivElement | null>(null);
-  const branchMenuRef = useRef<HTMLDivElement | null>(null);
   // Per-session draft cache. Switching sessions stashes the current
   // composer text under the previous window_id and restores any draft for
   // the new one, so each topic keeps its own pending message.
@@ -1203,42 +1314,6 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
     };
   }, [branchMenuOpen, windowId]);
 
-  // Close the keys/commands popover on outside click or Escape.
-  useEffect(() => {
-    if (!keysMenuOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      const el = keysMenuRef.current;
-      if (el && !el.contains(e.target as Node)) setKeysMenuOpen(false);
-    };
-    const onKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setKeysMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [keysMenuOpen]);
-
-  // Close branch popover on outside click or Escape, mirroring the keys menu.
-  useEffect(() => {
-    if (!branchMenuOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      const el = branchMenuRef.current;
-      if (el && !el.contains(e.target as Node)) setBranchMenuOpen(false);
-    };
-    const onKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setBranchMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [branchMenuOpen]);
-
   const handleSwitchBranch = useCallback(
     async (branch: string) => {
       if (branch === gitBranch) {
@@ -1370,7 +1445,12 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
 
   return (
     <div
-      className={`composer${dragOver ? " drag-over" : ""}`}
+      className={cn(
+        "composer mx-auto mb-3.5 w-[calc(100%-36px)] max-w-[880px] gap-1.5 rounded-2xl border bg-card px-3 pt-3 pb-2 shadow-[0_8px_30px_var(--shadow-color)] transition-[border-color,box-shadow]",
+        "focus-within:border-foreground/20 dark:focus-within:border-foreground/25",
+        "max-[760px]:mb-3 max-[760px]:w-[calc(100%-24px)] max-[760px]:px-2.5",
+        dragOver && "drag-over",
+      )}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -1428,7 +1508,7 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
       <textarea
         ref={textareaRef}
         value={text}
-        placeholder="Send a message — Enter to send, Shift+Enter for newline. Paste or drop images to attach."
+        placeholder="Message the agent — / for commands, paste or drop images"
         name="chat-message"
         autoComplete="off"
         data-1p-ignore="true"
@@ -1464,64 +1544,56 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
           e.target.value = "";
         }}
       />
-      <div className="composer-controls">
-        <div className="composer-meta">
+      <div className="composer-controls flex items-center justify-between gap-2">
+        <div className="composer-meta flex min-w-0 flex-wrap items-center gap-0.5">
           {gitIsRepo && gitBranch ? (
-            <div
-              className={`branch-menu${branchMenuOpen ? " open" : ""}`}
-              ref={branchMenuOpen ? branchMenuRef : undefined}
-            >
-              <button
-                type="button"
-                className="branch-button"
-                aria-haspopup="listbox"
-                aria-expanded={branchMenuOpen}
-                title="Switch branch"
-                onClick={() => setBranchMenuOpen((v) => !v)}
+            <DropdownMenu open={branchMenuOpen} onOpenChange={setBranchMenuOpen} modal={false}>
+              <DropdownMenuTrigger asChild>
+                <ComposerChip icon={<GitBranch />} title="Switch branch">
+                  {gitBranch}
+                </ComposerChip>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                side="top"
+                className="max-h-72 w-64 overflow-y-auto"
               >
-                branch: {gitBranch}
-              </button>
-              {branchMenuOpen && (
-                <div className="branch-menu-popover" role="listbox">
-                  {branchList === null && (
-                    <div className="branch-menu-empty">Loading…</div>
-                  )}
-                  {branchList !== null && branchList.length === 0 && (
-                    <div className="branch-menu-empty">
-                      {branchLoadError || "No branches"}
-                    </div>
-                  )}
-                  {branchList !== null &&
-                    branchList.map((b) => {
-                      const isCurrent = b === gitBranch;
-                      const isSwitching = switchingBranch === b;
-                      return (
-                        <button
-                          key={b}
-                          type="button"
-                          role="option"
-                          aria-selected={isCurrent}
-                          className={`branch-menu-item${isCurrent ? " current" : ""}`}
-                          disabled={
-                            isCurrent || switchingBranch !== null
-                          }
-                          onClick={() => handleSwitchBranch(b)}
-                        >
-                          <span className="branch-menu-mark">
-                            {isCurrent ? "•" : isSwitching ? "…" : ""}
-                          </span>
-                          <span className="branch-menu-name">{b}</span>
-                        </button>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                  Switch branch
+                </DropdownMenuLabel>
+                {branchList === null && (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</p>
+                )}
+                {branchList !== null && branchList.length === 0 && (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                    {branchLoadError || "No branches"}
+                  </p>
+                )}
+                {branchList?.map((b) => {
+                  const isCurrent = b === gitBranch;
+                  return (
+                    <DropdownMenuItem
+                      key={b}
+                      disabled={isCurrent || switchingBranch !== null}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        void handleSwitchBranch(b);
+                      }}
+                    >
+                      <span className="flex w-3 justify-center text-brand">
+                        {isCurrent ? "•" : switchingBranch === b ? "…" : ""}
+                      </span>
+                      <span className={cn("truncate font-mono text-xs", isCurrent && "font-semibold")}>
+                        {b}
+                      </span>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : (
-            <span className="hint">
-              {sessionId
-                ? `session: ${sessionId.slice(0, 8)}…`
-                : "session: detecting…"}
+            <span className="px-2 font-mono text-xs text-muted-foreground">
+              {sessionId ? `session ${sessionId.slice(0, 8)}` : "detecting session…"}
             </span>
           )}
           {canSwitchModel && (
@@ -1541,95 +1613,88 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
             </>
           )}
         </div>
-        <div className="composer-buttons">
-          <div
-            className={`keys-menu${keysMenuOpen ? " open" : ""}`}
-            ref={keysMenuOpen ? keysMenuRef : undefined}
-          >
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Keys and commands"
-              aria-expanded={keysMenuOpen}
-              title="Keys and commands"
-              onClick={() => setKeysMenuOpen((v) => !v)}
+        <div className="flex shrink-0 items-center gap-1">
+          <Popover open={keysMenuOpen} onOpenChange={setKeysMenuOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground"
+                aria-label="Keys and commands"
+                title="Keys and commands"
+              >
+                <Keyboard />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              side="top"
+              className="flex max-h-[min(28rem,60vh)] w-[min(22rem,calc(100vw-24px))] flex-col gap-3 overflow-y-auto p-3"
             >
-              <Keyboard size={ICON} />
-            </button>
-            {keysMenuOpen && (
-              <div className="keys-menu-popover">
-                <div className="keys-menu-section">
-                  <div className="keys-menu-label">Keys</div>
-                  <div className="keys-menu-grid">
-                    {KEY_BUTTONS.map((kb) => (
-                      <button
-                        key={kb.key}
-                        onClick={() => {
-                          onKey(kb.key);
-                          setKeysMenuOpen(false);
-                        }}
-                        title={kb.key}
-                      >
-                        {kb.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="keys-menu-section">
-                  <div className="keys-menu-label">Agent commands</div>
-                  <div className="keys-menu-grid">
-                    {agentSlashCommands.map((hint) => (
-                      <button
-                        key={hint.command}
-                        onClick={() => {
-                          onCommand(hint.command);
-                          setKeysMenuOpen(false);
-                        }}
-                        title={hint.description}
-                      >
-                        {hint.command}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="keys-menu-section">
-                  <div className="keys-menu-label">Bot commands</div>
-                  <div className="keys-menu-grid">
-                    {BOT_QUICK_COMMANDS.map((cmd) => (
-                      <button
-                        key={cmd}
-                        onClick={() => {
-                          void onBotCommand(cmd);
-                          setKeysMenuOpen(false);
-                        }}
-                        title={BOT_COMMANDS[cmd] || cmd}
-                      >
-                        {cmd}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            className="icon-button"
+              <KeysSection label="Keys">
+                {KEY_BUTTONS.map((kb) => (
+                  <KeyButton
+                    key={kb.key}
+                    title={kb.key}
+                    onClick={() => {
+                      onKey(kb.key);
+                      setKeysMenuOpen(false);
+                    }}
+                  >
+                    {kb.label}
+                  </KeyButton>
+                ))}
+              </KeysSection>
+              <KeysSection label="Agent commands">
+                {agentSlashCommands.map((hint) => (
+                  <KeyButton
+                    key={hint.command}
+                    title={hint.description}
+                    onClick={() => {
+                      onCommand(hint.command);
+                      setKeysMenuOpen(false);
+                    }}
+                  >
+                    {hint.command}
+                  </KeyButton>
+                ))}
+              </KeysSection>
+              <KeysSection label="Bot commands">
+                {BOT_QUICK_COMMANDS.map((cmd) => (
+                  <KeyButton
+                    key={cmd}
+                    title={BOT_COMMANDS[cmd] || cmd}
+                    onClick={() => {
+                      void onBotCommand(cmd);
+                      setKeysMenuOpen(false);
+                    }}
+                  >
+                    {cmd}
+                  </KeyButton>
+                ))}
+              </KeysSection>
+            </PopoverContent>
+          </Popover>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground"
             aria-label="Attach image"
-            onClick={() => fileInputRef.current?.click()}
             title="Attach image"
+            onClick={() => fileInputRef.current?.click()}
           >
-            <Paperclip size={ICON} />
-          </button>
-          <button
-            className="primary send-button"
+            <Paperclip />
+          </Button>
+          <Button
+            size="icon-sm"
+            className="rounded-lg"
             disabled={sending || (!text.trim() && attachments.length === 0)}
             onClick={() => void submit(text)}
             title="Send"
             aria-label="Send"
           >
-            <SendHorizontal size={ICON} />
-          </button>
+            <ArrowUp className="size-[18px]" />
+          </Button>
         </div>
       </div>
     </div>
@@ -1680,7 +1745,6 @@ export function ChatView({
     currentIndex: number;
   } | null>(null);
   const [interactiveSending, setInteractiveSending] = useState(false);
-  const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [recapOpen, setRecapOpen] = useState(false);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitIsRepo, setGitIsRepo] = useState(false);
@@ -1767,7 +1831,6 @@ export function ChatView({
     }
   }, []);
   const composerRef = useRef<ComposerHandle | null>(null);
-  const chatMenuRef = useRef<HTMLDivElement | null>(null);
   const handledSearchTargetRef = useRef<string | null>(null);
   const searchHighlightTimerRef = useRef<number | null>(null);
   const sessionIdRef = useRef<string | null>(session.session_id);
@@ -2499,23 +2562,6 @@ export function ChatView({
   }, [session.window_id]);
 
 
-  useEffect(() => {
-    if (!chatMenuOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      const el = chatMenuRef.current;
-      if (el && !el.contains(e.target as Node)) setChatMenuOpen(false);
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setChatMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [chatMenuOpen]);
-
   // The transcript only confirms a switch on the agent's next record, so
   // show the requested model/effort until the session payload changes.
   const [modelOverride, setModelOverride] = useState<{
@@ -2818,19 +2864,21 @@ export function ChatView({
 
   return (
     <main className="chat-area">
-      <div className="chat-header">
-        <button
-          type="button"
-          className="burger icon-button"
+      <header className="chat-header flex h-15 shrink-0 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur-md max-[760px]:px-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="burger hidden max-[760px]:inline-flex"
           aria-label="Open menu"
           onClick={onOpenSidebar}
         >
-          <Menu size={20} />
-        </button>
-        <div className="chat-title">
+          <Menu className="size-5" />
+        </Button>
+        <div className="min-w-0 flex-1">
           {editingName ? (
-            <input
+            <Input
               autoFocus
+              className="h-8 max-w-md"
               value={nameDraft}
               onChange={(e) => setNameDraft(e.target.value)}
               onBlur={commitRename}
@@ -2844,148 +2892,102 @@ export function ChatView({
             />
           ) : (
             <div
-              className="name"
+              className="flex min-w-0 items-center gap-2"
               onDoubleClick={() => setEditingName(true)}
               title="Double-click to rename"
             >
               <RuntimeIcon runtime={session.runtime} size={ICON} />
-              <span className="chat-title-name">{session.name}</span>
+              <span className="truncate text-[15px] font-semibold tracking-tight">
+                {session.name}
+              </span>
             </div>
           )}
-          <div className="path">{session.cwd || "—"}</div>
-        </div>
-        <div
-          className={`chat-menu${chatMenuOpen ? " open" : ""}`}
-          ref={chatMenuOpen ? chatMenuRef : undefined}
-        >
-          <button
-            type="button"
-            className="chat-menu-trigger"
-            aria-label="Session actions"
-            aria-expanded={chatMenuOpen}
-            title="Session actions"
-            onClick={() => setChatMenuOpen((v) => !v)}
+          {/* Truncated from the left: the end of a path is the telling part. */}
+          <div
+            className="truncate text-left font-mono text-xs text-muted-foreground [direction:rtl]"
+            title={session.cwd || undefined}
           >
-            <MoreVertical size={ICON} />
-          </button>
-          {chatMenuOpen && (
-            <div className="chat-menu-popover">
-              {gitIsRepo && (
-                <button
-                  type="button"
-                  className={diffOpen ? "active" : ""}
-                  onClick={() => {
-                    setChatMenuOpen(false);
-                    onToggleDiff();
-                  }}
-                >
-                  <GitCommit size={ICON} />
-                  <span>Diff</span>
-                </button>
-              )}
-              <button
-                type="button"
-                className={officeOpen ? "active" : ""}
-                onClick={() => {
-                  setChatMenuOpen(false);
-                  onToggleOffice();
-                }}
-              >
-                <Users size={ICON} />
-                <span>Office</span>
-              </button>
-              <button
-                type="button"
-                className={termOpen ? "active" : ""}
-                onClick={() => {
-                  setChatMenuOpen(false);
-                  onToggleTerm();
-                }}
-              >
-                <TerminalIcon size={ICON} />
-                <span>Terminal</span>
-              </button>
-              <button
-                type="button"
-                className={filesOpen ? "active" : ""}
-                onClick={() => {
-                  setChatMenuOpen(false);
-                  onToggleFiles();
-                }}
-              >
-                <FolderTree size={ICON} />
-                <span>Files</span>
-              </button>
-              <button
-                type="button"
-                className={subagentsOpen ? "active" : ""}
-                onClick={() => {
-                  setChatMenuOpen(false);
-                  onToggleSubagents();
-                }}
-              >
-                <Bot size={ICON} />
-                <span>Subagents</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setChatMenuOpen(false);
-                  setEditingName(true);
-                }}
-              >
-                <Pencil size={ICON} />
-                <span>Rename</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setChatMenuOpen(false);
-                  void onCommand("/clear");
-                  setMessages([]);
-                  setHasMore(false);
-                  hasMoreRef.current = false;
-                  sessionIdRef.current = null;
-                  historyCacheRef.current.delete(session.window_id);
-                  showToast("Cleared — /clear sent to agent");
-                }}
-              >
-                <Eraser size={ICON} />
-                <span>Clear history</span>
-              </button>
-              <button
-                type="button"
-                className="danger"
-                onClick={() => {
-                  setChatMenuOpen(false);
-                  onRequestKill();
-                }}
-              >
-                <Trash2 size={ICON} />
-                <span>Kill</span>
-              </button>
-            </div>
-          )}
+            <bdi>{session.cwd || "—"}</bdi>
+          </div>
         </div>
-      </div>
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Session actions"
+              title="Session actions"
+              className="text-muted-foreground"
+            >
+              <MoreVertical />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              Panels
+            </DropdownMenuLabel>
+            {gitIsRepo && (
+              <DropdownMenuCheckboxItem checked={diffOpen} onSelect={onToggleDiff}>
+                <GitCommit /> Diff
+              </DropdownMenuCheckboxItem>
+            )}
+            <DropdownMenuCheckboxItem checked={officeOpen} onSelect={onToggleOffice}>
+              <Users /> Office
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem checked={termOpen} onSelect={onToggleTerm}>
+              <TerminalIcon /> Terminal
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem checked={filesOpen} onSelect={onToggleFiles}>
+              <FolderTree /> Files
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem checked={subagentsOpen} onSelect={onToggleSubagents}>
+              <Bot /> Subagents
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setEditingName(true)}>
+              <Pencil /> Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                void onCommand("/clear");
+                setMessages([]);
+                setHasMore(false);
+                hasMoreRef.current = false;
+                sessionIdRef.current = null;
+                historyCacheRef.current.delete(session.window_id);
+                showToast("Cleared — /clear sent to agent");
+              }}
+            >
+              <Eraser /> Clear history
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" onSelect={onRequestKill}>
+              <Trash2 /> Kill
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </header>
 
       {(session.recap || session.last_prompt) && (
         <button
           type="button"
-          className={`session-recap${recapOpen ? " open" : ""}`}
+          data-slot="recap"
+          className={cn(
+            "flex w-full shrink-0 flex-col gap-1 border-b bg-muted/40 px-4 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/70",
+            "max-[760px]:px-3",
+          )}
           onClick={() => setRecapOpen((v) => !v)}
           aria-expanded={recapOpen}
           title={recapOpen ? "Collapse" : "What this session is about"}
         >
           {session.recap && (
-            <span className="session-recap-text">
-              <span className="session-recap-label">Recap</span>
+            <span className={cn("min-w-0", !recapOpen && "truncate")}>
+              <RecapLabel>Recap</RecapLabel>
               {session.recap}
             </span>
           )}
           {session.last_prompt && (recapOpen || !session.recap) && (
-            <span className="session-recap-text">
-              <span className="session-recap-label">Last request</span>
+            <span className={cn("min-w-0", !recapOpen && "truncate")}>
+              <RecapLabel>Last request</RecapLabel>
               {session.last_prompt}
             </span>
           )}
