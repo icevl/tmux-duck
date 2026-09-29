@@ -203,7 +203,7 @@ async def switch_codex(
                 raise ModelSwitchError("Codex did not exit; switch aborted")
     cmd = codex_restart_command(session_id, model, effort)
     logger.info("Relaunching Codex in %s: %s", window_id, cmd)
-    if not await tmux_manager.type_start_command(window_id, cmd):
+    if not await tmux_manager.type_start_command(window_id, cmd, get_runtime("codex")):
         raise ModelSwitchError("failed to relaunch Codex")
 
 

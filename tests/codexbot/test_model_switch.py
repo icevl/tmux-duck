@@ -109,9 +109,14 @@ class TestSwitch:
         ):
             await switch_model("@3", "codex", "sid-1", "gpt-5.5", "low")
         assert send.await_args_list[0].args == ("@3", "/quit")
-        typed.assert_awaited_once_with(
-            "@3", "codex resume sid-1 -m gpt-5.5 -c model_reasoning_effort=low"
+        typed.assert_awaited_once()
+        window_id, cmd, runtime = typed.await_args.args
+        assert (window_id, cmd) == (
+            "@3",
+            "codex resume sid-1 -m gpt-5.5 -c model_reasoning_effort=low",
         )
+        # The relaunch gets the startup watcher (Codex's folder-trust prompt).
+        assert runtime.name == "codex"
 
     @pytest.mark.asyncio
     async def test_codex_needs_a_session_id(self):

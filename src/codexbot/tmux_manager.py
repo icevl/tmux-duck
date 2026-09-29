@@ -575,7 +575,9 @@ class TmuxManager:
             time.sleep(0.1)
         pane.send_keys("Enter", enter=False, literal=False)
 
-    async def type_start_command(self, window_id: str, cmd: str) -> bool:
+    async def type_start_command(
+        self, window_id: str, cmd: str, runtime: AgentRuntime | None = None
+    ) -> bool:
         """Launch ``cmd`` at the shell prompt of an existing window's pane."""
 
         def _type() -> bool:
@@ -595,6 +597,8 @@ class TmuxManager:
 
         result = await self._run(_type)
         self.invalidate_windows_cache()
+        if result and runtime is not None:
+            self._watch_startup(runtime, window_id)
         return result
 
     async def create_window(
@@ -690,7 +694,22 @@ class TmuxManager:
 
         result = await self._run(_create_and_start)
         self.invalidate_windows_cache()
+        success, _, _, wid = result
+        if success and start_codex:
+            self._watch_startup(runtime, wid)
         return result
+
+    @staticmethod
+    def _watch_startup(runtime: AgentRuntime | None, window_id: str) -> None:
+        # Runtimes whose CLI asks questions at launch (Codex's folder trust)
+        # answer them in the background; the default runtime is Codex.
+        if runtime is None:
+            from .runtimes import get_runtime
+
+            runtime = get_runtime("codex")
+        watch = getattr(runtime, "watch_startup", None)
+        if watch is not None:
+            watch(window_id)
 
 
 # Global instance with default session name
