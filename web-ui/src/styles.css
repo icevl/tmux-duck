@@ -792,7 +792,7 @@ button.burger {
 
 .search-tree-row .tree-snippet mark {
   color: var(--text-0);
-  background: rgba(167, 139, 250, 0.25);
+  background: color-mix(in oklch, var(--primary) 25%, transparent);
   border-radius: 3px;
   padding: 0 2px;
 }
@@ -861,7 +861,7 @@ button.burger {
 
 .search-hit-snippet mark {
   color: var(--text-0);
-  background: rgba(167, 139, 250, 0.25);
+  background: color-mix(in oklch, var(--primary) 25%, transparent);
   border-radius: 3px;
   padding: 0 2px;
 }
@@ -1224,7 +1224,7 @@ button.burger {
 }
 
 .session-item.drag-over {
-  background: rgba(167, 139, 250, 0.11);
+  background: color-mix(in oklch, var(--primary) 11%, transparent);
   border-left-color: var(--legacy-accent);
 }
 
@@ -1429,7 +1429,7 @@ button.burger {
 }
 
 .runtime-icon-codex {
-  color: var(--legacy-accent);
+  color: var(--text-1);
 }
 
 .runtime-icon-claude {

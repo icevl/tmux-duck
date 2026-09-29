@@ -182,9 +182,9 @@ export function TerminalPanel({
       theme: {
         background: "#0e0f12",
         foreground: "#ececef",
-        cursor: "#a78bfa",
+        cursor: "#f6b904",
         cursorAccent: "#0e0f12",
-        selectionBackground: "rgba(167,139,250,0.35)",
+        selectionBackground: "rgba(246,185,4,0.3)",
       },
     });
     const fit = new FitAddon();

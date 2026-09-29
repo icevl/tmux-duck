@@ -37,10 +37,12 @@
   --destructive: oklch(0.58 0.22 22);
   --border: oklch(0.915 0.004 286);
   --input: oklch(0.89 0.005 286);
-  --ring: oklch(0.62 0.19 293);
-  /* Violet: selection, the user's messages, links. */
-  --brand: oklch(0.55 0.21 293);
-  --brand-soft: oklch(0.55 0.21 293 / 0.1);
+  --ring: oklch(0.72 0.15 80);
+  /* The one accent is the duck yellow (`--primary`). `--brand` is its
+     text-and-icon form: plain yellow on white is unreadable, so the light
+     theme uses a deeper amber of the same hue. */
+  --brand: oklch(0.6 0.14 72);
+  --brand-soft: oklch(0.83 0.17 84 / 0.18);
   --success: oklch(0.6 0.14 160);
   --warning: oklch(0.7 0.16 60);
 
@@ -73,9 +75,9 @@
   --destructive: oklch(0.7 0.19 18);
   --border: oklch(1 0 0 / 0.08);
   --input: oklch(1 0 0 / 0.13);
-  --ring: oklch(0.72 0.16 293);
-  --brand: oklch(0.74 0.15 293);
-  --brand-soft: oklch(0.74 0.15 293 / 0.14);
+  --ring: oklch(0.8 0.15 84);
+  --brand: oklch(0.84 0.17 84);
+  --brand-soft: oklch(0.84 0.17 84 / 0.14);
   --success: oklch(0.78 0.13 165);
   --warning: oklch(0.8 0.14 70);
 
@@ -148,12 +150,12 @@
   --duck-yellow: var(--primary);
   --duck-yellow-strong: var(--primary);
   --duck-yellow-soft: color-mix(in oklch, var(--primary) 14%, transparent);
-  --accent-pink: oklch(0.66 0.22 355);
-  --accent-gradient: linear-gradient(135deg, var(--brand) 0%, oklch(0.66 0.22 355) 100%);
+  --accent-pink: var(--brand);
+  --accent-gradient: linear-gradient(135deg, var(--primary) 0%, var(--brand) 100%);
   --accent-gradient-soft: linear-gradient(
     135deg,
-    color-mix(in oklch, var(--brand) 20%, transparent) 0%,
-    oklch(0.66 0.22 355 / 0.2) 100%
+    color-mix(in oklch, var(--primary) 20%, transparent) 0%,
+    color-mix(in oklch, var(--brand) 20%, transparent) 100%
   );
   --danger: var(--destructive);
   --warn: var(--warning);
@@ -168,7 +170,7 @@
   --shadow: 0 12px 32px var(--shadow-color), 0 2px 8px var(--shadow-color);
 }
 
-/* `--accent` means "hover surface" to shadcn but "violet" to styles.css;
+/* `--accent` means "hover surface" to shadcn but "the accent colour" to styles.css;
  * inside legacy rules it keeps its old meaning via this alias. */
 :root {
   --legacy-accent: var(--brand);
