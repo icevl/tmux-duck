@@ -2926,7 +2926,10 @@ export function ChatView({
               title="Double-click to rename"
             >
               <RuntimeIcon runtime={session.runtime} size={ICON} />
-              <span className="truncate text-[15px] font-semibold tracking-tight">
+              <span
+                data-slot="chat-title"
+                className="truncate text-[15px] font-semibold tracking-tight"
+              >
                 {session.name}
               </span>
             </div>

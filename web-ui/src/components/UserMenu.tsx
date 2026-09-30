@@ -1,18 +1,21 @@
 import {
   Bell,
-  Binary,
   BellOff,
+  Binary,
   LayoutGrid,
   LogOut,
   Monitor,
   Moon,
+  Radar,
   Sun,
   UserRound,
   Users,
+  Zap,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -24,7 +27,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useTheme, type ThemePreference } from "@/lib/theme";
+import { Fragment } from "react";
+import { isSciFi, SCI_FI_THEMES, useTheme, type ThemePreference } from "@/lib/theme";
 
 // One avatar look for the header button and the menu's own header row.
 const AVATAR =
@@ -35,6 +39,8 @@ const THEMES: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "dark", label: "Dark", icon: Moon },
   { value: "system", label: "System", icon: Monitor },
   { value: "matrix", label: "The Matrix", icon: Binary },
+  { value: "cyberpunk", label: "Cyberpunk", icon: Zap },
+  { value: "nostromo", label: "Nostromo", icon: Radar },
 ];
 
 interface UserMenuProps {
@@ -63,7 +69,7 @@ export function UserMenu({
   notificationTitle,
   onToggleNotifications,
 }: UserMenuProps) {
-  const { preference, setPreference } = useTheme();
+  const { preference, setPreference, effects, setEffects } = useTheme();
   const themeLabel = THEMES.find((t) => t.value === preference)?.label;
 
   // What the old footer icons signalled on their own now marks the avatar.
@@ -162,12 +168,34 @@ export function UserMenu({
               onValueChange={(v) => setPreference(v as ThemePreference)}
             >
               {THEMES.map(({ value, label, icon: Icon }) => (
-                <DropdownMenuRadioItem key={value} value={value}>
-                  <Icon />
-                  {label}
-                </DropdownMenuRadioItem>
+                <Fragment key={value}>
+                  {isSciFi(value) && value === SCI_FI_THEMES[0] && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                        Sci-fi
+                      </DropdownMenuLabel>
+                    </>
+                  )}
+                  <DropdownMenuRadioItem value={value}>
+                    <Icon />
+                    {label}
+                  </DropdownMenuRadioItem>
+                </Fragment>
               ))}
             </DropdownMenuRadioGroup>
+            {preference === "matrix" && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={effects}
+                  onCheckedChange={(on) => setEffects(on === true)}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  Digital rain
+                </DropdownMenuCheckboxItem>
+              </>
+            )}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSeparator />

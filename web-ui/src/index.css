@@ -10,6 +10,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./styles.css" layer(legacy);
+/* Unlayered: a theme's decoration overrides utilities (see the file). */
+@import "./themes.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -54,6 +56,8 @@
 
   --code: oklch(0.97 0.003 286);
   --shadow-color: oklch(0.2 0.02 286 / 0.12);
+  /* The page colour: --background unless a theme makes surfaces translucent. */
+  --page: var(--background);
 }
 
 .dark {
@@ -89,17 +93,6 @@
 
   --code: oklch(0.14 0.004 286);
   --shadow-color: oklch(0 0 0 / 0.5);
-}
-
-/* The Matrix: the dark theme with the film's phosphor green (#00ff41) as
- * the one accent. Applied together with `.dark`. */
-.dark.theme-matrix {
-  --primary: oklch(0.869 0.278 144.5);
-  --primary-foreground: oklch(0.16 0.04 145);
-  --ring: oklch(0.8 0.24 144.5);
-  --brand: oklch(0.869 0.278 144.5);
-  --brand-soft: oklch(0.869 0.278 144.5 / 0.14);
-  --success: oklch(0.869 0.278 144.5);
 }
 
 @theme {

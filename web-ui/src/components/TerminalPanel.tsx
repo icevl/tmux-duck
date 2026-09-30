@@ -12,7 +12,12 @@ import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "@/lib/theme";
 
 // xterm takes literal colours, not CSS variables: the app accent per theme.
-const ACCENT = { default: "#f6b904", matrix: "#00ff41" } as const;
+const ACCENT: Record<string, string> = {
+  default: "#f6b904",
+  matrix: "#00ff41",
+  cyberpunk: "#ff2a6d",
+  nostromo: "#ffb000",
+};
 
 function terminalTheme(accent: string) {
   return {
@@ -148,7 +153,7 @@ export function TerminalPanel({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const { preference } = useTheme();
-  const accent = preference === "matrix" ? ACCENT.matrix : ACCENT.default;
+  const accent = ACCENT[preference] ?? ACCENT.default;
   // Read when the terminal is created; the effect below retints a live one.
   const accentRef = useRef(accent);
   accentRef.current = accent;

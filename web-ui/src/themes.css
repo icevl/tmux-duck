@@ -1,0 +1,222 @@
+/* Sci-fi themes: dark variants with their own palette, type, shape and
+ * backdrop. Applied as `.dark.sci-fi.theme-<name>` (see src/lib/theme.tsx).
+ *
+ * Each theme sets tokens only; the shared decoration below turns them into
+ * the look (backdrop behind translucent surfaces, accent glow, display
+ * type). Message text itself gets no effects — it has to stay readable.
+ */
+
+/* ── The Matrix: phosphor green on black, terminal type, scanlines ───── */
+.dark.theme-matrix {
+  --page: oklch(0.1 0.015 150);
+  --background: oklch(0.1 0.015 150 / 0.55);
+  --foreground: oklch(0.9 0.07 150);
+  --card: oklch(0.14 0.025 150 / 0.82);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.13 0.025 150 / 0.97);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.869 0.278 144.5);
+  --primary-foreground: oklch(0.14 0.04 145);
+  --secondary: oklch(0.2 0.045 150 / 0.75);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.2 0.045 150 / 0.75);
+  --muted-foreground: oklch(0.68 0.1 150);
+  --accent: oklch(0.25 0.07 148 / 0.75);
+  --accent-foreground: var(--foreground);
+  --border: oklch(0.869 0.278 144.5 / 0.16);
+  --input: oklch(0.869 0.278 144.5 / 0.3);
+  --ring: oklch(0.8 0.24 144.5);
+  --brand: oklch(0.869 0.278 144.5);
+  --brand-soft: oklch(0.869 0.278 144.5 / 0.14);
+  --success: oklch(0.869 0.278 144.5);
+  --sidebar: oklch(0.12 0.02 150 / 0.78);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-accent: oklch(0.24 0.07 148 / 0.75);
+  --sidebar-border: oklch(0.869 0.278 144.5 / 0.14);
+  --code: oklch(0.07 0.02 150 / 0.88);
+
+  --radius: 0.2rem;
+  --font-sans: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: var(--font-mono);
+  --glow: oklch(0.869 0.278 144.5 / 0.35);
+  --backdrop:
+    repeating-linear-gradient(0deg, oklch(0 0 0 / 0.22) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at 50% 40%, oklch(0.3 0.12 150 / 0.25), transparent 70%);
+}
+
+/* ── Cyberpunk: neon magenta + cyan over deep navy, grid, sharp corners ─ */
+.dark.theme-cyberpunk {
+  --page: oklch(0.13 0.05 285);
+  --background: oklch(0.13 0.05 285 / 0.6);
+  --foreground: oklch(0.94 0.02 250);
+  --card: oklch(0.17 0.06 290 / 0.8);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.16 0.06 290 / 0.97);
+  --popover-foreground: var(--foreground);
+  /* Hot magenta for actions, cyan for highlights: the genre's pair. */
+  --primary: oklch(0.68 0.27 355);
+  --primary-foreground: oklch(0.98 0.01 355);
+  --secondary: oklch(0.22 0.07 295 / 0.75);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.22 0.07 295 / 0.75);
+  --muted-foreground: oklch(0.74 0.06 260);
+  --accent: oklch(0.27 0.09 300 / 0.75);
+  --accent-foreground: var(--foreground);
+  --border: oklch(0.86 0.14 200 / 0.18);
+  --input: oklch(0.86 0.14 200 / 0.32);
+  --ring: oklch(0.86 0.14 200);
+  --brand: oklch(0.86 0.14 200);
+  --brand-soft: oklch(0.86 0.14 200 / 0.14);
+  --success: oklch(0.86 0.14 200);
+  --sidebar: oklch(0.15 0.06 288 / 0.78);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-accent: oklch(0.26 0.1 300 / 0.75);
+  --sidebar-border: oklch(0.86 0.14 200 / 0.16);
+  --code: oklch(0.1 0.05 285 / 0.88);
+
+  --radius: 0.1rem;
+  --font-sans: "Rajdhani", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Orbitron", "Rajdhani", ui-sans-serif, sans-serif;
+  --glow: oklch(0.68 0.27 355 / 0.4);
+  --backdrop:
+    linear-gradient(oklch(0.86 0.14 200 / 0.1) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, oklch(0.86 0.14 200 / 0.1) 1px, transparent 1px) 0 0 / 44px 44px,
+    radial-gradient(ellipse at 80% 110%, oklch(0.6 0.25 355 / 0.28), transparent 60%),
+    radial-gradient(ellipse at 0% 0%, oklch(0.7 0.14 200 / 0.18), transparent 55%);
+}
+
+/* Rajdhani runs small and condensed; nudge it up to Geist's apparent size. */
+.theme-cyberpunk body {
+  font-size: 16px;
+  letter-spacing: 0.01em;
+}
+
+/* ── Nostromo: amber CRT from Alien — monochrome, phosphor, scanlines ─── */
+.dark.theme-nostromo {
+  --page: oklch(0.12 0.02 60);
+  --background: oklch(0.12 0.02 60 / 0.6);
+  --foreground: oklch(0.87 0.13 78);
+  --card: oklch(0.16 0.03 65 / 0.82);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.15 0.03 65 / 0.97);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.8 0.16 72);
+  --primary-foreground: oklch(0.15 0.03 60);
+  --secondary: oklch(0.21 0.04 65 / 0.75);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.21 0.04 65 / 0.75);
+  --muted-foreground: oklch(0.67 0.1 72);
+  --accent: oklch(0.26 0.06 68 / 0.75);
+  --accent-foreground: var(--foreground);
+  --border: oklch(0.8 0.16 72 / 0.18);
+  --input: oklch(0.8 0.16 72 / 0.32);
+  --ring: oklch(0.8 0.16 72);
+  --brand: oklch(0.8 0.16 72);
+  --brand-soft: oklch(0.8 0.16 72 / 0.14);
+  --success: oklch(0.8 0.16 72);
+  --sidebar: oklch(0.14 0.025 62 / 0.78);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-accent: oklch(0.25 0.06 68 / 0.75);
+  --sidebar-border: oklch(0.8 0.16 72 / 0.15);
+  --code: oklch(0.09 0.02 60 / 0.88);
+
+  --radius: 0.15rem;
+  --font-sans: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --font-display: "VT323", "IBM Plex Mono", monospace;
+  --glow: oklch(0.8 0.16 72 / 0.35);
+  --backdrop:
+    repeating-linear-gradient(0deg, oklch(0 0 0 / 0.25) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at 50% 50%, oklch(0.35 0.08 70 / 0.22), transparent 72%);
+}
+
+/* ── Shared sci-fi decoration ────────────────────────────────────────── */
+
+/* The page carries the colour and the backdrop; surfaces above are
+   translucent, so it shows through. A vignette darkens the edges. */
+.sci-fi,
+.sci-fi body {
+  background-color: var(--page);
+}
+
+.sci-fi body {
+  background-image:
+    radial-gradient(ellipse at center, transparent 55%, oklch(0 0 0 / 0.55) 100%),
+    var(--backdrop);
+  background-attachment: fixed;
+}
+
+.sci-fi .sidebar,
+.sci-fi .chat-header,
+.sci-fi .composer {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Squarer corners: `rounded-2xl` etc. read Tailwind's radius scale. */
+.sci-fi {
+  --radius-2xl: calc(var(--radius) + 6px);
+  --radius-3xl: calc(var(--radius) + 8px);
+}
+
+/* Display type on the brand and chat titles. */
+.sci-fi [data-slot="brand"],
+.sci-fi [data-slot="chat-title"] {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 10px var(--glow);
+}
+
+.theme-nostromo [data-slot="brand"],
+.theme-nostromo [data-slot="chat-title"] {
+  font-size: 1.3em;
+  letter-spacing: 0.06em;
+}
+
+.theme-cyberpunk [data-slot="brand"],
+.theme-cyberpunk [data-slot="chat-title"] {
+  text-transform: uppercase;
+}
+
+/* Accent glow on the pieces that carry the accent. */
+.sci-fi .composer {
+  border-color: color-mix(in oklch, var(--brand) 35%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--brand) 12%, transparent),
+    0 0 28px var(--glow);
+}
+
+.sci-fi .composer:focus-within {
+  border-color: color-mix(in oklch, var(--brand) 60%, transparent);
+}
+
+.sci-fi .bg-primary {
+  box-shadow: 0 0 14px var(--glow);
+}
+
+.sci-fi [aria-current="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--brand) 30%, transparent),
+    0 0 18px color-mix(in oklch, var(--brand) 12%, transparent);
+}
+
+.sci-fi [data-slot="dropdown-menu-content"],
+.sci-fi [data-slot="dropdown-menu-sub-content"],
+.sci-fi [data-slot="popover-content"],
+.sci-fi [data-slot="dialog-content"] {
+  border-color: color-mix(in oklch, var(--brand) 40%, transparent);
+  box-shadow: 0 0 30px var(--glow);
+}
+
+.sci-fi ::selection {
+  background: color-mix(in oklch, var(--brand) 35%, transparent);
+}
+
+.sci-fi * {
+  scrollbar-color: color-mix(in oklch, var(--brand) 35%, transparent) transparent;
+}
+
+/* Nostromo: the whole screen is phosphor — a faint glow on all text. */
+.theme-nostromo body {
+  text-shadow: 0 0 6px oklch(0.8 0.16 72 / 0.25);
+}

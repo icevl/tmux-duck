@@ -362,7 +362,7 @@ export function Sidebar({
       <div className="flex h-15 shrink-0 items-center justify-between gap-2 px-4">
         <div className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
           <DuckLogo width={28} height={28} className="text-warning" />
-          TmuxDuck
+          <span data-slot="brand">TmuxDuck</span>
         </div>
         <div className="flex items-center gap-2">
           <UserMenu
