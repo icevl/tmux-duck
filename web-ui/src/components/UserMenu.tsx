@@ -2,6 +2,7 @@ import {
   Bell,
   BellOff,
   Binary,
+  Globe,
   LayoutGrid,
   LogOut,
   Monitor,
@@ -28,7 +29,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { Fragment } from "react";
-import { isSciFi, SCI_FI_THEMES, useTheme, type ThemePreference } from "@/lib/theme";
+import {
+  isSciFi,
+  RETRO_THEMES,
+  SCI_FI_THEMES,
+  useTheme,
+  type ThemePreference,
+} from "@/lib/theme";
 
 // One avatar look for the header button and the menu's own header row.
 const AVATAR =
@@ -41,6 +48,7 @@ const THEMES: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "matrix", label: "The Matrix", icon: Binary },
   { value: "cyberpunk", label: "Cyberpunk", icon: Zap },
   { value: "nostromo", label: "Nostromo", icon: Radar },
+  { value: "web1995", label: "Web 1995", icon: Globe },
 ];
 
 interface UserMenuProps {
@@ -169,11 +177,11 @@ export function UserMenu({
             >
               {THEMES.map(({ value, label, icon: Icon }) => (
                 <Fragment key={value}>
-                  {isSciFi(value) && value === SCI_FI_THEMES[0] && (
+                  {(value === SCI_FI_THEMES[0] || value === RETRO_THEMES[0]) && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                        Sci-fi
+                        {isSciFi(value) ? "Sci-fi" : "Retro"}
                       </DropdownMenuLabel>
                     </>
                   )}

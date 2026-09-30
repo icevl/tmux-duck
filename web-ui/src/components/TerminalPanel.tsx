@@ -17,6 +17,7 @@ const ACCENT: Record<string, string> = {
   matrix: "#00ff41",
   cyberpunk: "#ff2a6d",
   nostromo: "#ffb000",
+  web1995: "#c0c0c0",
 };
 
 function terminalTheme(accent: string) {

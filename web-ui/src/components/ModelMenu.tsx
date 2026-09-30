@@ -31,6 +31,8 @@ export const ComposerChip = forwardRef<
       ref={ref}
       type="button"
       data-slot="composer-chip"
+      // Survives a Radix trigger replacing data-slot; themes style chips by it.
+      data-chip=""
       className={cn(
         "inline-flex h-7 max-w-[14rem] items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground transition-colors",
         "hover:bg-accent hover:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",

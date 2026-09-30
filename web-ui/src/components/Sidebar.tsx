@@ -188,8 +188,12 @@ function UsageRow({
     <div className="flex items-center gap-3" title={title}>
       <span className="w-12 shrink-0 font-medium text-foreground/80">{agent}</span>
       {percent !== null && (
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+        <div
+          data-slot="usage-track"
+          className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"
+        >
           <div
+            data-slot="usage-fill"
             className={cn(
               "h-full rounded-full transition-[width]",
               percent >= 80 ? "bg-destructive" : "bg-primary",
@@ -570,6 +574,7 @@ export function Sidebar({
                       />
                     ) : null}
                     <span
+                      data-slot="session-name"
                       className={cn(
                         "truncate text-sm font-medium",
                         active ? "text-foreground" : "text-foreground/90",

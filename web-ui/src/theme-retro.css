@@ -1,0 +1,243 @@
+/* Web 1995: the mid-90s web as Netscape Navigator on Windows 95 drew it —
+ * battleship-grey pages, Times New Roman, blue underlined links, bevelled
+ * 3D buttons, sunken text fields, navy title bars. Light base; applied as
+ * `.theme-web1995` (see src/lib/theme.tsx). Unlayered, like themes.css.
+ */
+
+:root.theme-web1995 {
+  --page: #c0c0c0;
+  --background: #c0c0c0;
+  --foreground: #000000;
+  --card: #ffffff;
+  --card-foreground: #000000;
+  --popover: #c0c0c0;
+  --popover-foreground: #000000;
+  --primary: #c0c0c0;
+  --primary-foreground: #000000;
+  --secondary: #ffffff;
+  --secondary-foreground: #000000;
+  --muted: #d4d0c8;
+  --muted-foreground: #404040;
+  --accent: #000080;
+  --accent-foreground: #ffffff;
+  --destructive: #c00000;
+  --border: #808080;
+  --input: #808080;
+  --ring: #000000;
+  /* Navy: title bars, selection, the one colour of the period UI. */
+  --brand: #000080;
+  --brand-soft: #c0c0ff;
+  --success: #008000;
+  --warning: #c08000;
+  --sidebar: #c0c0c0;
+  --sidebar-foreground: #000000;
+  --sidebar-accent: #000080;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #808080;
+  --code: #ffffff;
+  --shadow-color: transparent;
+
+  --radius: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --font-sans: "Times New Roman", Times, serif;
+  --font-mono: "Courier New", Courier, monospace;
+
+  /* 98.css-style bevels: raised (buttons, windows) and sunken (fields). */
+  --bevel-raised: inset -1px -1px #0a0a0a, inset 1px 1px #ffffff,
+    inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+  --bevel-sunken: inset -1px -1px #ffffff, inset 1px 1px #0a0a0a,
+    inset -2px -2px #dfdfdf, inset 2px 2px #808080;
+}
+
+.theme-web1995 body {
+  font-size: 16px;
+}
+
+.theme-web1995 ::selection {
+  background: #000080;
+  color: #ffffff;
+}
+
+.theme-web1995 * {
+  scrollbar-color: #808080 #dfdfdf;
+}
+
+/* Links as Netscape drew them. */
+.theme-web1995 .md a,
+.theme-web1995 a[data-slot="link"] {
+  color: #0000ee;
+  text-decoration: underline;
+}
+
+.theme-web1995 .md a:visited {
+  color: #551a8b;
+}
+
+/* ── Title bars: the sidebar and chat headers ─────────────────────────── */
+.theme-web1995 .sidebar > :first-child,
+.theme-web1995 .chat-header {
+  background: #000080;
+  color: #ffffff;
+  border-bottom: 0;
+  backdrop-filter: none;
+}
+
+.theme-web1995 .chat-header .text-muted-foreground {
+  color: #c0c0c0;
+}
+
+.theme-web1995 [data-slot="brand"],
+.theme-web1995 [data-slot="chat-title"] {
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+/* ── Bevelled controls ───────────────────────────────────────────────── */
+.theme-web1995 button[data-slot="button"],
+.theme-web1995 button[data-slot="key-button"],
+.theme-web1995 button[data-slot="prompt-option"],
+.theme-web1995 button[data-slot="avatar-trigger"],
+.theme-web1995 button[data-slot="popover-trigger"],
+.theme-web1995 button[data-slot="dropdown-menu-trigger"]:not([data-chip]),
+.theme-web1995 button:where(:not([data-slot])) {
+  background: #c0c0c0;
+  color: #000000;
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--bevel-raised);
+}
+
+.theme-web1995 button[data-slot="button"]:active,
+.theme-web1995 button[data-slot="popover-trigger"]:active,
+.theme-web1995 button[data-slot="dropdown-menu-trigger"]:not([data-chip]):active,
+.theme-web1995 button[data-slot="key-button"]:active,
+.theme-web1995 button[data-slot="prompt-option"]:active,
+.theme-web1995 button:where(:not([data-slot])):active {
+  box-shadow: var(--bevel-sunken);
+}
+
+/* Title-bar buttons keep the navy bar readable. */
+.theme-web1995 .chat-header button[data-slot="button"],
+.theme-web1995 .sidebar > :first-child button[data-slot="button"] {
+  min-width: 28px;
+}
+
+.theme-web1995 button[data-slot="avatar-trigger"] {
+  border-radius: 0;
+}
+
+.theme-web1995 button[data-slot="button"]:focus-visible,
+.theme-web1995 button:where(:not([data-slot])):focus-visible {
+  outline: 1px dotted #000000;
+  outline-offset: -4px;
+}
+
+/* Sunken fields: the composer, text inputs, code. */
+.theme-web1995 .composer {
+  background: #c0c0c0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--bevel-raised);
+}
+
+.theme-web1995 .composer textarea {
+  background: #ffffff;
+  box-shadow: var(--bevel-sunken);
+  padding: 6px 8px;
+}
+
+.theme-web1995 input:where(:not([type="checkbox"])),
+.theme-web1995 [data-slot="input"] {
+  background: #ffffff;
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--bevel-sunken);
+}
+
+.theme-web1995 .md pre,
+.theme-web1995 .md :not(pre) > code {
+  background: #ffffff;
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--bevel-sunken);
+}
+
+/* Menus and dialogs as Windows 95 windows. */
+.theme-web1995 [data-slot="dropdown-menu-content"],
+.theme-web1995 [data-slot="dropdown-menu-sub-content"],
+.theme-web1995 [data-slot="popover-content"],
+.theme-web1995 [data-slot="dialog-content"] {
+  background: #c0c0c0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: var(--bevel-raised), 2px 2px 0 #000000;
+}
+
+.theme-web1995 [data-slot="dropdown-menu-item"][data-highlighted],
+.theme-web1995 [data-slot="dropdown-menu-sub-trigger"][data-highlighted],
+.theme-web1995 [data-slot="dropdown-menu-radio-item"][data-highlighted],
+.theme-web1995 [data-slot="dropdown-menu-checkbox-item"][data-highlighted] {
+  background: #000080;
+  color: #ffffff;
+}
+
+/* ── Selection: the active session, like a highlighted list item ─────── */
+.theme-web1995 [aria-current="true"],
+.theme-web1995 [aria-current="true"]:hover {
+  background: #000080;
+  color: #ffffff;
+}
+
+.theme-web1995 [aria-current="true"] * {
+  color: #ffffff;
+  border-color: #ffffff;
+}
+
+/* Messages: the user's in a white box, replies on the grey page. */
+.theme-web1995 .messages-row .bg-secondary {
+  background: #ffffff;
+  border-radius: 0;
+  box-shadow: var(--bevel-sunken);
+}
+
+.theme-web1995 .md hr {
+  border: 0;
+  height: 2px;
+  box-shadow: inset 0 1px #808080, inset 0 -1px #ffffff;
+}
+
+/* The period's footer, under the usage bars. */
+.theme-web1995 .sidebar::after {
+  content: "Best viewed with Netscape Navigator 2.0 at 800×600";
+  display: block;
+  padding: 6px 12px 10px;
+  font-size: 11px;
+  font-style: italic;
+  color: #404040;
+  text-align: center;
+}
+
+/* Hovering a session reads like hovering a link, not a selection. */
+.theme-web1995 .session-list [role="button"]:not([aria-current="true"]):hover {
+  background: transparent;
+}
+
+.theme-web1995 .session-list [role="button"]:not([aria-current="true"]):hover
+  [data-slot="session-name"] {
+  text-decoration: underline;
+}
+
+/* Usage bars as Windows 95 progress bars: navy fill in a sunken well. */
+.theme-web1995 [data-slot="usage-track"] {
+  height: 10px;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: var(--bevel-sunken);
+  padding: 2px;
+}
+
+.theme-web1995 [data-slot="usage-fill"] {
+  border-radius: 0;
+  background: #000080;
+}

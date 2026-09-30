@@ -12,6 +12,7 @@
 @import "./styles.css" layer(legacy);
 /* Unlayered: a theme's decoration overrides utilities (see the file). */
 @import "./themes.css";
+@import "./theme-retro.css";
 
 @custom-variant dark (&:is(.dark *));
 
