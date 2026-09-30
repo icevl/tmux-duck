@@ -16,6 +16,7 @@ Endpoints (all under `/api` unless stated):
   GET  /api/sessions/{wid}/models    {runtime, models[], restarts} — model picker
   POST /api/sessions/{wid}/switch-model {model?, effort?} — switch the agent's model
   GET  /api/sessions/{wid}/interactive-prompt  {prompt} — the pane's open prompt, if any
+  GET  /ca.crt                       local CA certificate for the HTTPS port (public)
   GET  /api/sessions/{wid}/diff       uncommitted diff vs HEAD + untracked list
   POST /api/sessions/{wid}/text      {text, enter?, armed_skill?}
   POST /api/sessions/{wid}/keys      {key} — Escape, Up, Down, Enter, C-c, …
@@ -2795,6 +2796,23 @@ def create_app(
             logger.info("WebSocket disconnected with error: %s", exc)
         finally:
             bus.unsubscribe(queue)
+
+    @app.get("/ca.crt", include_in_schema=False)
+    async def local_ca_certificate() -> FileResponse:
+        """The local CA behind the HTTPS port (see scripts/setup_https.sh).
+
+        Public on purpose: a CA certificate is not a secret, and a phone must
+        fetch it before it trusts the HTTPS site. Opening this URL in iOS
+        Safari offers to install it as a profile.
+        """
+        ca = config.config_dir / "tls" / "rootCA.pem"
+        if not ca.is_file():
+            raise HTTPException(404, detail="no local CA configured")
+        return FileResponse(
+            ca,
+            media_type="application/x-x509-ca-cert",
+            filename="codi-local-ca.crt",
+        )
 
     # -------------------------------------------------------------------
     # Static SPA hosting (built dist) + SPA fallback
