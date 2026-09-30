@@ -28,6 +28,8 @@ import {
   GitCommit,
   Keyboard,
   Menu,
+  Mic,
+  MicOff,
   MoreVertical,
   Paperclip,
   Pencil,
@@ -63,6 +65,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { dictationUnavailableReason, useDictation } from "@/lib/dictation";
 import { cn } from "@/lib/utils";
 
 const ICON = 16;
@@ -1079,6 +1082,7 @@ interface ComposerProps {
   onSwitchModel: (change: { model?: string; effort?: string }) => Promise<void>;
   onKey: (key: string) => void;
   onCommand: (command: string) => void;
+  onNotice: (message: string) => void;
 }
 
 // The composer owns every keystroke-hot piece of state (draft text, slash
@@ -1103,6 +1107,7 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
     onSwitchModel,
     onKey,
     onCommand,
+    onNotice,
   },
   ref,
 ) {
@@ -1129,6 +1134,27 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   const draftsRef = useRef<Record<string, string>>({});
   const prevWindowIdRef = useRef<string | null>(null);
   const textRef = useRef(text);
+
+  // Dictation appends to whatever was in the box when it started.
+  const dictationBaseRef = useRef("");
+  const dictation = useDictation({
+    onText: (spoken) => setText(dictationBaseRef.current + spoken),
+    onError: onNotice,
+  });
+  const dictationUnavailable = useMemo(dictationUnavailableReason, []);
+  const toggleDictation = () => {
+    if (dictationUnavailable) {
+      onNotice(dictationUnavailable);
+      return;
+    }
+    if (dictation.listening) {
+      dictation.stop();
+      return;
+    }
+    const current = textRef.current;
+    dictationBaseRef.current = current && !/\s$/.test(current) ? `${current} ` : current;
+    dictation.start();
+  };
   useEffect(() => {
     textRef.current = text;
   }, [text]);
@@ -1155,6 +1181,7 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
       draftsRef.current[previousWid] = textRef.current;
     }
     prevWindowIdRef.current = windowId;
+    dictation.stop();
     const restored = draftsRef.current[windowId] ?? "";
     setText(restored);
     closeSlashHints();
@@ -1340,6 +1367,7 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
       const hasAttachments = pendingAttachments.length > 0;
       if (!caption && !hasAttachments) return;
       closeSlashHints();
+      dictation.stop();
 
       // Slash-commands run only when there are no attachments — otherwise the
       // user clearly meant to upload, not invoke a bot command.
@@ -1679,6 +1707,24 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
               </KeysSection>
             </PopoverContent>
           </Popover>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={cn(
+              "text-muted-foreground",
+              dictationUnavailable && "opacity-50",
+              dictation.listening && "bg-destructive/15 text-destructive hover:bg-destructive/20",
+            )}
+            aria-label={dictation.listening ? "Stop dictation" : "Dictate"}
+            aria-pressed={dictation.listening}
+            title={
+              dictationUnavailable ??
+              (dictation.listening ? "Stop dictation" : "Dictate (speech to text)")
+            }
+            onClick={toggleDictation}
+          >
+            {dictation.listening ? <MicOff className="animate-pulse" /> : <Mic />}
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -3291,6 +3337,7 @@ export function ChatView({
         onSwitchModel={handleSwitchModel}
         onKey={onKey}
         onCommand={onCommand}
+        onNotice={(message) => showToast(message, "error")}
       />
       {showSkills && (
         <SkillsModal

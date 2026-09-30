@@ -5,6 +5,7 @@ import {
   Globe,
   LayoutGrid,
   LogOut,
+  Mic,
   Monitor,
   Moon,
   Radar,
@@ -28,7 +29,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
+import {
+  DICTATION_LANGUAGES,
+  readDictationLanguage,
+  saveDictationLanguage,
+  type DictationLanguage,
+} from "@/lib/dictation";
 import {
   isSciFi,
   RETRO_THEMES,
@@ -78,6 +85,8 @@ export function UserMenu({
   onToggleNotifications,
 }: UserMenuProps) {
   const { preference, setPreference, effects, setEffects } = useTheme();
+  const [dictationLang, setDictationLang] = useState(readDictationLanguage);
+  const dictationLabel = DICTATION_LANGUAGES.find((l) => l.value === dictationLang)?.label;
   const themeLabel = THEMES.find((t) => t.value === preference)?.label;
 
   // What the old footer icons signalled on their own now marks the avatar.
@@ -204,6 +213,33 @@ export function UserMenu({
                 </DropdownMenuCheckboxItem>
               </>
             )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Mic />
+            <span className="flex-1">Dictation</span>
+            <span className="text-xs text-muted-foreground">
+              {dictationLang === "auto" ? "Auto" : dictationLabel}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="rounded-xl p-1.5">
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              Speech language
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={dictationLang}
+              onValueChange={(v) => {
+                setDictationLang(v as DictationLanguage);
+                saveDictationLanguage(v as DictationLanguage);
+              }}
+            >
+              {DICTATION_LANGUAGES.map((l) => (
+                <DropdownMenuRadioItem key={l.value} value={l.value}>
+                  {l.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSeparator />
