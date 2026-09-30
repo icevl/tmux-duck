@@ -17,6 +17,7 @@ import logging
 import os
 import socket
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import uvicorn
@@ -60,6 +61,20 @@ class EmbeddedUvicornServer(uvicorn.Server):
         await self._serve(sockets)
 
 
+# HTTPS next to the plain-HTTP port. HTTP stays: Claude's hooks and the
+# connector approval gate call it on 127.0.0.1, and existing links keep
+# working. Browsers need HTTPS for the microphone (dictation), which is what
+# this is for; see scripts/setup_https.sh.
+WEB_UI_HTTPS_PORT = 8443
+
+
+def tls_files() -> tuple[Path, Path] | None:
+    """(cert, key) from ``<state dir>/tls/`` when both exist, else None."""
+    tls_dir = config.config_dir / "tls"
+    cert, key = tls_dir / "cert.pem", tls_dir / "key.pem"
+    return (cert, key) if cert.is_file() and key.is_file() else None
+
+
 class WebServerHandle:
     def __init__(
         self,
@@ -80,8 +95,12 @@ class WebServerHandle:
         status_tracker: SessionStatusTracker | None = None,
         attention_router: AttentionRouter | None = None,
         usage_task: asyncio.Task[None] | None = None,
+        tls_server: uvicorn.Server | None = None,
+        tls_task: asyncio.Task[None] | None = None,
     ) -> None:
         self.server = server
+        self.tls_server = tls_server
+        self.tls_task = tls_task
         self.task = task
         self.bus = bus
         self.stream_task = stream_task
@@ -227,6 +246,28 @@ async def start_web_server(
     server = EmbeddedUvicornServer(server_config)
 
     task = asyncio.create_task(server.serve(), name="codexbot-web-server")
+
+    tls_server: EmbeddedUvicornServer | None = None
+    tls_task: asyncio.Task[None] | None = None
+    tls = tls_files()
+    if tls is not None:
+        tls_server = EmbeddedUvicornServer(
+            uvicorn.Config(
+                app,
+                host=config.web_ui_host,
+                port=WEB_UI_HTTPS_PORT,
+                ssl_certfile=str(tls[0]),
+                ssl_keyfile=str(tls[1]),
+                log_level="info",
+                access_log=False,
+                loop="asyncio",
+                # The HTTP server already runs the app's startup/shutdown.
+                lifespan="off",
+            )
+        )
+        tls_task = asyncio.create_task(
+            tls_server.serve(), name="codexbot-web-server-tls"
+        )
     stream_task = asyncio.create_task(
         stream_pane_loop(bus), name="codexbot-web-pane-stream"
     )
@@ -304,6 +345,10 @@ async def start_web_server(
     logger.info(
         "Web UI listening on http://%s:%d", config.web_ui_host, config.web_ui_port
     )
+    if tls_server is not None:
+        logger.info(
+            "Web UI listening on https://%s:%d", config.web_ui_host, WEB_UI_HTTPS_PORT
+        )
 
     handle = WebServerHandle(
         server=server,
@@ -323,6 +368,8 @@ async def start_web_server(
         status_tracker=status_tracker,
         attention_router=attention_router,
         usage_task=usage_task,
+        tls_server=tls_server,
+        tls_task=tls_task,
     )
     handle.listener = listener_ref
     handle.search_listener = search_listener_ref
@@ -430,6 +477,14 @@ async def stop_web_server(monitor: SessionMonitor | None = None) -> None:
     from ..accounts import account_manager
 
     await account_manager.stop()
+    if handle.tls_server is not None and handle.tls_task is not None:
+        handle.tls_server.should_exit = True
+        try:
+            await asyncio.wait_for(
+                handle.tls_task, timeout=WEB_SHUTDOWN_TIMEOUT_SECONDS
+            )
+        except (asyncio.TimeoutError, asyncio.CancelledError, Exception):  # noqa: BLE001
+            handle.tls_task.cancel()
     handle.server.should_exit = True
     try:
         await asyncio.wait_for(handle.task, timeout=WEB_SHUTDOWN_TIMEOUT_SECONDS)
