@@ -34,8 +34,10 @@ import {
   Paperclip,
   Pencil,
   Terminal as TerminalIcon,
+  Square,
   Trash2,
   Users,
+  Volume2,
   Wrench,
   X,
 } from "lucide-react";
@@ -66,6 +68,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { dictationUnavailableReason, useDictation } from "@/lib/dictation";
+import { speak, speechSupported, stopSpeaking, useIsSpeaking } from "@/lib/speech";
 import { cn } from "@/lib/utils";
 
 const ICON = 16;
@@ -859,6 +862,36 @@ function KeyButton(props: ComponentProps<"button">) {
   );
 }
 
+// Read a reply aloud with the browser's speech synthesis.
+function SpeakButton({ id, text }: { id: string; text: string }) {
+  const speaking = useIsSpeaking(id);
+  if (!speechSupported()) return null;
+  return (
+    <button
+      type="button"
+      data-slot="speak-button"
+      aria-label={speaking ? "Stop reading" : "Read aloud"}
+      aria-pressed={speaking}
+      title={speaking ? "Stop reading" : "Read aloud"}
+      onClick={() => (speaking ? stopSpeaking() : speak(id, text))}
+      className={cn(
+        "-ml-1 inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition",
+        "hover:bg-accent hover:text-foreground",
+        // Shown on hover, while reading, and always where there is no hover.
+        speaking
+          ? "text-brand opacity-100"
+          : "opacity-0 group-hover/msg:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100",
+      )}
+    >
+      {speaking ? (
+        <Square className="size-3 fill-current" />
+      ) : (
+        <Volume2 className="size-3.5" />
+      )}
+    </button>
+  );
+}
+
 function RecapLabel({ children }: { children: string }) {
   return (
     <span className="mr-2 rounded bg-background px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-foreground/70 uppercase ring-1 ring-border">
@@ -1026,16 +1059,16 @@ const MessageBubble = memo(function MessageBubble({
         )}
       </div>
       {(kind === "user" || kind === "assistant" || kind === "thinking") && (
-        <div
-          className={cn(
-            "mt-1 flex h-4 items-center gap-2 px-1 opacity-0 transition-opacity group-hover/msg:opacity-100",
-            m.pending && "opacity-100",
+        <div className="mt-1 flex h-5 items-center gap-1.5 px-1">
+          {kind === "assistant" && !m.pending && (
+            <SpeakButton id={m._clientId} text={displayText ?? m.text} />
           )}
-        >
           {m.pending ? (
             <span className="text-[11px] text-muted-foreground">sending…</span>
           ) : (
-            time
+            <span className="opacity-0 transition-opacity group-hover/msg:opacity-100">
+              {time}
+            </span>
           )}
         </div>
       )}
@@ -2134,6 +2167,9 @@ export function ChatView({
     setChoiceSendingKey(null);
     setSearchHighlightKey(null);
   }, [session.window_id, session.session_id, session.name]);
+
+  // A reply being read aloud belongs to the session it came from.
+  useEffect(() => stopSpeaking, [session.window_id]);
 
   // The monitor announces a prompt once, when it appears; opening the session
   // later (page load, switching back) would miss it, so ask for the live one.
