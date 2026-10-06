@@ -62,3 +62,22 @@ async def test_watcher_gives_up_without_a_prompt(monkeypatch):
     ):
         assert await accept_startup_prompts("@9") is False
     send.assert_not_awaited()
+
+
+class TestResolveExecutable:
+    def test_bare_program_gets_its_absolute_path(self, monkeypatch):
+        monkeypatch.setattr(codex.shutil, "which", lambda p: f"/opt/homebrew/bin/{p}")
+        assert (
+            codex._resolve_executable("codex --no-alt-screen")
+            == "/opt/homebrew/bin/codex --no-alt-screen"
+        )
+
+    def test_explicit_path_is_kept(self, monkeypatch):
+        monkeypatch.setattr(codex.shutil, "which", lambda p: "/elsewhere/codex")
+        assert codex._resolve_executable("/usr/local/bin/codex -m x") == (
+            "/usr/local/bin/codex -m x"
+        )
+
+    def test_unknown_program_is_left_alone(self, monkeypatch):
+        monkeypatch.setattr(codex.shutil, "which", lambda p: None)
+        assert codex._resolve_executable("codex") == "codex"

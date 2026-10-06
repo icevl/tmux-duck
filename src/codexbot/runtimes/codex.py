@@ -13,6 +13,7 @@ import asyncio
 import logging
 import re
 import shlex
+import shutil
 
 from ..config import config
 
@@ -84,6 +85,23 @@ async def accept_startup_prompts(window_id: str) -> bool:
     return False
 
 
+def _resolve_executable(command: str) -> str:
+    """Pin the command's program to the absolute path it resolves to now.
+
+    The start command is typed into a pane whose shell may have run an older
+    `codex` before: zsh caches command paths, so after an upgrade that puts
+    the new CLI earlier on PATH, a long-lived pane keeps launching the old
+    binary ("requires a newer version of Codex"). An absolute path skips it.
+    """
+    program, sep, rest = command.strip().partition(" ")
+    if not program or "/" in program:
+        return command
+    resolved = shutil.which(program)
+    if resolved is None:
+        return command
+    return f"{shlex.quote(resolved)}{sep}{rest}"
+
+
 def _strip_approval_flags(command: str) -> str:
     """Remove bypass/approval/sandbox flags so we can set our own policy."""
     try:
@@ -124,7 +142,7 @@ class CodexRuntime:
         hooks_settings_path: str | None = None,
         system_prompt: str | None = None,  # not a Codex CLI flag; injected per-message
     ) -> str:
-        cmd = config.codex_command
+        cmd = _resolve_executable(config.codex_command)
         if approval_gate:
             # Strip any bypass/yolo flag (it would silence approvals) and pin
             # the native "untrusted" policy: trusted reads (ls/cat/sed/…) run

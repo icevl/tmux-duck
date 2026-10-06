@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from codexbot import model_switch
+from codexbot.runtimes import codex as codex_runtime
 from codexbot.model_switch import (
     ModelSwitchError,
     codex_restart_command,
@@ -66,6 +67,7 @@ class TestCatalog:
 
 class TestCodexRestartCommand:
     def test_resumes_with_model_and_effort(self, monkeypatch):
+        monkeypatch.setattr(codex_runtime.shutil, "which", lambda _p: None)
         monkeypatch.setattr(
             model_switch.config, "codex_command", "codex --no-alt-screen"
         )
@@ -96,6 +98,7 @@ class TestSwitch:
 
     @pytest.mark.asyncio
     async def test_codex_quits_then_relaunches(self, monkeypatch):
+        monkeypatch.setattr(codex_runtime.shutil, "which", lambda _p: None)
         monkeypatch.setattr(model_switch.config, "codex_command", "codex")
         panes = iter(["codex", "zsh"])
         find = AsyncMock(side_effect=lambda _wid: _window(next(panes)))
