@@ -203,49 +203,84 @@ class ClaudeRuntime:
         return cmd.startswith("claude") or bool(_RE_CLAUDE_VERSION_TITLE.match(cmd))
 
 
+# Every detection loop for a window (session creation, the monitor's rebind
+# probe, …) may try to answer the same startup prompt. Answers are therefore
+# serialised per window and throttled across loops: two loops pressing keys
+# at once once moved the cursor back onto "No, exit" and confirmed it.
+_STARTUP_LOCKS: dict[str, asyncio.Lock] = {}
+_STARTUP_LAST_ACTION: dict[tuple[str, str], float] = {}
+# Seconds a just-answered prompt is left alone for the TUI to move on.
+STARTUP_ACTION_COOLDOWN = 2.0
+
+
 async def _maybe_advance_startup_prompt(
     window_id: str,
     *,
-    last_action_at: dict[str, float],
+    last_action_at: dict[str, float] | None = None,  # kept for callers; unused
 ) -> None:
     """Accept the Claude startup prompts that block session creation.
 
     Only the prompts shown before Claude starts its working session:
       - the bypass-permissions warning (accept),
       - the workspace trust prompt (trust the folder).
-    The cursor is moved onto the "Yes" row before Enter, since the default row
-    is "No, exit" in some versions.
+    The cursor is moved onto the "Yes" row and the screen re-read before
+    Enter: Enter is only pressed with the cursor provably on "Yes", since
+    the default row is "No, exit" in some versions.
     """
-    window = await tmux_manager.find_window_by_id(window_id)
-    if not window:
-        return
-    if window.pane_current_command.lower() in _SHELL_COMMANDS:
-        return
-
-    pane_text = await tmux_manager.capture_pane(window_id)
-    if not pane_text:
-        return
-
-    prompt = _startup_prompt(pane_text)
-    if prompt is None:
-        return
-    action, keys = prompt
-
-    now = time.monotonic()
-    if now - last_action_at.get(action, 0.0) < 2.0:
-        return
-
-    for index, key in enumerate(keys):
-        if index:
-            await asyncio.sleep(0.2)
-        if not await tmux_manager.send_keys(window_id, key, enter=False, literal=False):
+    del last_action_at
+    lock = _STARTUP_LOCKS.setdefault(window_id, asyncio.Lock())
+    async with lock:
+        window = await tmux_manager.find_window_by_id(window_id)
+        if not window:
             return
-    last_action_at[action] = now
-    logger.info(
-        "auto-advanced claude startup prompt window=%s action=%s",
-        window_id,
-        action,
-    )
+        if window.pane_current_command.lower() in _SHELL_COMMANDS:
+            return
+
+        pane_text = await tmux_manager.capture_pane(window_id)
+        if not pane_text:
+            return
+        prompt = _startup_prompt(pane_text)
+        if prompt is None:
+            return
+        action, keys = prompt
+
+        now = time.monotonic()
+        if (
+            now - _STARTUP_LAST_ACTION.get((window_id, action), 0.0)
+            < STARTUP_ACTION_COOLDOWN
+        ):
+            return
+
+        moves = keys[:-1]
+        for key in moves:
+            if not await tmux_manager.send_keys(
+                window_id, key, enter=False, literal=False
+            ):
+                return
+            await asyncio.sleep(0.15)
+        if moves:
+            # Confirm the cursor landed on "Yes" before committing.
+            await asyncio.sleep(0.15)
+            pane_text = await tmux_manager.capture_pane(window_id)
+            confirm = _startup_prompt(pane_text) if pane_text else None
+            if confirm is None or confirm[1] != ["Enter"]:
+                logger.warning(
+                    "claude startup prompt cursor not on Yes; not confirming "
+                    "window=%s action=%s",
+                    window_id,
+                    action,
+                )
+                return
+        if not await tmux_manager.send_keys(
+            window_id, "Enter", enter=False, literal=False
+        ):
+            return
+        _STARTUP_LAST_ACTION[(window_id, action)] = time.monotonic()
+        logger.info(
+            "auto-advanced claude startup prompt window=%s action=%s",
+            window_id,
+            action,
+        )
 
 
 def _keys_to_accept(pane_text: str) -> list[str] | None:
