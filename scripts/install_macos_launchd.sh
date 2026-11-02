@@ -56,7 +56,9 @@ mkdir -p "${PLIST_DIR}" "${LOG_DIR}"
 if [ -d "${PROJECT_DIR}/web-ui" ]; then
     if [ -n "${PNPM_BIN}" ]; then
         echo "Building web UI bundle with pnpm…"
-        (cd "${PROJECT_DIR}/web-ui" && "${PNPM_BIN}" install --frozen-lockfile && "${PNPM_BIN}" run build)
+        # CI=true: non-interactive — without a TTY (self-update, launchd,
+        # agents) pnpm otherwise aborts when it wants to rebuild node_modules.
+        (cd "${PROJECT_DIR}/web-ui" && CI=true "${PNPM_BIN}" install --frozen-lockfile && "${PNPM_BIN}" run build)
     else
         echo "pnpm not found — skipping web UI build. Install with: brew install pnpm"
         echo "Then run: cd ${PROJECT_DIR}/web-ui && pnpm install && pnpm build"

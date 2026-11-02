@@ -124,8 +124,9 @@ def claude_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     from codexbot.web import usage as usage_mod
 
     monkeypatch.setattr(config, "claude_projects_path", root)
-    # Tests must never touch the Keychain or the network.
-    monkeypatch.setattr(usage_mod, "read_claude_limits", lambda: None)
+    # Tests must never touch the Keychain, the network or real profiles.
+    monkeypatch.setattr(usage_mod, "read_claude_limits", lambda *_a: None)
+    monkeypatch.setattr(usage_mod, "_claude_profiles", lambda: [("", root, None)])
     return root
 
 
@@ -197,7 +198,11 @@ def test_claude_missing_root_returns_none(
 ) -> None:
     from codexbot.config import config
 
-    monkeypatch.setattr(config, "claude_projects_path", tmp_path / "missing")
+    from codexbot.web import usage as usage_mod
+
+    missing = tmp_path / "missing"
+    monkeypatch.setattr(config, "claude_projects_path", missing)
+    monkeypatch.setattr(usage_mod, "_claude_profiles", lambda: [("", missing, None)])
     assert UsageCollector().snapshot()["claude"] is None
 
 
@@ -263,7 +268,58 @@ def test_claude_snapshot_includes_limits(
         "five_hour": {"used_percent": 42.0, "resets_at": now + 1000},
         "seven_day": {"used_percent": 16.0, "resets_at": now + 90000},
     }
-    monkeypatch.setattr(usage_mod, "read_claude_limits", lambda: limits)
+    monkeypatch.setattr(usage_mod, "read_claude_limits", lambda *_a: limits)
     snap = UsageCollector().snapshot()
     assert snap["claude"]["limits"] == limits
     assert snap["claude"]["today"]["input"] == 100
+
+
+# ── Per-account usage ────────────────────────────────────────────────────────
+
+
+def test_keychain_service_per_account() -> None:
+    from codexbot.web.usage import claude_keychain_service
+
+    assert claude_keychain_service(None) == "Claude Code-credentials"
+    # Claude Code suffixes the first 8 hex digits of SHA-256(config dir).
+    assert (
+        claude_keychain_service("/Users/mike/.codexbot/profiles/tunio")
+        == "Claude Code-credentials-b6b9740e"
+    )
+
+
+def test_each_account_counts_its_own_transcripts_and_limits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codexbot.web import usage as usage_mod
+
+    now = time.time()
+    main = tmp_path / "main" / "projects"
+    other_home = tmp_path / "profiles" / "a2"
+    other = other_home / "projects"
+    for root, (mid, tokens) in ((main, ("m1", 100)), (other, ("o1", 7))):
+        (root / "-p").mkdir(parents=True)
+        (root / "-p" / "s.jsonl").write_text(
+            _usage_line(mid, now - 60, tokens, 1) + "\n"
+        )
+    monkeypatch.setattr(
+        usage_mod,
+        "_claude_profiles",
+        lambda: [("", main, None), ("a2", other, str(other_home))],
+    )
+    asked: list[str | None] = []
+
+    def fake_limits(config_dir: str | None = None) -> dict:
+        asked.append(config_dir)
+        pct = 10.0 if config_dir is None else 90.0
+        return {"five_hour": {"used_percent": pct, "resets_at": now}, "seven_day": None}
+
+    monkeypatch.setattr(usage_mod, "read_claude_limits", fake_limits)
+    snap = UsageCollector().snapshot()
+
+    accounts = snap["claude_accounts"]
+    assert accounts[""]["today"]["input"] == 100
+    assert accounts["a2"]["today"]["input"] == 7
+    assert accounts["a2"]["limits"]["five_hour"]["used_percent"] == 90.0
+    assert snap["claude"] == accounts[""]  # the default account, as before
+    assert sorted(asked, key=str) == sorted([None, str(other_home)], key=str)

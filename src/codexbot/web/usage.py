@@ -23,6 +23,7 @@ render. Work is skipped entirely while no web client is attached.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import subprocess
@@ -182,7 +183,19 @@ def _token_from_creds_json(raw: str) -> str | None:
     return token if isinstance(token, str) and token else None
 
 
-def _claude_oauth_token() -> str | None:
+def claude_keychain_service(config_dir: str | None) -> str:
+    """Claude Code's Keychain item for an account's config dir.
+
+    The default account uses the bare service name; with CLAUDE_CONFIG_DIR
+    Claude Code appends the first 8 hex digits of SHA-256(config dir).
+    """
+    if not config_dir:
+        return CLAUDE_KEYCHAIN_SERVICE
+    digest = hashlib.sha256(config_dir.encode()).hexdigest()[:8]
+    return f"{CLAUDE_KEYCHAIN_SERVICE}-{digest}"
+
+
+def _claude_oauth_token(config_dir: str | None = None) -> str | None:
     if sys.platform == "darwin":
         try:
             proc = subprocess.run(
@@ -190,7 +203,7 @@ def _claude_oauth_token() -> str | None:
                     "security",
                     "find-generic-password",
                     "-s",
-                    CLAUDE_KEYCHAIN_SERVICE,
+                    claude_keychain_service(config_dir),
                     "-w",
                 ],
                 capture_output=True,
@@ -203,8 +216,13 @@ def _claude_oauth_token() -> str | None:
             token = _token_from_creds_json(proc.stdout.strip())
             if token:
                 return token
+    creds_file = (
+        Path(config_dir) / ".credentials.json"
+        if config_dir
+        else CLAUDE_CREDENTIALS_FILE
+    )
     try:
-        return _token_from_creds_json(CLAUDE_CREDENTIALS_FILE.read_text())
+        return _token_from_creds_json(creds_file.read_text())
     except OSError:
         return None
 
@@ -241,9 +259,9 @@ def _parse_oauth_usage(data: Any) -> dict[str, Any] | None:
     return {"five_hour": five_hour, "seven_day": seven_day}
 
 
-def read_claude_limits() -> dict[str, Any] | None:
+def read_claude_limits(config_dir: str | None = None) -> dict[str, Any] | None:
     """Account-wide Claude limit percentages, or None (degrade to tokens)."""
-    token = _claude_oauth_token()
+    token = _claude_oauth_token(config_dir)
     if not token:
         return None
     try:
@@ -284,23 +302,45 @@ def _zero_totals() -> dict[str, int]:
     return {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
 
 
+@dataclass
+class _ClaudeAccount:
+    """Usage state for one Claude account (profile)."""
+
+    projects_root: Path
+    config_dir: str | None  # None = the default account
+    files: dict[str, _FileCache] = field(default_factory=dict)
+    updated_at: float | None = None
+    limits: dict[str, Any] | None = None
+    limits_at: float = 0.0
+
+
+def _claude_profiles() -> list[tuple[str, Path, str | None]]:
+    """(profile id, projects dir, config dir) for every Claude account."""
+    from ..profiles import profile_store
+
+    return [
+        (p.id, p.claude_projects_path, p.home) for p in profile_store.list("claude")
+    ]
+
+
 class UsageCollector:
     """Builds the combined usage snapshot; safe to call from any thread."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._claude_files: dict[str, _FileCache] = {}
-        self._claude_updated_at: float | None = None
-        # TTL cache for the official-limits fetch so concurrent REST hits and
-        # the publisher loop don't multiply network calls.
-        self._claude_limits: dict[str, Any] | None = None
-        self._claude_limits_at = 0.0
+        # Per Claude account (profile id; "" = default): transcript caches and
+        # a TTL cache for the official-limits fetch, so concurrent REST hits
+        # and the publisher loop don't multiply network calls.
+        self._claude_accounts: dict[str, _ClaudeAccount] = {}
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
+            accounts = self._claude_all()
             return {
                 "codex": self._codex_safe(),
-                "claude": self._claude_safe(),
+                # The default account, as before; per account below.
+                "claude": accounts.get(""),
+                "claude_accounts": accounts,
             }
 
     # -- codex -----------------------------------------------------------
@@ -314,15 +354,29 @@ class UsageCollector:
 
     # -- claude ----------------------------------------------------------
 
-    def _claude_safe(self) -> dict[str, Any] | None:
+    def _claude_all(self) -> dict[str, dict[str, Any] | None]:
         try:
-            return self._claude()
+            profiles = _claude_profiles()
         except Exception:  # noqa: BLE001
-            logger.exception("usage: claude aggregation failed")
-            return None
+            logger.exception("usage: listing claude accounts failed")
+            profiles = [("", config.claude_projects_path, None)]
+        result: dict[str, dict[str, Any] | None] = {}
+        for profile_id, root, config_dir in profiles:
+            account = self._claude_accounts.get(profile_id)
+            if account is None or account.projects_root != root:
+                account = _ClaudeAccount(projects_root=root, config_dir=config_dir)
+                self._claude_accounts[profile_id] = account
+            try:
+                result[profile_id] = self._claude(account)
+            except Exception:  # noqa: BLE001
+                logger.exception("usage: claude aggregation failed (%s)", profile_id)
+                result[profile_id] = None
+        for gone in set(self._claude_accounts) - set(result):
+            del self._claude_accounts[gone]
+        return result
 
-    def _claude(self) -> dict[str, Any] | None:
-        root = config.claude_projects_path
+    def _claude(self, account: _ClaudeAccount) -> dict[str, Any] | None:
+        root = account.projects_root
         if not root.is_dir():
             return None
         now = time.time()
@@ -335,14 +389,14 @@ class UsageCollector:
                 continue
             key = str(f)
             if st.st_mtime < cutoff:
-                self._claude_files.pop(key, None)
+                account.files.pop(key, None)
                 continue
             seen_recent = True
-            if self._claude_updated_at is None or st.st_mtime > self._claude_updated_at:
-                self._claude_updated_at = st.st_mtime
-            self._ingest(f, key, st.st_size)
+            if account.updated_at is None or st.st_mtime > account.updated_at:
+                account.updated_at = st.st_mtime
+            self._ingest(account, f, key, st.st_size)
 
-        if not seen_recent and not self._claude_files:
+        if not seen_recent and not account.files:
             # No recent activity — still show a zero row if Claude is set up
             # on this machine at all (any project dir exists).
             try:
@@ -361,7 +415,7 @@ class UsageCollector:
         today = _zero_totals()
         last_5h = _zero_totals()
         keys = ("input", "output", "cache_read", "cache_creation")
-        for cache in self._claude_files.values():
+        for cache in account.files.values():
             stale = [h for h in cache.buckets if (h + 1) * 3600 < cutoff]
             for h in stale:
                 del cache.buckets[h]
@@ -374,22 +428,22 @@ class UsageCollector:
                     for k, v in zip(keys, vals):
                         last_5h[k] += v
 
-        if now - self._claude_limits_at >= CLAUDE_LIMITS_TTL_SECONDS:
-            self._claude_limits = read_claude_limits()
-            self._claude_limits_at = now
+        if now - account.limits_at >= CLAUDE_LIMITS_TTL_SECONDS:
+            account.limits = read_claude_limits(account.config_dir)
+            account.limits_at = now
 
         return {
             "today": today,
             "last_5h": last_5h,
-            "limits": self._claude_limits,
-            "updated_at": self._claude_updated_at,
+            "limits": account.limits,
+            "updated_at": account.updated_at,
         }
 
-    def _ingest(self, path: Path, key: str, size: int) -> None:
-        cache = self._claude_files.get(key)
+    def _ingest(self, account: _ClaudeAccount, path: Path, key: str, size: int) -> None:
+        cache = account.files.get(key)
         if cache is None or size < cache.offset:
             cache = _FileCache()  # new file, or truncated/rotated — reparse
-            self._claude_files[key] = cache
+            account.files[key] = cache
         if size == cache.offset:
             return
         try:

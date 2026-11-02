@@ -285,7 +285,11 @@ export function Sidebar({
       });
     const unsub = subscribeWs((event) => {
       if (event.type === "agent_usage") {
-        setUsage({ codex: event.codex, claude: event.claude });
+        setUsage({
+          codex: event.codex,
+          claude: event.claude,
+          claude_accounts: event.claude_accounts,
+        });
       }
     });
     return () => {
@@ -339,6 +343,12 @@ export function Sidebar({
     : notificationPermission === "denied"
     ? "Notifications are blocked in this browser"
     : "Enable browser notifications";
+
+  // Limits of the account whose sessions are listed. Codex has one (the
+  // default) account, so its row shows under Main only.
+  const claudeUsage =
+    usage?.claude_accounts?.[namespace] ?? (namespace === "" ? usage?.claude : null);
+  const codexUsage = namespace === "" ? usage?.codex : null;
 
   const moveSession = (
     sourceId: string,
@@ -672,53 +682,53 @@ export function Sidebar({
         )}
       </div>
       {searchEnabled !== false && <SearchStatusFooter status={searchStatus} />}
-      {(usage?.codex?.primary || usage?.claude) && (
+      {(codexUsage?.primary || claudeUsage) && (
         <div className="flex shrink-0 flex-col gap-1.5 border-t border-sidebar-border px-4 py-3 text-xs">
-          {usage?.codex?.primary && (
+          {codexUsage?.primary && (
             <UsageRow
               agent="Codex"
-              percent={usage.codex.primary.used_percent}
-              text={`${Math.round(usage.codex.primary.used_percent)}% 5h${
-                usage.codex.secondary
-                  ? ` · ${Math.round(usage.codex.secondary.used_percent)}% wk`
+              percent={codexUsage.primary.used_percent}
+              text={`${Math.round(codexUsage.primary.used_percent)}% 5h${
+                codexUsage.secondary
+                  ? ` · ${Math.round(codexUsage.secondary.used_percent)}% wk`
                   : ""
               }`}
-              title={`5h window resets ${fmtReset(usage.codex.primary.resets_at)}${
-                usage.codex.secondary
-                  ? ` · weekly resets ${fmtReset(usage.codex.secondary.resets_at)}`
+              title={`5h window resets ${fmtReset(codexUsage.primary.resets_at)}${
+                codexUsage.secondary
+                  ? ` · weekly resets ${fmtReset(codexUsage.secondary.resets_at)}`
                   : ""
               }`}
             />
           )}
-          {usage?.claude?.limits?.five_hour ? (
+          {claudeUsage?.limits?.five_hour ? (
             // Official account-wide percentages (matches the console).
             <UsageRow
               agent="Claude"
-              percent={usage.claude.limits.five_hour.used_percent}
-              text={`${Math.round(usage.claude.limits.five_hour.used_percent)}% 5h${
-                usage.claude.limits.seven_day
-                  ? ` · ${Math.round(usage.claude.limits.seven_day.used_percent)}% wk`
+              percent={claudeUsage.limits.five_hour.used_percent}
+              text={`${Math.round(claudeUsage.limits.five_hour.used_percent)}% 5h${
+                claudeUsage.limits.seven_day
+                  ? ` · ${Math.round(claudeUsage.limits.seven_day.used_percent)}% wk`
                   : ""
               }`}
-              title={`5h window resets ${fmtReset(usage.claude.limits.five_hour.resets_at)}${
-                usage.claude.limits.seven_day
-                  ? ` · weekly resets ${fmtReset(usage.claude.limits.seven_day.resets_at)}`
+              title={`5h window resets ${fmtReset(claudeUsage.limits.five_hour.resets_at)}${
+                claudeUsage.limits.seven_day
+                  ? ` · weekly resets ${fmtReset(claudeUsage.limits.seven_day.resets_at)}`
                   : ""
-              } · this Mac today: ${fmtTokens(usage.claude.today.input)} in / ${fmtTokens(
-                usage.claude.today.output,
+              } · this Mac today: ${fmtTokens(claudeUsage.today.input)} in / ${fmtTokens(
+                claudeUsage.today.output,
               )} out`}
             />
-          ) : usage?.claude ? (
+          ) : claudeUsage ? (
             // Fallback: local token counters (this machine only).
             <UsageRow
               agent="Claude"
               percent={null}
-              text={`today ${fmtTokens(usage.claude.today.input)} in · ${fmtTokens(
-                usage.claude.today.output,
+              text={`today ${fmtTokens(claudeUsage.today.input)} in · ${fmtTokens(
+                claudeUsage.today.output,
               )} out`}
               title={`This Mac only. Last 5h: ${fmtTokens(
-                usage.claude.last_5h.input,
-              )} in / ${fmtTokens(usage.claude.last_5h.output)} out`}
+                claudeUsage.last_5h.input,
+              )} in / ${fmtTokens(claudeUsage.last_5h.output)} out`}
             />
           ) : null}
         </div>

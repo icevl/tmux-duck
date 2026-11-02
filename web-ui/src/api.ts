@@ -45,7 +45,10 @@ export interface ClaudeUsage {
 
 export interface AgentUsageSnapshot {
   codex: CodexUsage | null;
+  /** The default Claude account. */
   claude: ClaudeUsage | null;
+  /** Every Claude account by profile id ("" = default); older servers omit it. */
+  claude_accounts?: Record<string, ClaudeUsage | null>;
 }
 
 export interface SessionSummary {
@@ -1072,6 +1075,7 @@ export type WsEvent =
       type: "agent_usage";
       codex: CodexUsage | null;
       claude: ClaudeUsage | null;
+      claude_accounts?: Record<string, ClaudeUsage | null>;
       ts: number;
       seq?: number;
     }
