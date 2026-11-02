@@ -57,6 +57,31 @@ function storeNamespace(value: string): void {
   }
 }
 
+// The session last open in each account namespace, so switching back to an
+// account reopens it: `{ "<namespace>": "<window_id>" }`.
+const NAMESPACE_SESSIONS_KEY = "codexbot.namespaceSessions";
+
+function readNamespaceSessions(): Record<string, string> {
+  try {
+    const raw = window.localStorage.getItem(NAMESPACE_SESSIONS_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberNamespaceSession(namespace: string, windowId: string): void {
+  try {
+    const all = readNamespaceSessions();
+    if (all[namespace] === windowId) return;
+    all[namespace] = windowId;
+    window.localStorage.setItem(NAMESPACE_SESSIONS_KEY, JSON.stringify(all));
+  } catch {
+    // Blocked storage: switching just falls back to the first session.
+  }
+}
+
 // Per-topic open-state for the side panels lives in localStorage so
 // reopening the app restores which panels each session had visible. The
 // stored shape is sparse: `{ "<windowId>": { diff?, office?, term? } }`
@@ -517,9 +542,13 @@ export function App() {
       setSessions(r.sessions);
       setActiveId((prev) => {
         if (prev && r.sessions.some((s) => s.window_id === prev)) return prev;
-        const sameNamespace = r.sessions.find(
-          (s) => (s.profile ?? "") === namespaceRef.current,
+        const ns = namespaceRef.current;
+        const remembered = readNamespaceSessions()[ns];
+        const reopen = r.sessions.find(
+          (s) => s.window_id === remembered && (s.profile ?? "") === ns,
         );
+        if (reopen) return reopen.window_id;
+        const sameNamespace = r.sessions.find((s) => (s.profile ?? "") === ns);
         return sameNamespace?.window_id ?? null;
       });
     } catch (err) {
@@ -786,6 +815,12 @@ export function App() {
       setActiveId((prev) => {
         const current = sessions.find((s) => s.window_id === prev);
         if (current && (current.profile ?? "") === next) return prev;
+        // Reopen the session last open in that account, if it still exists.
+        const remembered = readNamespaceSessions()[next];
+        const reopen = sessions.find(
+          (s) => s.window_id === remembered && (s.profile ?? "") === next,
+        );
+        if (reopen) return reopen.window_id;
         return sessions.find((s) => (s.profile ?? "") === next)?.window_id ?? null;
       });
     },
@@ -798,6 +833,7 @@ export function App() {
     const active = sessions.find((s) => s.window_id === activeId);
     if (!active) return;
     const owner = active.profile ?? "";
+    rememberNamespaceSession(owner, active.window_id);
     if (owner !== namespaceRef.current) {
       setNamespace(owner);
       storeNamespace(owner);
