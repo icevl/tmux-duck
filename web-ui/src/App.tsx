@@ -37,6 +37,7 @@ import { Toast } from "./components/Toast";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { DuckLogo } from "./components/DuckLogo";
 import type { SearchHitTarget } from "./components/SessionSearch";
+import { useIsNarrow } from "./lib/useIsNarrow";
 
 type AuthState = "loading" | "anon" | "authed";
 
@@ -200,23 +201,6 @@ const PANEL_COLUMN_STYLE: CSSProperties = {
   flexDirection: "column",
   overflow: "hidden",
 };
-
-// 760px matches the @media break in styles.css that turns side panels
-// into fixed-overlay drawers. Above it the panels live inside a resizable
-// PanelGroup; at-or-below it we render them as overlays instead.
-function useIsNarrow(): boolean {
-  const [narrow, setNarrow] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia("(max-width: 760px)").matches;
-  });
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 760px)");
-    const handler = (e: MediaQueryListEvent) => setNarrow(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-  return narrow;
-}
 
 // Window-id-as-URL routing: paths like `/t/<window_id>` activate that
 // session on direct load and survive browser back/forward navigation.

@@ -1,5 +1,6 @@
 import {
   Bell,
+  ChevronDown,
   BellOff,
   Binary,
   Globe,
@@ -31,7 +32,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { Fragment, useState } from "react";
+import { Fragment, useState, type ReactNode } from "react";
+import { useIsNarrow } from "@/lib/useIsNarrow";
 import { applyTextSize, readTextSize, TEXT_SIZES, type TextSize } from "@/lib/textSize";
 import {
   DICTATION_LANGUAGES,
@@ -77,6 +79,44 @@ interface UserMenuProps {
   onToggleNotifications: () => void;
 }
 
+interface MenuSectionProps {
+  id: string;
+  narrow: boolean;
+  openId: string | null;
+  onOpenChange: (id: string | null) => void;
+  trigger: ReactNode;
+  children: ReactNode;
+}
+
+// A submenu: a flyout beside the menu on desktop; on a phone, where the menu
+// already spans the screen, it expands in place under its row (one at a time).
+function MenuSection({ id, narrow, openId, onOpenChange, trigger, children }: MenuSectionProps) {
+  if (!narrow) {
+    return (
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger>{trigger}</DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="rounded-xl p-1.5">{children}</DropdownMenuSubContent>
+      </DropdownMenuSub>
+    );
+  }
+  const open = openId === id;
+  return (
+    <>
+      <DropdownMenuItem
+        aria-expanded={open}
+        onSelect={(e) => {
+          e.preventDefault();
+          onOpenChange(open ? null : id);
+        }}
+      >
+        {trigger}
+        <ChevronDown className={cn("transition-transform", open && "rotate-180")} />
+      </DropdownMenuItem>
+      {open && <div className="mb-1 ml-4 border-l pl-1">{children}</div>}
+    </>
+  );
+}
+
 // Avatar button in the sidebar header with the app menu.
 export function UserMenu({
   missionActive,
@@ -93,6 +133,9 @@ export function UserMenu({
   const { preference, setPreference, effects, setEffects } = useTheme();
   const [dictationLang, setDictationLang] = useState(readDictationLanguage);
   const [textSize, setTextSize] = useState(readTextSize);
+  // Phones: submenus expand inline (no room beside the menu for a flyout).
+  const narrow = useIsNarrow();
+  const [openSection, setOpenSection] = useState<string | null>(null);
   const dictationLabel = DICTATION_LANGUAGES.find((l) => l.value === dictationLang)?.label;
   const themeLabel = THEMES.find((t) => t.value === preference)?.label;
 
@@ -104,7 +147,7 @@ export function UserMenu({
       : null;
 
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} onOpenChange={(open) => !open && setOpenSection(null)}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -177,16 +220,22 @@ export function UserMenu({
             </span>
           )}
         </DropdownMenuItem>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            {(() => {
-              const Icon = THEMES.find((t) => t.value === preference)?.icon ?? Monitor;
-              return <Icon />;
-            })()}
-            <span className="flex-1">Theme</span>
-            <span className="text-xs text-muted-foreground">{themeLabel}</span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="rounded-xl p-1.5">
+        <MenuSection
+          id="theme"
+          narrow={narrow}
+          openId={openSection}
+          onOpenChange={setOpenSection}
+          trigger={
+            <>
+                {(() => {
+                  const Icon = THEMES.find((t) => t.value === preference)?.icon ?? Monitor;
+                  return <Icon />;
+                })()}
+                <span className="flex-1">Theme</span>
+                <span className="text-xs text-muted-foreground">{themeLabel}</span>
+            </>
+          }
+        >
             <DropdownMenuRadioGroup
               value={preference}
               onValueChange={(v) => setPreference(v as ThemePreference)}
@@ -222,17 +271,22 @@ export function UserMenu({
                 </DropdownMenuCheckboxItem>
               </>
             )}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <Type />
-            <span className="flex-1">Text size</span>
-            <span className="text-xs text-muted-foreground">
-              {TEXT_SIZES.find((s) => s.value === textSize)?.label}
-            </span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="rounded-xl p-1.5">
+        </MenuSection>
+        <MenuSection
+          id="text-size"
+          narrow={narrow}
+          openId={openSection}
+          onOpenChange={setOpenSection}
+          trigger={
+            <>
+                <Type />
+                <span className="flex-1">Text size</span>
+                <span className="text-xs text-muted-foreground">
+                  {TEXT_SIZES.find((s) => s.value === textSize)?.label}
+                </span>
+            </>
+          }
+        >
             <DropdownMenuRadioGroup
               value={textSize}
               onValueChange={(v) => {
@@ -250,17 +304,22 @@ export function UserMenu({
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <Mic />
-            <span className="flex-1">Dictation</span>
-            <span className="text-xs text-muted-foreground">
-              {dictationLang === "auto" ? "Auto" : dictationLabel}
-            </span>
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="rounded-xl p-1.5">
+        </MenuSection>
+        <MenuSection
+          id="dictation"
+          narrow={narrow}
+          openId={openSection}
+          onOpenChange={setOpenSection}
+          trigger={
+            <>
+                <Mic />
+                <span className="flex-1">Dictation</span>
+                <span className="text-xs text-muted-foreground">
+                  {dictationLang === "auto" ? "Auto" : dictationLabel}
+                </span>
+            </>
+          }
+        >
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
               Speech language
             </DropdownMenuLabel>
@@ -277,8 +336,7 @@ export function UserMenu({
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
+        </MenuSection>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onLogout}>
           <LogOut />
