@@ -1002,6 +1002,53 @@ button.burger {
   overflow-anchor: none;
 }
 
+/* Last-request tab: liquid glass floating over the bottom of the feed, sitting
+   on the composer's top edge, so the conversation scrolls visibly behind it. */
+.last-request-tab {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  z-index: 5;
+  width: min(848px, calc(100% - 68px));
+  transform: translateX(-50%);
+  color: var(--muted-foreground);
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--card) 62%, transparent),
+    color-mix(in oklab, var(--card) 38%, transparent)
+  );
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: blur(16px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white 45%, transparent),
+    inset 0 0 12px color-mix(in oklab, white 6%, transparent),
+    0 -8px 24px -12px var(--shadow-color);
+}
+
+.dark .last-request-tab {
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, white 14%, transparent),
+    inset 0 0 14px color-mix(in oklab, white 4%, transparent),
+    0 -8px 24px -12px var(--shadow-color);
+}
+
+.has-request-tab .messages {
+  padding-bottom: 40px;
+}
+
+.has-request-tab .scroll-to-latest {
+  bottom: 52px;
+}
+
+@media (max-width: 760px) {
+  .last-request-tab {
+    width: calc(100% - 48px);
+  }
+}
+
 .messages-list {
   display: flex;
   flex-direction: column;

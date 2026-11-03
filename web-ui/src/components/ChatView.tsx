@@ -3113,7 +3113,9 @@ export function ChatView({
         </DropdownMenu>
       </header>
 
-      <div className="messages-wrapper">
+      <div
+        className={cn("messages-wrapper", (lastRequest || session.recap) && "has-request-tab")}
+      >
         <div className="messages" ref={scrollerRef} onScroll={handleScroll}>
         {messages.length === 0 ? (
           historyLoaded ? (
@@ -3303,6 +3305,51 @@ export function ChatView({
             <ChevronDown size={24} />
           </button>
         )}
+        {(lastRequest || session.recap) && (
+          <div
+            data-slot="last-request"
+            className="last-request-tab flex items-start gap-1 px-1 text-xs"
+          >
+            <button
+              type="button"
+              data-slot="last-request-toggle"
+              className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 px-2 py-1.5 text-left transition-colors hover:text-foreground"
+              onClick={() => setRecapOpen((v) => !v)}
+              aria-expanded={recapOpen}
+              title={recapOpen ? "Collapse" : "What you last asked for"}
+            >
+              {lastRequest && (
+                <span
+                  className={cn(
+                    "min-w-0",
+                    recapOpen
+                      ? "max-h-40 overflow-y-auto break-words whitespace-pre-wrap"
+                      : "truncate",
+                  )}
+                >
+                  <RecapLabel>Last request</RecapLabel>
+                  {lastRequest}
+                </span>
+              )}
+              {session.recap && (recapOpen || !lastRequest) && (
+                <span className={cn("min-w-0", !recapOpen && "truncate")}>
+                  <RecapLabel>Recap</RecapLabel>
+                  {session.recap}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              data-slot="last-request-history"
+              className="mt-1 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-background hover:text-foreground"
+              onClick={onToggleRequests}
+              aria-label="All requests in this session"
+              title="All requests in this session"
+            >
+              <History className="size-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {interactivePrompt && (
@@ -3356,54 +3403,6 @@ export function ChatView({
         </div>
       )}
 
-      {(lastRequest || session.recap) && (
-        <div
-          data-slot="last-request"
-          className={cn(
-            "mx-auto flex w-[calc(100%-68px)] max-w-[848px] items-start gap-1 rounded-t-xl border border-b-0 bg-muted px-1 text-xs text-muted-foreground",
-            "max-[760px]:w-[calc(100%-48px)]",
-          )}
-        >
-          <button
-            type="button"
-            data-slot="last-request-toggle"
-            className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 px-2 py-1.5 text-left transition-colors hover:text-foreground"
-            onClick={() => setRecapOpen((v) => !v)}
-            aria-expanded={recapOpen}
-            title={recapOpen ? "Collapse" : "What you last asked for"}
-          >
-            {lastRequest && (
-              <span
-                className={cn(
-                  "min-w-0",
-                  recapOpen
-                    ? "max-h-40 overflow-y-auto break-words whitespace-pre-wrap"
-                    : "truncate",
-                )}
-              >
-                <RecapLabel>Last request</RecapLabel>
-                {lastRequest}
-              </span>
-            )}
-            {session.recap && (recapOpen || !lastRequest) && (
-              <span className={cn("min-w-0", !recapOpen && "truncate")}>
-                <RecapLabel>Recap</RecapLabel>
-                {session.recap}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            data-slot="last-request-history"
-            className="mt-1 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-background hover:text-foreground"
-            onClick={onToggleRequests}
-            aria-label="All requests in this session"
-            title="All requests in this session"
-          >
-            <History className="size-3.5" />
-          </button>
-        </div>
-      )}
       <Composer
         ref={composerRef}
         windowId={session.window_id}

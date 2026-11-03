@@ -1,0 +1,118 @@
+/* Glass themes: a dark UI of frosted, translucent surfaces over a softly lit
+ * backdrop. Applied as `.dark.glass.theme-<name>` (see src/lib/theme.tsx).
+ *
+ * Like the sci-fi themes, each theme sets tokens and the shared layer below
+ * turns translucent surfaces into glass: blur + saturation of what's behind,
+ * a bright hairline along the top edge, a soft drop shadow.
+ */
+
+/* ── Aurora: near-black with green and teal light pooling behind glass ─ */
+.dark.theme-aurora {
+  --page: oklch(0.16 0.012 230);
+  --background: oklch(0.16 0.012 230 / 0.1);
+  --foreground: oklch(0.96 0.004 220);
+  --card: oklch(0.26 0.012 220 / 0.55);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.22 0.012 220 / 0.82);
+  --popover-foreground: var(--foreground);
+  /* Actions are white, the way frosted UIs put a bright key on glass. */
+  --primary: oklch(0.97 0.004 220);
+  --primary-foreground: oklch(0.2 0.01 230);
+  --secondary: oklch(1 0 0 / 0.08);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(1 0 0 / 0.07);
+  --muted-foreground: oklch(0.74 0.012 220);
+  --accent: oklch(1 0 0 / 0.1);
+  --accent-foreground: var(--foreground);
+  --border: oklch(1 0 0 / 0.1);
+  --input: oklch(1 0 0 / 0.14);
+  --ring: oklch(0.82 0.12 170);
+  --brand: oklch(0.84 0.13 168);
+  --brand-soft: oklch(0.84 0.13 168 / 0.14);
+  --success: oklch(0.82 0.15 155);
+  --sidebar: oklch(0.2 0.012 225 / 0.5);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-accent: oklch(1 0 0 / 0.09);
+  --sidebar-border: oklch(1 0 0 / 0.08);
+  --code: oklch(0.12 0.01 230 / 0.6);
+  --shadow-color: oklch(0 0 0 / 0.45);
+
+  --radius: 0.85rem;
+  --glass-edge: oklch(1 0 0 / 0.16);
+  --glass-blur: 22px;
+  --backdrop:
+    radial-gradient(ellipse 50% 55% at 30% 70%, oklch(0.5 0.14 150 / 0.6), transparent 70%),
+    radial-gradient(ellipse 40% 45% at 88% 18%, oklch(0.45 0.09 205 / 0.5), transparent 70%),
+    radial-gradient(ellipse 55% 40% at 70% 105%, oklch(0.42 0.1 175 / 0.5), transparent 70%),
+    radial-gradient(ellipse 80% 70% at 50% 40%, oklch(0.2 0.02 220), oklch(0.13 0.01 230));
+}
+
+/* ── Shared glass layer ──────────────────────────────────────────────── */
+
+.glass,
+.glass body {
+  background-color: var(--page);
+}
+
+.glass body {
+  background-image: var(--backdrop);
+  background-attachment: fixed;
+}
+
+/* Frosted surfaces: whatever scrolls or glows behind them shows through. */
+.glass .sidebar,
+.glass .chat-header,
+.glass .composer,
+.glass .subagents-panel,
+.glass .requests-panel,
+.glass .diff-panel,
+.glass .files-panel,
+.glass .office-panel,
+.glass [data-slot="dropdown-menu-content"],
+.glass [data-slot="dropdown-menu-sub-content"],
+.glass [data-slot="popover-content"],
+.glass [data-slot="dialog-content"] {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+}
+
+/* The bright top edge is what makes a translucent panel read as glass. */
+.glass .composer,
+.glass [data-slot="dropdown-menu-content"],
+.glass [data-slot="dropdown-menu-sub-content"],
+.glass [data-slot="popover-content"],
+.glass [data-slot="dialog-content"] {
+  border-color: oklch(1 0 0 / 0.1);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    0 18px 50px -18px var(--shadow-color);
+}
+
+.glass .composer {
+  border-radius: 1.6rem;
+}
+
+.glass .composer:focus-within {
+  border-color: oklch(1 0 0 / 0.2);
+}
+
+.glass .last-request-tab {
+  background: oklch(0.3 0.012 220 / 0.35);
+  border-color: oklch(1 0 0 / 0.1);
+  box-shadow: inset 0 1px 0 var(--glass-edge);
+}
+
+/* The user's own bubbles: lighter glass, like the reference's input. */
+.glass .message-line.user .bubble {
+  background: oklch(1 0 0 / 0.09);
+  border: 1px solid oklch(1 0 0 / 0.08);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.1);
+}
+
+.glass ::selection {
+  background: color-mix(in oklch, var(--brand) 35%, transparent);
+}
+
+.glass * {
+  scrollbar-color: oklch(1 0 0 / 0.18) transparent;
+}

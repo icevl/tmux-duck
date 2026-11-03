@@ -9,6 +9,7 @@ import {
   Monitor,
   Moon,
   Radar,
+  Sparkles,
   Sun,
   UserRound,
   Users,
@@ -37,7 +38,9 @@ import {
   type DictationLanguage,
 } from "@/lib/dictation";
 import {
+  GLASS_THEMES,
   isSciFi,
+  isRetro,
   RETRO_THEMES,
   SCI_FI_THEMES,
   useTheme,
@@ -56,6 +59,7 @@ const THEMES: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: "cyberpunk", label: "Cyberpunk", icon: Zap },
   { value: "nostromo", label: "Nostromo", icon: Radar },
   { value: "web1995", label: "Web 1995", icon: Globe },
+  { value: "aurora", label: "Aurora Glass", icon: Sparkles },
 ];
 
 interface UserMenuProps {
@@ -186,11 +190,13 @@ export function UserMenu({
             >
               {THEMES.map(({ value, label, icon: Icon }) => (
                 <Fragment key={value}>
-                  {(value === SCI_FI_THEMES[0] || value === RETRO_THEMES[0]) && (
+                  {(value === SCI_FI_THEMES[0] ||
+                    value === RETRO_THEMES[0] ||
+                    value === GLASS_THEMES[0]) && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                        {isSciFi(value) ? "Sci-fi" : "Retro"}
+                        {isSciFi(value) ? "Sci-fi" : isRetro(value) ? "Retro" : "Glass"}
                       </DropdownMenuLabel>
                     </>
                   )}

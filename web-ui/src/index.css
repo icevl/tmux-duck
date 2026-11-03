@@ -13,6 +13,7 @@
 /* Unlayered: a theme's decoration overrides utilities (see the file). */
 @import "./themes.css";
 @import "./theme-retro.css";
+@import "./theme-glass.css";
 
 @custom-variant dark (&:is(.dark *));
 

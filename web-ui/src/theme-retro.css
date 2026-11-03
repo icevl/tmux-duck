@@ -241,3 +241,12 @@
   border-radius: 0;
   background: #000080;
 }
+
+.theme-web1995 .last-request-tab {
+  background: #c0c0c0;
+  border: 0;
+  border-radius: 0;
+  backdrop-filter: none;
+  box-shadow: var(--bevel-raised);
+  color: #000000;
+}
