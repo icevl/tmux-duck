@@ -283,6 +283,30 @@ def _valid_sort_order(value: Any) -> int | None:
     return value
 
 
+def user_requests(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The user's own prompts from a session history, oldest first.
+
+    Tool results, local commands and runtime-injected context are already
+    typed apart by the transcript parser; interruption markers are dropped.
+    """
+    requests: list[dict[str, Any]] = []
+    for message in messages:
+        if message.get("role") != "user" or message.get("content_type") != "text":
+            continue
+        text = (message.get("text") or "").strip()
+        if not text or text.startswith("[Request interrupted"):
+            continue
+        requests.append(
+            {
+                "text": text,
+                "timestamp": message.get("timestamp"),
+                "transcript_offset": message.get("transcript_offset"),
+                "transcript_index": message.get("transcript_index"),
+            }
+        )
+    return requests
+
+
 def _connector_secret_keys(type_name: str) -> tuple[str, ...]:
     """Secret config keys for a type, from its schema (with a fallback)."""
     from ..connectors.base import secret_keys_for_type
@@ -1250,6 +1274,15 @@ def create_app(
 
         await bus.publish_sessions_changed()
         return response
+
+    @app.get("/api/sessions/{window_id}/requests")
+    async def get_requests(
+        window_id: str,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        """What the user asked for in this session: their own prompts, oldest first."""
+        history = await session_manager.get_history_snapshot(window_id)
+        return {"requests": user_requests(history.messages)}
 
     @app.get("/api/sessions/{window_id}/messages")
     async def get_messages(

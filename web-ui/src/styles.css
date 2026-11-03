@@ -3074,7 +3074,8 @@ button.burger {
   .app-shell.office-open,
   .app-shell.term-open,
   .app-shell.files-open,
-  .app-shell.subagents-open {
+  .app-shell.subagents-open,
+  .app-shell.requests-open {
     /* Mobile: panels are fixed overlays, no grid column. */
     grid-template-columns: 1fr;
   }
@@ -3083,7 +3084,8 @@ button.burger {
   .office-panel,
   .term-panel,
   .files-panel,
-  .subagents-panel {
+  .subagents-panel,
+  .requests-panel {
     position: fixed;
     inset: 0;
     width: 100vw;
@@ -3098,7 +3100,8 @@ button.burger {
   .app-shell.office-open .office-panel,
   .app-shell.term-open .term-panel,
   .app-shell.files-open .files-panel,
-  .app-shell.subagents-open .subagents-panel {
+  .app-shell.subagents-open .subagents-panel,
+  .app-shell.requests-open .requests-panel {
     transform: translateX(0);
   }
 
@@ -3340,7 +3343,8 @@ button.burger {
    Self-contained right-side drawer (not part of the side-panel grid), so it
    works identically on desktop and mobile. Surfaces Claude subagent (Agent /
    Workflow) transcripts the main chat never shows. */
-.subagents-panel {
+.subagents-panel,
+.requests-panel {
   height: 100%;
   width: 100%;
   background: var(--bg-1);

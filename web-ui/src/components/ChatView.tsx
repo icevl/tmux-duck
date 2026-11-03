@@ -27,6 +27,7 @@ import {
   FolderTree,
   GitCommit,
   Keyboard,
+  History,
   Menu,
   Mic,
   MicOff,
@@ -90,6 +91,8 @@ interface Props {
   filesOpen: boolean;
   onToggleSubagents: () => void;
   subagentsOpen: boolean;
+  onToggleRequests: () => void;
+  requestsOpen: boolean;
   onRename: (name: string) => Promise<void>;
   showToast: (text: string, kind?: "info" | "error") => void;
   searchTarget: SearchHitTarget | null;
@@ -1801,6 +1804,8 @@ export function ChatView({
   filesOpen,
   onToggleSubagents,
   subagentsOpen,
+  onToggleRequests,
+  requestsOpen,
   onRename,
   showToast,
   searchTarget,
@@ -1808,6 +1813,19 @@ export function ChatView({
 }: Props) {
   const [showSkills, setShowSkills] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // The newest thing the user asked for, shown above the composer. Loaded
+  // history (with the optimistic send) first; the transcript's own record
+  // covers a session whose prompt is older than what's loaded.
+  const lastRequest = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      const text = m.text?.trim();
+      if (m.role !== "user" || m.content_type !== "text" || !text) continue;
+      if (text.startsWith("/") || text.startsWith("[Request interrupted")) continue;
+      return text;
+    }
+    return session.last_prompt?.trim() || null;
+  }, [messages, session.last_prompt]);
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
   // false while /api/sessions/<wid>/messages is in flight for the
@@ -1829,9 +1847,14 @@ export function ChatView({
   } | null>(null);
   const [interactiveSending, setInteractiveSending] = useState(false);
   const [recapOpen, setRecapOpen] = useState(false);
+  useEffect(() => setRecapOpen(false), [session.window_id]);
   const [gitBranch, setGitBranch] = useState<string | null>(null);
   const [gitIsRepo, setGitIsRepo] = useState(false);
   const [searchHighlightKey, setSearchHighlightKey] = useState<string | null>(null);
+  // Jumps from the Requests panel reuse search highlighting under their own name.
+  const highlightLabel = searchTarget?.target_id.includes(":request:")
+    ? "Your request"
+    : "Search hit";
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const messagesListRef = useRef<HTMLDivElement | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -3062,6 +3085,10 @@ export function ChatView({
               <Bot /> Subagents
               {subagentsOpen && <Check className="ml-auto text-brand" />}
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onToggleRequests}>
+              <History /> Requests
+              {requestsOpen && <Check className="ml-auto text-brand" />}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setEditingName(true)}>
               <Pencil /> Rename
@@ -3086,32 +3113,6 @@ export function ChatView({
         </DropdownMenu>
       </header>
 
-      {(session.recap || session.last_prompt) && (
-        <button
-          type="button"
-          data-slot="recap"
-          className={cn(
-            "flex w-full shrink-0 flex-col gap-1 border-b bg-muted/40 px-4 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/70",
-            "max-[760px]:px-3",
-          )}
-          onClick={() => setRecapOpen((v) => !v)}
-          aria-expanded={recapOpen}
-          title={recapOpen ? "Collapse" : "What this session is about"}
-        >
-          {session.recap && (
-            <span className={cn("min-w-0", !recapOpen && "truncate")}>
-              <RecapLabel>Recap</RecapLabel>
-              {session.recap}
-            </span>
-          )}
-          {session.last_prompt && (recapOpen || !session.recap) && (
-            <span className={cn("min-w-0", !recapOpen && "truncate")}>
-              <RecapLabel>Last request</RecapLabel>
-              {session.last_prompt}
-            </span>
-          )}
-        </button>
-      )}
       <div className="messages-wrapper">
         <div className="messages" ref={scrollerRef} onScroll={handleScroll}>
         {messages.length === 0 ? (
@@ -3202,7 +3203,7 @@ export function ChatView({
                   className={cls}
                 >
                   {isSearchHit && (
-                    <div className="search-hit-label">Search hit</div>
+                    <div className="search-hit-label">{highlightLabel}</div>
                   )}
                   <MessageBubble
                     m={m}
@@ -3252,7 +3253,7 @@ export function ChatView({
                   return (
                     <>
                       {isSearchHit && (
-                        <div className="search-hit-label">Search hit</div>
+                        <div className="search-hit-label">{highlightLabel}</div>
                       )}
                       <MessageBubble
                         m={activeChoiceMessage}
@@ -3355,6 +3356,54 @@ export function ChatView({
         </div>
       )}
 
+      {(lastRequest || session.recap) && (
+        <div
+          data-slot="last-request"
+          className={cn(
+            "mx-auto flex w-[calc(100%-68px)] max-w-[848px] items-start gap-1 rounded-t-xl border border-b-0 bg-muted px-1 text-xs text-muted-foreground",
+            "max-[760px]:w-[calc(100%-48px)]",
+          )}
+        >
+          <button
+            type="button"
+            data-slot="last-request-toggle"
+            className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 px-2 py-1.5 text-left transition-colors hover:text-foreground"
+            onClick={() => setRecapOpen((v) => !v)}
+            aria-expanded={recapOpen}
+            title={recapOpen ? "Collapse" : "What you last asked for"}
+          >
+            {lastRequest && (
+              <span
+                className={cn(
+                  "min-w-0",
+                  recapOpen
+                    ? "max-h-40 overflow-y-auto break-words whitespace-pre-wrap"
+                    : "truncate",
+                )}
+              >
+                <RecapLabel>Last request</RecapLabel>
+                {lastRequest}
+              </span>
+            )}
+            {session.recap && (recapOpen || !lastRequest) && (
+              <span className={cn("min-w-0", !recapOpen && "truncate")}>
+                <RecapLabel>Recap</RecapLabel>
+                {session.recap}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            data-slot="last-request-history"
+            className="mt-1 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-background hover:text-foreground"
+            onClick={onToggleRequests}
+            aria-label="All requests in this session"
+            title="All requests in this session"
+          >
+            <History className="size-3.5" />
+          </button>
+        </div>
+      )}
       <Composer
         ref={composerRef}
         windowId={session.window_id}

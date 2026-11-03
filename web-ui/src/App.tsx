@@ -25,6 +25,7 @@ import { DiffPanel } from "./components/DiffPanel";
 import { FilesPanel } from "./components/FilesPanel";
 import { OfficePanel } from "./components/OfficePanel";
 import { SubagentsPanel } from "./components/SubagentsPanel";
+import { RequestsPanel } from "./components/RequestsPanel";
 import { TerminalPanel } from "./components/TerminalPanel";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { ConnectorsDialog } from "./components/ConnectorsDialog";
@@ -90,7 +91,7 @@ function rememberNamespaceSession(namespace: string, windowId: string): void {
 const PANEL_STATE_KEY = "codexbot-panel-state-v1";
 const PANEL_ROW_KEY = "codexbot-panel-rows-v1";
 
-type PanelKind = "diff" | "office" | "term" | "files" | "subagents";
+type PanelKind = "diff" | "office" | "term" | "files" | "subagents" | "requests";
 type PanelRow = "top" | "bottom";
 type PanelRowMap = Record<string, Partial<Record<PanelKind, PanelRow>>>;
 
@@ -372,6 +373,9 @@ export function App() {
   const [subagentsOpenIds, setSubagentsOpenIds] = useState<Set<string>>(() =>
     setFromMap(loadPanelOpenMap(), "subagents"),
   );
+  const [requestsOpenIds, setRequestsOpenIds] = useState<Set<string>>(() =>
+    setFromMap(loadPanelOpenMap(), "requests"),
+  );
   // Per-session per-panel row assignment for the two-row desktop layout.
   // Defaults to "top" when unset, which mirrors the prior single-row layout.
   // Mobile (`isNarrow`) ignores this — panels are full-screen overlays.
@@ -417,8 +421,9 @@ export function App() {
     for (const wid of termOpenIds) remember(wid, "term");
     for (const wid of filesOpenIds) remember(wid, "files");
     for (const wid of subagentsOpenIds) remember(wid, "subagents");
+    for (const wid of requestsOpenIds) remember(wid, "requests");
     savePanelOpenMap(map);
-  }, [diffOpenIds, officeOpenIds, termOpenIds, filesOpenIds, subagentsOpenIds]);
+  }, [diffOpenIds, officeOpenIds, termOpenIds, filesOpenIds, subagentsOpenIds, requestsOpenIds]);
   const [toast, setToast] = useState<{ kind: "info" | "error"; text: string } | null>(
     null,
   );
@@ -871,6 +876,8 @@ export function App() {
     setOfficeOpenIds((prev) => prune(prev));
     setTermOpenIds((prev) => prune(prev));
     setFilesOpenIds((prev) => prune(prev));
+    setSubagentsOpenIds((prev) => prune(prev));
+    setRequestsOpenIds((prev) => prune(prev));
   }, [sessions, sessionsLoaded]);
 
   const diffOpen = !!activeId && diffOpenIds.has(activeId);
@@ -878,6 +885,7 @@ export function App() {
   const termOpen = !!activeId && termOpenIds.has(activeId);
   const filesOpen = !!activeId && filesOpenIds.has(activeId);
   const subagentsOpen = !!activeId && subagentsOpenIds.has(activeId);
+  const requestsOpen = !!activeId && requestsOpenIds.has(activeId);
 
   // Per-panel row assignment for the active session. Defaults to "top" so
   // first-time use looks identical to the prior single-row layout.
@@ -900,9 +908,10 @@ export function App() {
     push("term", termOpen);
     push("files", filesOpen);
     push("subagents", subagentsOpen);
+    push("requests", requestsOpen);
     return { top, bottom };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diffOpen, officeOpen, termOpen, filesOpen, subagentsOpen, activeRows]);
+  }, [diffOpen, officeOpen, termOpen, filesOpen, subagentsOpen, requestsOpen, activeRows]);
   const hasTwoRows = openPanelsByRow.bottom.length > 0;
 
   // Panel ids currently inside the outer horizontal PanelGroup. The layout
@@ -918,8 +927,9 @@ export function App() {
     if (termOpen) ids.push("term");
     if (filesOpen) ids.push("files");
     if (subagentsOpen) ids.push("subagents");
+    if (requestsOpen) ids.push("requests");
     return ids;
-  }, [hasTwoRows, diffOpen, officeOpen, termOpen, filesOpen, subagentsOpen]);
+  }, [hasTwoRows, diffOpen, officeOpen, termOpen, filesOpen, subagentsOpen, requestsOpen]);
 
   // Per-topic layout id so each session remembers the exact widths the
   // user dragged for its own combination of panels. Falls back to a
@@ -1128,6 +1138,8 @@ export function App() {
       filesOpen={filesOpen}
       onToggleSubagents={() => togglePanel(setSubagentsOpenIds)}
       subagentsOpen={subagentsOpen}
+      onToggleRequests={() => togglePanel(setRequestsOpenIds)}
+      requestsOpen={requestsOpen}
       onRename={async (name) => {
         try {
           await api.renameSession(activeSession.window_id, name);
@@ -1207,6 +1219,31 @@ export function App() {
     />
   ) : null;
 
+  const requestsNode = activeSession ? (
+    <RequestsPanel
+      windowId={activeSession.window_id}
+      open={requestsOpen}
+      onClose={() => closePanel(setRequestsOpenIds)}
+      onJump={(request) => {
+        setSearchTarget({
+          target_id: `${activeSession.window_id}:request:${Date.now()}`,
+          window_id: activeSession.window_id,
+          session_id: null,
+          transcript_offset: request.transcript_offset ?? null,
+          transcript_index: request.transcript_index ?? null,
+          chunk_index: null,
+          source_order: request.transcript_offset ?? 0,
+          snippet: request.text,
+        });
+        // On a phone the panel covers the chat; get it out of the way.
+        if (isNarrow) closePanel(setRequestsOpenIds);
+      }}
+      row={desktopRowProp("requests")}
+      onToggleRow={desktopToggleProp("requests")}
+      subscribeWs={subscribeWs}
+    />
+  ) : null;
+
   return (
     <div
       className={`app-shell${sidebarOpen ? " sidebar-open" : ""}${
@@ -1215,7 +1252,7 @@ export function App() {
         isNarrow && termOpen && activeSession ? " term-open" : ""
       }${isNarrow && filesOpen && activeSession ? " files-open" : ""}${
         isNarrow && subagentsOpen && activeSession ? " subagents-open" : ""
-      }`}
+      }${isNarrow && requestsOpen && activeSession ? " requests-open" : ""}`}
     >
       <Sidebar
         sessions={visibleSessions}
@@ -1284,6 +1321,7 @@ export function App() {
             {termNode}
             {filesNode}
             {subagentsNode}
+            {requestsNode}
           </>
         ) : (
           // Desktop: chat + open side panels share a horizontal
@@ -1300,6 +1338,7 @@ export function App() {
               term: termNode,
               files: filesNode,
               subagents: subagentsNode,
+              requests: requestsNode,
             };
             const sideMeta: Record<
               PanelKind,
@@ -1310,6 +1349,7 @@ export function App() {
               term: { minSize: 15, defaultSize: 28 },
               files: { minSize: 14, defaultSize: 24 },
               subagents: { minSize: 14, defaultSize: 24 },
+              requests: { minSize: 14, defaultSize: 22 },
             };
             const renderCell = (kind: PanelKind) => {
               const node = sideNodes[kind];

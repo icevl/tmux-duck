@@ -146,6 +146,13 @@ export interface SubagentMessagesResponse {
   agent_id: string;
 }
 
+export interface UserRequest {
+  text: string;
+  timestamp?: string | null;
+  transcript_offset?: number | null;
+  transcript_index?: number | null;
+}
+
 export interface SessionMessagesResponse {
   messages: SessionMessage[];
   session_id: string | null;
@@ -689,6 +696,10 @@ export const api = {
       `/api/sessions/${encodeURIComponent(windowId)}/messages?${params.toString()}`,
     );
   },
+  getRequests: (windowId: string) =>
+    request<{ requests: UserRequest[] }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/requests`,
+    ),
   getSubagents: (windowId: string) =>
     request<SubagentsResponse>(
       `/api/sessions/${encodeURIComponent(windowId)}/subagents`,
