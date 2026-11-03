@@ -41,7 +41,7 @@
   --glass-edge: oklch(1 0 0 / 0.16);
   --glass-blur: 22px;
   --backdrop:
-    radial-gradient(ellipse 50% 55% at 30% 70%, oklch(0.5 0.14 150 / 0.6), transparent 70%),
+    radial-gradient(ellipse 38% 42% at 30% 72%, oklch(0.42 0.1 150 / 0.38), transparent 70%),
     radial-gradient(ellipse 40% 45% at 88% 18%, oklch(0.45 0.09 205 / 0.5), transparent 70%),
     radial-gradient(ellipse 55% 40% at 70% 105%, oklch(0.42 0.1 175 / 0.5), transparent 70%),
     radial-gradient(ellipse 80% 70% at 50% 40%, oklch(0.2 0.02 220), oklch(0.13 0.01 230));
