@@ -11,6 +11,7 @@ import {
   Radar,
   Sparkles,
   Sun,
+  Type,
   UserRound,
   Users,
   Zap,
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { Fragment, useState } from "react";
+import { applyTextSize, readTextSize, TEXT_SIZES, type TextSize } from "@/lib/textSize";
 import {
   DICTATION_LANGUAGES,
   readDictationLanguage,
@@ -90,6 +92,7 @@ export function UserMenu({
 }: UserMenuProps) {
   const { preference, setPreference, effects, setEffects } = useTheme();
   const [dictationLang, setDictationLang] = useState(readDictationLanguage);
+  const [textSize, setTextSize] = useState(readTextSize);
   const dictationLabel = DICTATION_LANGUAGES.find((l) => l.value === dictationLang)?.label;
   const themeLabel = THEMES.find((t) => t.value === preference)?.label;
 
@@ -219,6 +222,34 @@ export function UserMenu({
                 </DropdownMenuCheckboxItem>
               </>
             )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Type />
+            <span className="flex-1">Text size</span>
+            <span className="text-xs text-muted-foreground">
+              {TEXT_SIZES.find((s) => s.value === textSize)?.label}
+            </span>
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="rounded-xl p-1.5">
+            <DropdownMenuRadioGroup
+              value={textSize}
+              onValueChange={(v) => {
+                setTextSize(v as TextSize);
+                applyTextSize(v as TextSize);
+              }}
+            >
+              {TEXT_SIZES.map((s) => (
+                <DropdownMenuRadioItem
+                  key={s.value}
+                  value={s.value}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  <span style={{ fontSize: `${Math.round(14 * s.zoom)}px` }}>{s.label}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSub>

@@ -897,7 +897,7 @@ function SpeakButton({ id, text }: { id: string; text: string }) {
 
 function RecapLabel({ children }: { children: string }) {
   return (
-    <span className="mr-2 rounded bg-background px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-foreground/70 uppercase ring-1 ring-border">
+    <span className="mr-2 rounded bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-foreground/60 uppercase">
       {children}
     </span>
   );

@@ -97,9 +97,8 @@
 }
 
 .glass .last-request-tab {
-  background: oklch(0.3 0.012 220 / 0.35);
-  border-color: oklch(1 0 0 / 0.1);
-  box-shadow: inset 0 1px 0 var(--glass-edge);
+  background: oklch(0.3 0.012 220 / 0.3);
+  border-color: oklch(1 0 0 / 0.05);
 }
 
 /* The user's own bubbles: lighter glass, like the reference's input. */

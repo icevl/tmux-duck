@@ -1012,27 +1012,12 @@ button.burger {
   width: min(848px, calc(100% - 68px));
   transform: translateX(-50%);
   color: var(--muted-foreground);
-  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 6%, transparent);
   border-bottom: 0;
   border-radius: 14px 14px 0 0;
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--card) 62%, transparent),
-    color-mix(in oklab, var(--card) 38%, transparent)
-  );
+  background: color-mix(in oklab, var(--card) 45%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
   backdrop-filter: blur(16px) saturate(180%);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklab, white 45%, transparent),
-    inset 0 0 12px color-mix(in oklab, white 6%, transparent),
-    0 -8px 24px -12px var(--shadow-color);
-}
-
-.dark .last-request-tab {
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklab, white 14%, transparent),
-    inset 0 0 14px color-mix(in oklab, white 4%, transparent),
-    0 -8px 24px -12px var(--shadow-color);
 }
 
 .has-request-tab .messages {
@@ -1047,6 +1032,13 @@ button.burger {
   .last-request-tab {
     width: calc(100% - 48px);
   }
+}
+
+/* Conversation text size preset (src/lib/textSize.ts). */
+.messages-list,
+.composer,
+.last-request-tab {
+  zoom: var(--chat-zoom, 1);
 }
 
 .messages-list {
