@@ -223,7 +223,10 @@ function DropdownMenuSubContent({
   className,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  // Portalled like the root menu: a parent with backdrop-filter (glass
+  // themes) would otherwise contain and clip this fixed-position popup.
   return (
+    <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
       className={cn(
@@ -232,6 +235,7 @@ function DropdownMenuSubContent({
       )}
       {...props}
     />
+    </DropdownMenuPrimitive.Portal>
   )
 }
 
