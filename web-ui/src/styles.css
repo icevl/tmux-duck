@@ -1037,7 +1037,8 @@ button.burger {
 /* Conversation text size preset (src/lib/textSize.ts). */
 .messages-list,
 .composer,
-.last-request-tab {
+.last-request-tab,
+.subagents-body > * {
   zoom: var(--chat-zoom, 1);
 }
 
