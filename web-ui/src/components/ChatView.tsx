@@ -846,7 +846,7 @@ function formatMessageTime(iso: string | undefined): {
 function KeysSection({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+      <div className="text-[length:calc(11px*var(--ts,1))] font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </div>
       <div className="flex flex-wrap gap-1">{children}</div>
@@ -897,7 +897,7 @@ function SpeakButton({ id, text }: { id: string; text: string }) {
 
 function RecapLabel({ children }: { children: string }) {
   return (
-    <span className="mr-2 rounded bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-foreground/60 uppercase">
+    <span className="mr-2 rounded bg-foreground/[0.07] px-1.5 py-0.5 text-[length:calc(10px*var(--ts,1))] font-semibold tracking-wide text-foreground/60 uppercase">
       {children}
     </span>
   );
@@ -955,7 +955,7 @@ const MessageBubble = memo(function MessageBubble({
     <time
       dateTime={m.timestamp}
       title={t.full}
-      className="font-mono text-[10.5px] text-muted-foreground tabular-nums"
+      className="font-mono text-[length:calc(10.5px*var(--ts,1))] text-muted-foreground tabular-nums"
     >
       {t.short}
     </time>
@@ -963,13 +963,13 @@ const MessageBubble = memo(function MessageBubble({
   return (
     <div
       className={cn(
-        "group/msg mx-auto flex w-full chat-column max-w-[880px] min-w-0 flex-col py-1",
+        "group/msg mx-auto flex w-full max-w-[880px] min-w-0 flex-col py-1",
         kind === "user" ? "items-end" : "items-start",
         m.pending && "opacity-60",
       )}
     >
       {(kind === "tool" || kind === "note") && (
-        <div className="mb-1 flex items-center gap-1.5 pl-0.5 text-[11px] text-muted-foreground">
+        <div className="mb-1 flex items-center gap-1.5 pl-0.5 text-[length:calc(11px*var(--ts,1))] text-muted-foreground">
           {m.content_type === "tool_result" ? (
             <TerminalIcon className="size-3" />
           ) : kind === "tool" ? (
@@ -995,8 +995,8 @@ const MessageBubble = memo(function MessageBubble({
         className={cn(
           "relative min-w-0 break-words [overflow-wrap:anywhere]",
           kind === "user" &&
-            "max-w-[85%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[15px] leading-relaxed text-secondary-foreground",
-          kind === "assistant" && "w-full px-0.5 text-[15px] leading-relaxed",
+            "max-w-[85%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[length:calc(15px*var(--ts,1))] leading-relaxed text-secondary-foreground",
+          kind === "assistant" && "w-full px-0.5 text-[length:calc(15px*var(--ts,1))] leading-relaxed",
           kind === "tool" &&
             "max-w-full rounded-lg border bg-card/60 px-3 py-2 font-mono text-xs leading-relaxed text-foreground/85 [&_.md_pre]:my-1.5 [&_.md_pre]:text-xs",
           kind === "thinking" &&
@@ -1067,7 +1067,7 @@ const MessageBubble = memo(function MessageBubble({
             <SpeakButton id={m._clientId} text={displayText ?? m.text} />
           )}
           {m.pending ? (
-            <span className="text-[11px] text-muted-foreground">sending…</span>
+            <span className="text-[length:calc(11px*var(--ts,1))] text-muted-foreground">sending…</span>
           ) : (
             <span className="opacity-0 transition-opacity group-hover/msg:opacity-100">
               {time}
@@ -1510,7 +1510,7 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   return (
     <div
       className={cn(
-        "composer mx-auto mb-3.5 w-[calc(100%-36px)] chat-column max-w-[880px] gap-1.5 rounded-2xl border bg-card px-3 pt-3 pb-2 shadow-[0_8px_30px_var(--shadow-color)] transition-[border-color,box-shadow]",
+        "composer mx-auto mb-3.5 w-[calc(100%-36px)] max-w-[880px] gap-1.5 rounded-2xl border bg-card px-3 pt-3 pb-2 shadow-[0_8px_30px_var(--shadow-color)] transition-[border-color,box-shadow]",
         "focus-within:border-foreground/20 dark:focus-within:border-foreground/25",
         "max-[760px]:mb-3 max-[760px]:w-[calc(100%-24px)] max-[760px]:px-2.5",
         dragOver && "drag-over",
@@ -3033,7 +3033,7 @@ export function ChatView({
               <RuntimeIcon runtime={session.runtime} size={ICON} />
               <span
                 data-slot="chat-title"
-                className="truncate text-[15px] font-semibold tracking-tight"
+                className="truncate text-[length:calc(15px*var(--ts,1))] font-semibold tracking-tight"
               >
                 {session.name}
               </span>
@@ -3217,7 +3217,7 @@ export function ChatView({
             {awaitingResponse && (
               <div className="messages-row waiting-duck-row">
                 {/* Same centred column as the messages, not the row's edge. */}
-                <div className="mx-auto w-full chat-column max-w-[880px]">
+                <div className="mx-auto w-full max-w-[880px]">
                   <DuckLogo
                     width={40}
                     height={40}

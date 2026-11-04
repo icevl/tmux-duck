@@ -108,7 +108,7 @@ export function RequestsPanel({
                   title="Show in chat"
                   className="flex w-full cursor-pointer flex-col gap-1 rounded-lg px-3 py-2 text-left transition hover:bg-accent"
                 >
-                  <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-2 text-[length:calc(11px*var(--ts,1))] text-muted-foreground">
                     <span className="tabular-nums">#{requests.length - i}</span>
                     <span>{formatWhen(r.timestamp)}</span>
                   </span>

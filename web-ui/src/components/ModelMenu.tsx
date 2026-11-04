@@ -89,7 +89,7 @@ function CatalogNote({ catalog }: { catalog: ModelCatalog }) {
   return (
     <>
       <DropdownMenuSeparator />
-      <p className="px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+      <p className="px-2 py-1.5 text-[length:calc(11px*var(--ts,1))] leading-snug text-muted-foreground">
         {catalog.restarts
           ? "Codex restarts the session to switch (history is kept)."
           : "Claude also saves it as the default for new sessions."}

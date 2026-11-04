@@ -28,7 +28,7 @@ body,
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-size: 15px;
+  font-size: calc(15px * var(--ts, 1));
   line-height: 1.5;
 }
 
@@ -41,7 +41,7 @@ body,
    variants so un-migrated screens match the new components. */
 button:where(:not([data-slot])) {
   font-family: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--ts, 1));
   font-weight: 500;
   color: var(--foreground);
   background: transparent;
@@ -120,7 +120,7 @@ input:where(:not([data-slot])),
 textarea:where(:not([data-slot])),
 select:where(:not([data-slot])) {
   font-family: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--ts, 1));
   color: var(--foreground);
   background: transparent;
   border: 1px solid var(--input);
@@ -162,7 +162,7 @@ a:where(:not([data-slot])) {
 
 .boot-splash h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: calc(22px * var(--ts, 1));
   font-weight: 600;
   letter-spacing: 0.5px;
 }
@@ -188,7 +188,7 @@ a:where(:not([data-slot])) {
 
 .login-card h1 {
   margin: 0 0 6px;
-  font-size: 22px;
+  font-size: calc(22px * var(--ts, 1));
   font-weight: 600;
 }
 
@@ -210,7 +210,7 @@ a:where(:not([data-slot])) {
 
 .login-card label {
   display: block;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
   margin-bottom: 6px;
   text-transform: uppercase;
@@ -228,7 +228,7 @@ a:where(:not([data-slot])) {
 
 .login-error {
   color: var(--danger);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   margin: -8px 0 12px;
 }
 
@@ -363,7 +363,7 @@ button.burger {
   width: 100%;
   min-width: 0;
   padding: 8px 30px 8px 8px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
 }
 
 .session-search-clear {
@@ -397,7 +397,7 @@ button.burger {
 .search-filter {
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   line-height: 1.25;
 }
 
@@ -421,7 +421,7 @@ button.burger {
   align-items: baseline;
   min-width: 0;
   color: var(--text-1);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   line-height: 1.25;
 }
 
@@ -461,7 +461,7 @@ button.burger {
   background: var(--bg-2);
   color: var(--legacy-accent);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   overflow-wrap: anywhere;
 }
 
@@ -540,7 +540,7 @@ button.burger {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-2);
@@ -551,7 +551,7 @@ button.burger {
   background: transparent;
   border: 0;
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   color: var(--duck-yellow);
   cursor: pointer;
   border-radius: 4px;
@@ -568,7 +568,7 @@ button.burger {
 }
 
 .search-filter-group-label {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   color: var(--text-2);
 }
 
@@ -638,14 +638,14 @@ button.burger {
 }
 
 .search-state-title {
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   font-weight: 600;
   color: var(--text-0);
 }
 
 .search-state-body {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
 }
 
@@ -675,13 +675,13 @@ button.burger {
 
 .search-tree-row.session {
   color: var(--text-0);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   font-weight: 500;
 }
 
 .search-tree-row.hit {
   padding-left: 28px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--ts, 1));
   color: var(--text-1);
 }
 
@@ -703,7 +703,7 @@ button.burger {
 
 .search-tree-row .tree-count {
   color: var(--text-2);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--ts, 1));
   font-weight: 400;
   flex-shrink: 0;
 }
@@ -752,7 +752,7 @@ button.burger {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   line-height: 1.25;
   color: var(--text-2);
   cursor: pointer;
@@ -852,7 +852,7 @@ button.burger {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   font-weight: 600;
   color: var(--danger, #ff6b6b);
   background: var(--bg-2);
@@ -958,7 +958,7 @@ button.burger {
 
 .chat-title .name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: calc(15px * var(--ts, 1));
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
@@ -975,7 +975,7 @@ button.burger {
 }
 
 .chat-title .path {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   line-height: 1.25;
   color: var(--text-2);
   font-family: var(--font-mono);
@@ -1050,7 +1050,7 @@ button.burger {
   justify-content: center;
   gap: 8px;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   color: var(--text-2);
 }
 
@@ -1061,7 +1061,7 @@ button.burger {
   padding: 6px 14px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
 }
 
 .load-older-button:hover {
@@ -1116,7 +1116,7 @@ button.burger {
   border-radius: 999px;
   background: color-mix(in srgb, var(--legacy-accent) 14%, var(--bg-0));
   color: var(--legacy-accent);
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   font-weight: 650;
 }
 
@@ -1165,7 +1165,7 @@ button.burger {
 }
 
 .empty-state h2 {
-  font-size: 16px;
+  font-size: calc(16px * var(--ts, 1));
   font-weight: 500;
   margin: 0;
   color: var(--text-1);
@@ -1243,7 +1243,7 @@ button.burger {
   padding: 8px 12px;
   border: 1px solid var(--border);
   background: var(--bubble-assistant);
-  font-size: 15px;
+  font-size: calc(15px * var(--ts, 1));
   line-height: 1.55;
   word-wrap: break-word;
   overflow-wrap: anywhere; /* break super-long tokens like paths and hashes */
@@ -1261,13 +1261,13 @@ button.burger {
   background: rgba(255, 255, 255, 0.03);
   border-color: var(--border);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .bubble.local_command {
   background: var(--code-bg);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .bubble.thinking {
@@ -1279,7 +1279,7 @@ button.burger {
   background: transparent;
   border-style: dashed;
   color: var(--text-1);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .bubble.pending {
@@ -1287,7 +1287,7 @@ button.burger {
 }
 
 .bubble .meta {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   color: var(--text-2);
   margin-bottom: 4px;
   text-transform: uppercase;
@@ -1330,7 +1330,7 @@ button.burger {
   margin: 8px 0;
   border: 1px solid var(--border);
   border-radius: 10px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   line-height: 1.6;
 }
 
@@ -1350,7 +1350,7 @@ button.burger {
 
 .choice-panel-title {
   color: var(--text-1);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   font-weight: 600;
   line-height: 1.35;
 }
@@ -1365,7 +1365,7 @@ button.burger {
 
 .choice-page-label {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   line-height: 1.3;
   margin-top: 2px;
 }
@@ -1432,7 +1432,7 @@ button.burger {
   background: var(--accent-soft);
   color: var(--accent-strong);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   font-weight: 600;
 }
 
@@ -1445,14 +1445,14 @@ button.burger {
 
 .choice-option-label {
   color: var(--text-0);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   font-weight: 600;
   line-height: 1.3;
 }
 
 .choice-option-description {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   line-height: 1.3;
 }
 
@@ -1481,18 +1481,18 @@ button.burger {
 }
 
 .md h1 {
-  font-size: 20px;
+  font-size: calc(20px * var(--ts, 1));
 }
 .md h2 {
-  font-size: 18px;
+  font-size: calc(18px * var(--ts, 1));
 }
 .md h3 {
-  font-size: 16px;
+  font-size: calc(16px * var(--ts, 1));
 }
 .md h4,
 .md h5,
 .md h6 {
-  font-size: 15px;
+  font-size: calc(15px * var(--ts, 1));
 }
 
 .md ul,
@@ -1555,7 +1555,7 @@ button.burger {
   border: 1px solid var(--border);
   padding: 4px 8px;
   text-align: left;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
 }
 
 .md th {
@@ -1611,7 +1611,7 @@ button.burger {
   color: var(--text-0);
   resize: none;
   font-family: inherit;
-  font-size: 15px;
+  font-size: calc(15px * var(--ts, 1));
   line-height: 1.5;
   padding: 2px 4px;
 }
@@ -1640,7 +1640,7 @@ button.burger {
 .slash-hints-label {
   padding: 2px 6px 4px;
   color: var(--text-2);
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -1668,7 +1668,7 @@ button.burger {
 
 .slash-hint-command {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   color: var(--text-0);
   white-space: nowrap;
 }
@@ -1676,7 +1676,7 @@ button.burger {
 .slash-hint-description {
   min-width: 0;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   overflow-wrap: anywhere;
 }
 
@@ -1695,7 +1695,7 @@ button.burger {
 
 .composer-controls .hint {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .composer-meta {
@@ -1748,7 +1748,7 @@ button.burger {
   width: 18px;
   height: 18px;
   padding: 0;
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   line-height: 1;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.7);
@@ -1789,7 +1789,7 @@ button.burger {
 
 .modal h2 {
   margin: 0 0 12px;
-  font-size: 16px;
+  font-size: calc(16px * var(--ts, 1));
   font-weight: 600;
 }
 
@@ -1800,7 +1800,7 @@ button.burger {
 }
 
 .modal-row label {
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   font-weight: 500;
   color: var(--text-1);
 }
@@ -1834,7 +1834,7 @@ button.burger {
 
 .dir-row .path {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1848,7 +1848,7 @@ button.burger {
 .runtime-buttons button {
   flex: 1;
   padding: 14px;
-  font-size: 14px;
+  font-size: calc(14px * var(--ts, 1));
 }
 
 .runtime-buttons button.selected {
@@ -1876,13 +1876,13 @@ button.burger {
 }
 
 .connector-name {
-  font-size: 14px;
+  font-size: calc(14px * var(--ts, 1));
   color: var(--text-0);
   font-weight: 600;
 }
 
 .connector-badge.live {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   font-weight: 600;
   color: #2ecc71;
   text-transform: uppercase;
@@ -1896,7 +1896,7 @@ button.burger {
 }
 
 .connector-actions button {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   padding: 6px 10px;
 }
 
@@ -1925,7 +1925,7 @@ button.burger {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-1);
   white-space: nowrap;
   text-transform: none;
@@ -1949,7 +1949,7 @@ button.burger {
 }
 
 .resume-row .summary {
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1957,7 +1957,7 @@ button.burger {
 
 .resume-row .count {
   color: var(--text-2);
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
 }
 
 .screenshot-modal img {
@@ -1975,7 +1975,7 @@ button.burger {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   box-shadow: var(--shadow);
   z-index: 200;
   max-width: 320px;
@@ -2015,11 +2015,11 @@ button.burger {
 
 .update-banner-body strong {
   font-weight: 600;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
 }
 
 .update-banner-subject {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2083,7 +2083,7 @@ button.burger {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
   margin-right: auto;
 }
@@ -2103,13 +2103,13 @@ button.burger {
   overflow: auto;
   padding: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .diff-panel-empty {
   padding: 16px;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
 }
 
 .diff-pre {
@@ -2166,7 +2166,7 @@ button.burger {
 }
 
 .diff-untracked-title {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-2);
@@ -2178,7 +2178,7 @@ button.burger {
   margin: 0;
   padding: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .diff-untracked li {
@@ -2238,7 +2238,7 @@ button.burger {
   border-radius: 0;
   color: var(--text-2);
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   cursor: pointer;
 }
 
@@ -2355,7 +2355,7 @@ button.burger {
   outline: none;
   background: transparent;
   color: var(--text-0);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   padding: 0;
 }
 
@@ -2381,7 +2381,7 @@ button.burger {
 
 .files-search-note {
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
   border-bottom: 1px dashed var(--border);
   margin-bottom: 4px;
@@ -2409,7 +2409,7 @@ button.burger {
 
 .files-search-path {
   color: var(--text-2);
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2438,7 +2438,7 @@ button.burger {
   background: transparent;
   border: none;
   color: var(--text-0);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   text-align: left;
   cursor: pointer;
   border-radius: 0;
@@ -2484,7 +2484,7 @@ button.burger {
 
 .files-row-spinner {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .files-error {
@@ -2492,7 +2492,7 @@ button.burger {
   padding: 10px;
   border: 1px solid var(--danger, #ff6b6b);
   color: var(--danger, #ff6b6b);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   border-radius: 6px;
 }
 
@@ -2509,7 +2509,7 @@ button.burger {
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
 }
 
@@ -2520,7 +2520,7 @@ button.burger {
   padding: 4px 8px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .files-viewer-back:hover {
@@ -2552,7 +2552,7 @@ button.burger {
   background: transparent;
   border: none;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   padding: 4px 10px;
   cursor: pointer;
   border-radius: 0;
@@ -2576,7 +2576,7 @@ button.burger {
   padding: 4px 10px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .files-viewer-edit:hover:not(:disabled),
@@ -2608,12 +2608,12 @@ button.burger {
   background: rgba(255, 107, 138, 0.08);
   color: var(--danger, #ff6b8a);
   border-bottom: 1px solid rgba(255, 107, 138, 0.32);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--ts, 1));
 }
 
 .files-viewer-markdown {
   padding: 12px 16px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   color: var(--text-0);
   line-height: 1.55;
 }
@@ -2631,14 +2631,14 @@ button.burger {
 .files-viewer-empty {
   padding: 16px;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
 }
 
 /* CodeMirror viewer fills its parent and keeps the dark palette consistent
    with the rest of the panel. */
 .code-viewer {
   height: 100%;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--ts, 1));
 }
 
 .code-viewer .cm-editor {
@@ -2683,7 +2683,7 @@ button.burger {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
   margin-right: auto;
 }
@@ -2722,7 +2722,7 @@ button.burger {
   gap: 10px;
   background: var(--bg-0);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   font-family: var(--font-mono);
 }
 
@@ -2752,14 +2752,14 @@ button.burger {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   align-items: center;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .office-editor-status {
   margin-left: auto;
   color: var(--text-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
 }
 
 .office-editor-status-staged {
@@ -2773,7 +2773,7 @@ button.burger {
 }
 
 .office-editor-hint {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   color: var(--text-2);
   margin: 0 0 8px;
   line-height: 1.4;
@@ -2808,7 +2808,7 @@ button.burger {
 
 .office-editor-section h4 {
   margin: 0 0 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-2);
@@ -2833,7 +2833,7 @@ button.burger {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 4px 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
 }
 
 .office-editor-catalog-filters select {
@@ -2848,7 +2848,7 @@ button.burger {
 .office-editor-empty {
   grid-column: 1 / -1;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   font-style: italic;
   padding: 12px;
   text-align: center;
@@ -2885,7 +2885,7 @@ button.burger {
   top: 2px;
   left: 4px;
   color: var(--legacy-accent);
-  font-size: 14px;
+  font-size: calc(14px * var(--ts, 1));
   line-height: 1;
 }
 
@@ -2899,7 +2899,7 @@ button.burger {
   gap: 2px;
   cursor: pointer;
   color: var(--text-1);
-  font-size: 9px;
+  font-size: calc(9px * var(--ts, 1));
   width: 100%;
 }
 
@@ -3004,7 +3004,7 @@ button.burger {
   gap: 3px;
   flex: 1;
   min-width: 80px;
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   color: var(--text-2);
 }
 
@@ -3015,7 +3015,7 @@ button.burger {
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 4px 6px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   font-family: var(--font-mono);
 }
 
@@ -3031,7 +3031,7 @@ button.burger {
 
 .office-modal-err {
   color: var(--danger);
-  font-size: 10px;
+  font-size: calc(10px * var(--ts, 1));
 }
 
 .office-modal-footer {
@@ -3052,7 +3052,7 @@ button.burger {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   color: var(--text-2);
 }
 
@@ -3067,7 +3067,7 @@ button.burger {
   border-radius: 6px;
   color: var(--text-1);
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   cursor: pointer;
 }
 
@@ -3085,7 +3085,7 @@ button.burger {
 /* Mobile layout: collapse sidebar into a slide-in drawer with a burger toggle. */
 @media (max-width: 760px) {
   body {
-    font-size: 15px;
+    font-size: calc(15px * var(--ts, 1));
   }
 
   /* iOS Safari zooms when an input/textarea has computed font-size < 16px,
@@ -3094,7 +3094,7 @@ button.burger {
   input,
   textarea,
   select {
-    font-size: 16px;
+    font-size: max(16px, calc(16px * var(--ts, 1)));
   }
 
   .app-shell {
@@ -3186,7 +3186,7 @@ button.burger {
     justify-content: space-between;
     gap: 8px;
     color: var(--text-1);
-    font-size: 12px;
+    font-size: calc(12px * var(--ts, 1));
     font-weight: 600;
     text-transform: uppercase;
   }
@@ -3204,7 +3204,7 @@ button.burger {
 
   .term-mobile-controls-label {
     color: var(--text-2);
-    font-size: 11px;
+    font-size: calc(11px * var(--ts, 1));
   }
 
   .term-mobile-controls-grid {
@@ -3219,7 +3219,7 @@ button.burger {
     padding: 6px 4px;
     border-radius: 8px;
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: calc(13px * var(--ts, 1));
     white-space: nowrap;
   }
 
@@ -3240,7 +3240,7 @@ button.burger {
   }
 
   .session-search-input-wrap input {
-    font-size: 16px;
+    font-size: max(16px, calc(16px * var(--ts, 1)));
   }
 
   .search-filter-row {
@@ -3415,7 +3415,7 @@ button.burger {
 
 .subagents-empty {
   color: var(--text-2);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   padding: 24px 16px;
   text-align: center;
   line-height: 1.5;
@@ -3457,18 +3457,18 @@ button.burger {
 
 .subagent-type {
   font-weight: 600;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
 }
 
 .subagent-desc {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .subagent-run {
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   color: var(--text-2);
   font-family: ui-monospace, monospace;
 }
@@ -3502,7 +3502,7 @@ button.burger {
   padding: 6px 8px 12px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
 }
 
@@ -3517,7 +3517,7 @@ button.burger {
 /* ----------------------------------------------------------------------- */
 
 .mc-summary {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
   margin-top: 2px;
 }
@@ -3536,7 +3536,7 @@ button.burger {
   align-items: center;
   gap: 8px;
   margin: 0 0 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -3553,7 +3553,7 @@ button.burger {
   border-radius: 9px;
   background: var(--bg-3);
   color: var(--text-1);
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   font-weight: 600;
 }
 
@@ -3609,7 +3609,7 @@ button.burger {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   font-weight: 600;
   color: var(--text-0);
 }
@@ -3618,7 +3618,7 @@ button.burger {
   flex-shrink: 0;
   padding: 2px 7px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: calc(10px * var(--ts, 1));
   font-weight: 600;
   text-transform: capitalize;
   background: var(--bg-3);
@@ -3640,7 +3640,7 @@ button.burger {
 
 .mc-card-cwd {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--ts, 1));
   color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3648,7 +3648,7 @@ button.burger {
 }
 
 .mc-card-prompt {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-1);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3670,7 +3670,7 @@ button.burger {
   color: var(--text-0);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   font-weight: 500;
   cursor: pointer;
   transition: background 0.12s ease, border-color 0.12s ease;
@@ -3693,7 +3693,7 @@ button.burger {
 
 .accounts-group h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
   font-weight: 600;
   color: var(--text-1);
 }
@@ -3727,12 +3727,12 @@ button.burger {
   padding: 0 5px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 10px;
+  font-size: calc(10px * var(--ts, 1));
   color: var(--text-2);
 }
 
 .account-status {
-  font-size: 12px;
+  font-size: calc(12px * var(--ts, 1));
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
@@ -3753,7 +3753,7 @@ button.burger {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px dashed var(--border);
-  font-size: 13px;
+  font-size: calc(13px * var(--ts, 1));
 }
 
 .account-login .login-error {
@@ -3777,7 +3777,7 @@ button.burger {
 }
 
 .account-user-code {
-  font-size: 15px;
+  font-size: calc(15px * var(--ts, 1));
   letter-spacing: 1px;
 }
 

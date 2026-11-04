@@ -215,7 +215,7 @@ export function UserMenu({
           <LayoutGrid />
           <span className="flex-1">Mission Control</span>
           {attentionCount > 0 && (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[11px] font-bold text-black">
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[length:calc(11px*var(--ts,1))] font-bold text-black">
               {attentionCount}
             </span>
           )}
