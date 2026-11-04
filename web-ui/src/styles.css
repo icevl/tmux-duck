@@ -3240,7 +3240,7 @@ button.burger {
   }
 
   .session-search-input-wrap input {
-    font-size: max(16px, calc(16px * var(--ts, 1)));
+    font-size: 16px;
   }
 
   .search-filter-row {
