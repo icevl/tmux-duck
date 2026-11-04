@@ -2867,15 +2867,20 @@ def create_app(
         )
         index_html = dist_dir / "index.html"
 
+        # index.html and the unhashed files beside it (theme-boot.js) must be
+        # revalidated: without Cache-Control, Safari keeps serving a stale
+        # page — and with it the previous build's hashed bundle — for hours.
+        revalidate = {"Cache-Control": "no-cache"}
+
         @app.get("/", include_in_schema=False)
         @app.get("/{path:path}", include_in_schema=False)
         async def spa_fallback(path: str = "") -> Response:
             # Pass-through for files that exist outside /assets (favicon, etc.)
             candidate = dist_dir / path
             if path and candidate.is_file():
-                return FileResponse(candidate)
+                return FileResponse(candidate, headers=revalidate)
             if index_html.is_file():
-                return FileResponse(index_html)
+                return FileResponse(index_html, headers=revalidate)
             raise HTTPException(404, detail="not found")
     else:
 
