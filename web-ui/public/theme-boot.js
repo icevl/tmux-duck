@@ -27,9 +27,8 @@
   }
   root.style.colorScheme = dark ? "dark" : "light";
   // Conversation text size (src/lib/textSize.ts).
-  var zooms = { small: 0.9, large: 1.12, larger: 1.25 };
   try {
     var size = localStorage.getItem("codi-text-size");
-    if (zooms[size]) root.style.setProperty("--chat-zoom", String(zooms[size]));
+    if (size) root.setAttribute("data-text-size", size);
   } catch (e) {}
 })();

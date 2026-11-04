@@ -1034,12 +1034,25 @@ button.burger {
   }
 }
 
-/* Conversation text size preset (src/lib/textSize.ts). */
-.messages-list,
-.composer,
-.last-request-tab,
-.subagents-body > * {
-  zoom: var(--chat-zoom, 1);
+/* Conversation text size preset (src/lib/textSize.ts). One rule per preset
+   keyed on an attribute, not zoom: var(...) — Safari doesn't restyle
+   already-rendered elements when a custom property used in zoom changes. */
+:root[data-text-size="small"] :is(.messages-list, .composer, .last-request-tab, .subagents-body > *,
+    [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"],
+    [data-slot="popover-content"]) {
+  zoom: 0.9;
+}
+
+:root[data-text-size="large"] :is(.messages-list, .composer, .last-request-tab, .subagents-body > *,
+    [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"],
+    [data-slot="popover-content"]) {
+  zoom: 1.12;
+}
+
+:root[data-text-size="larger"] :is(.messages-list, .composer, .last-request-tab, .subagents-body > *,
+    [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"],
+    [data-slot="popover-content"]) {
+  zoom: 1.25;
 }
 
 .messages-list {
