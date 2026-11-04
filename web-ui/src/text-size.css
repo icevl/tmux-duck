@@ -1,0 +1,58 @@
+/* Conversation text size presets (src/lib/textSize.ts).
+ *
+ * zoom scales the chat, composer, side panels and menus. One rule per preset
+ * keyed on an attribute rather than zoom: var(...) — Safari doesn't restyle
+ * already-rendered elements when a custom property used in zoom changes.
+ *
+ * zoom also scales max-width, which would widen the chat column; the column
+ * gets its width divided back so only the text grows, not the layout.
+ * Unlayered so it beats the max-w-[880px] utilities.
+ */
+
+:root[data-text-size="small"] :is(.messages-list, .composer, .last-request-tab, .subagents-body > *,
+    [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"],
+    [data-slot="popover-content"]) {
+  zoom: 0.9;
+}
+
+:root[data-text-size="small"] .chat-column {
+  max-width: 977.8px;
+}
+
+@media (min-width: 761px) {
+  :root[data-text-size="small"] .last-request-tab {
+    width: min(942.2px, calc(100% - 68px));
+  }
+}
+
+:root[data-text-size="large"] :is(.messages-list, .composer, .last-request-tab, .subagents-body > *,
+    [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"],
+    [data-slot="popover-content"]) {
+  zoom: 1.12;
+}
+
+:root[data-text-size="large"] .chat-column {
+  max-width: 785.7px;
+}
+
+@media (min-width: 761px) {
+  :root[data-text-size="large"] .last-request-tab {
+    width: min(757.1px, calc(100% - 68px));
+  }
+}
+
+:root[data-text-size="larger"] :is(.messages-list, .composer, .last-request-tab, .subagents-body > *,
+    [data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"],
+    [data-slot="popover-content"]) {
+  zoom: 1.25;
+}
+
+:root[data-text-size="larger"] .chat-column {
+  max-width: 704.0px;
+}
+
+@media (min-width: 761px) {
+  :root[data-text-size="larger"] .last-request-tab {
+    width: min(678.4px, calc(100% - 68px));
+  }
+}

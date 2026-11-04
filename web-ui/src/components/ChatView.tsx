@@ -963,7 +963,7 @@ const MessageBubble = memo(function MessageBubble({
   return (
     <div
       className={cn(
-        "group/msg mx-auto flex w-full max-w-[880px] min-w-0 flex-col py-1",
+        "group/msg mx-auto flex w-full chat-column max-w-[880px] min-w-0 flex-col py-1",
         kind === "user" ? "items-end" : "items-start",
         m.pending && "opacity-60",
       )}
@@ -1510,7 +1510,7 @@ const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   return (
     <div
       className={cn(
-        "composer mx-auto mb-3.5 w-[calc(100%-36px)] max-w-[880px] gap-1.5 rounded-2xl border bg-card px-3 pt-3 pb-2 shadow-[0_8px_30px_var(--shadow-color)] transition-[border-color,box-shadow]",
+        "composer mx-auto mb-3.5 w-[calc(100%-36px)] chat-column max-w-[880px] gap-1.5 rounded-2xl border bg-card px-3 pt-3 pb-2 shadow-[0_8px_30px_var(--shadow-color)] transition-[border-color,box-shadow]",
         "focus-within:border-foreground/20 dark:focus-within:border-foreground/25",
         "max-[760px]:mb-3 max-[760px]:w-[calc(100%-24px)] max-[760px]:px-2.5",
         dragOver && "drag-over",
@@ -3217,7 +3217,7 @@ export function ChatView({
             {awaitingResponse && (
               <div className="messages-row waiting-duck-row">
                 {/* Same centred column as the messages, not the row's edge. */}
-                <div className="mx-auto w-full max-w-[880px]">
+                <div className="mx-auto w-full chat-column max-w-[880px]">
                   <DuckLogo
                     width={40}
                     height={40}
