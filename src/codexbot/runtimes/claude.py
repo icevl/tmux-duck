@@ -22,6 +22,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from ..agent_instructions import claude_instructions_file
 from ..config import config
 from ..profiles import Profile, default_profile
 from ..tmux_manager import tmux_manager
@@ -114,6 +115,10 @@ class ClaudeRuntime:
                 from ..claude_hooks import ensure_event_hook_settings
 
                 cmd = f"{cmd} --settings {shlex.quote(ensure_event_hook_settings())}"
+            if "--append-system-prompt" not in cmd:
+                # How to show the user images in Codi's chat.
+                prompt = str(claude_instructions_file())
+                cmd = f"{cmd} --append-system-prompt-file {shlex.quote(prompt)}"
         env = " ".join(f"{k}={shlex.quote(v)}" for k, v in self.profile.env().items())
         return f"{env} {cmd}" if env else cmd
 

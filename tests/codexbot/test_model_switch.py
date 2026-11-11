@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from codexbot import model_switch
+from codexbot.agent_instructions import codex_instructions_flag
 from codexbot.runtimes import codex as codex_runtime
 from codexbot.model_switch import (
     ModelSwitchError,
@@ -72,8 +73,8 @@ class TestCodexRestartCommand:
             model_switch.config, "codex_command", "codex --no-alt-screen"
         )
         assert codex_restart_command("sid-1", "gpt-5.5", "high") == (
-            "codex --no-alt-screen resume sid-1 -m gpt-5.5 "
-            "-c model_reasoning_effort=high"
+            f"codex --no-alt-screen {codex_instructions_flag()} resume sid-1 "
+            "-m gpt-5.5 -c model_reasoning_effort=high"
         )
 
 
@@ -116,7 +117,8 @@ class TestSwitch:
         window_id, cmd, runtime = typed.await_args.args
         assert (window_id, cmd) == (
             "@3",
-            "codex resume sid-1 -m gpt-5.5 -c model_reasoning_effort=low",
+            f"codex {codex_instructions_flag()} resume sid-1 -m gpt-5.5 "
+            "-c model_reasoning_effort=low",
         )
         # The relaunch gets the startup watcher (Codex's folder-trust prompt).
         assert runtime.name == "codex"

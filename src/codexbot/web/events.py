@@ -28,6 +28,7 @@ import logging
 import time
 from typing import Any
 
+from ..media_store import store_images
 from ..session_monitor import NewMessage
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,8 @@ class EventBus:
             "transcript_offset": msg.transcript_offset,
             "transcript_index": msg.transcript_index,
         }
+        if msg.image_data:
+            payload["images"] = await asyncio.to_thread(store_images, msg.image_data)
         await self.publish(payload)
 
 

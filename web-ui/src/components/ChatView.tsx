@@ -53,6 +53,7 @@ import {
 } from "../api";
 import { SkillsModal } from "./SkillsModal";
 import { Markdown } from "./Markdown";
+import { MessageImages } from "./ChatImage";
 import { RuntimeIcon } from "./Sidebar";
 import { DuckLogo } from "./DuckLogo";
 import { ComposerChip, EffortMenu, ModelMenu } from "./ModelMenu";
@@ -688,6 +689,7 @@ function reconcileMessage(
     tool_name: incoming.tool_name ?? existing.tool_name,
     tool_input: incoming.tool_input ?? existing.tool_input,
     tool_use_id: incoming.tool_use_id ?? existing.tool_use_id,
+    images: incoming.images ?? existing.images,
     pending: false,
     _clientId: existing._clientId,
     _order: needsOrderRefresh ? nextMessageOrder() : existing._order,
@@ -1006,7 +1008,11 @@ const MessageBubble = memo(function MessageBubble({
         )}
       >
         {kind === "thinking" && <Brain className="mt-1 size-3.5 shrink-0 not-italic" />}
-        <Markdown text={displayText ?? m.text} />
+        <Markdown
+          text={displayText ?? m.text}
+          inlineImages={kind === "user" || kind === "assistant"}
+        />
+        <MessageImages images={m.images} />
         {choicePrompt && choicePage && onSelectChoice && (
           <div className={`choice-panel ${choicePrompt.kind}`}>
             <div className="choice-panel-header">
@@ -2645,6 +2651,7 @@ export function ChatView({
             tool_name: event.tool_name,
             tool_input: event.tool_input,
             tool_use_id: event.tool_use_id,
+            images: event.images,
           },
         ]);
         if (next === prev) return prev;

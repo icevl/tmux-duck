@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 # Session context Codex writes into the transcript as `user` messages at the
 # start of a session: AGENTS.md, the environment, sandbox permissions.
+# A base64 data URI, as Codex embeds images in tool output.
+_DATA_URI_RE = re.compile(r"^data:(image/[\w.+-]+);base64,(.+)$", re.S)
+
 CODEX_CONTEXT_PREFIXES = (
     "# AGENTS.md instructions for",
     "<environment_context>",
@@ -462,10 +465,6 @@ class TranscriptParser:
             if payload_type == "function_call_output":
                 call_id = payload.get("call_id") or ""
                 output = payload.get("output", "")
-                if isinstance(output, str):
-                    output_text = output
-                else:
-                    output_text = json.dumps(output, ensure_ascii=False)
                 return {
                     "type": "user",
                     "timestamp": timestamp,
@@ -474,7 +473,7 @@ class TranscriptParser:
                             {
                                 "type": "tool_result",
                                 "tool_use_id": call_id,
-                                "content": [{"type": "text", "text": output_text}],
+                                "content": cls._codex_tool_output_blocks(output),
                             }
                         ]
                     },
@@ -839,6 +838,42 @@ class TranscriptParser:
                     parts.append(item)
             return "\n".join(parts)
         return ""
+
+    @staticmethod
+    def _codex_tool_output_blocks(output: Any) -> list[dict[str, Any]]:
+        """Codex tool output as Claude-style tool_result content blocks.
+
+        ``view_image`` (and other image-returning tools) output a list with
+        ``input_image`` data URIs; those become base64 image blocks so they
+        reach the chat as images instead of a wall of base64 text.
+        """
+        if isinstance(output, str):
+            return [{"type": "text", "text": output}]
+        if not isinstance(output, list):
+            return [{"type": "text", "text": json.dumps(output, ensure_ascii=False)}]
+        blocks: list[dict[str, Any]] = []
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            kind = item.get("type")
+            if kind in ("input_text", "output_text", "text"):
+                blocks.append({"type": "text", "text": item.get("text", "")})
+            elif kind == "input_image":
+                match = _DATA_URI_RE.match(item.get("image_url") or "")
+                if match:
+                    blocks.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": match.group(1),
+                                "data": match.group(2),
+                            },
+                        }
+                    )
+        return blocks or [
+            {"type": "text", "text": json.dumps(output, ensure_ascii=False)}
+        ]
 
     @staticmethod
     def extract_tool_result_images(

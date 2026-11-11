@@ -126,6 +126,8 @@ export interface SessionMessage {
   tool_name?: string | null;
   tool_input?: Record<string, unknown> | null;
   tool_use_id?: string | null;
+  /** Images the agent produced (e.g. a screenshot it Read), as URLs. */
+  images?: string[] | null;
 }
 
 export interface Subagent {
@@ -987,6 +989,7 @@ export type WsEvent =
       turn_id: number | null;
       timestamp?: string | null;
       transcript_offset?: number | null;
+      images?: string[] | null;
       transcript_index?: number | null;
       ts: number;
       seq?: number;

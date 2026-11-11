@@ -21,6 +21,7 @@ from typing import Any
 
 import aiofiles
 
+from .media_store import store_images
 from .config import config
 from .profiles import profile_store
 from .runtimes import get_runtime
@@ -1534,6 +1535,8 @@ def _messages_from_parsed(parsed_entries: list[Any]) -> list[dict[str, Any]]:
             message["transcript_offset"] = e.transcript_offset
         if getattr(e, "transcript_index", None) is not None:
             message["transcript_index"] = e.transcript_index
+        if images := store_images(getattr(e, "image_data", None)):
+            message["images"] = images
         messages.append(message)
     return messages
 

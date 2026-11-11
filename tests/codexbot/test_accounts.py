@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from codexbot.agent_instructions import claude_instructions_file
 from codexbot import accounts
 from codexbot.accounts import (
     AccountManager,
@@ -107,7 +108,11 @@ class TestProfileStore:
 
 class TestLaunchAndPaths:
     def test_default_profile_launches_unchanged(self, home):
-        assert get_runtime("claude").build_start_command(None) == "claude"
+        # Unchanged apart from Codi's chat instructions file.
+        prompt = claude_instructions_file()
+        assert get_runtime("claude").build_start_command(None) == (
+            f"claude --append-system-prompt-file {prompt}"
+        )
 
     def test_profile_runtime_sets_config_dir(self, home):
         from codexbot import profiles
@@ -115,7 +120,10 @@ class TestLaunchAndPaths:
         profile = profiles.profile_store.create("claude", "Work")
         runtime = get_runtime("claude", profile.id)
         cmd = runtime.build_start_command("sid-1")
-        assert cmd == f"CLAUDE_CONFIG_DIR={profile.home} claude --resume sid-1"
+        assert cmd == (
+            f"CLAUDE_CONFIG_DIR={profile.home} claude --resume sid-1"
+            f" --append-system-prompt-file {claude_instructions_file()}"
+        )
         assert get_runtime("codex", profile.id).name == "codex"
 
     @pytest.mark.asyncio

@@ -15,6 +15,7 @@ import re
 import shlex
 import shutil
 
+from ..agent_instructions import codex_instructions_flag
 from ..config import config
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,9 @@ class CodexRuntime:
             # in the pane, which the connector surfaces to Slack.
             cmd = _strip_approval_flags(cmd)
             cmd = f"{cmd} --ask-for-approval untrusted"
+        elif "developer_instructions" not in cmd:
+            # How to show the user images in Codi's chat.
+            cmd = f"{cmd} {codex_instructions_flag()}"
         if resume_session_id:
             cmd = f"{cmd} resume {resume_session_id}"
         return cmd

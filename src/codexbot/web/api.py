@@ -61,6 +61,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ..config import config
+from ..media_store import MEDIA_NAME_RE, media_dir, prune_media
 from ..model_switch import ModelSwitchError, model_catalog, switch_model
 from ..runtimes import all_runtimes, get_runtime
 from ..accounts import account_manager, profile_key
@@ -281,6 +282,16 @@ def _valid_sort_order(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         return None
     return value
+
+
+# Raster images the web UI may show inline (/api/image, /api/media).
+INLINE_IMAGE_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 
 
 def user_requests(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -590,6 +601,9 @@ def create_app(
     if dev_mode:
         dev_origins = ("http://127.0.0.1:5173", "http://localhost:5173")
         allowed_origins = tuple({*allowed_origins, *dev_origins})
+    # Agent screenshots nobody has looked at in a month.
+    prune_media()
+
     auth = Authenticator(
         AuthConfig(
             password=config.web_ui_password,
@@ -1738,6 +1752,37 @@ def create_app(
         if target is None:
             raise HTTPException(404, detail="file not found")
         return FileResponse(target, filename=target.name)
+
+    @app.get("/api/image")
+    async def view_image(
+        path: str,
+        _user: str = Depends(require_auth),
+    ) -> FileResponse:
+        # An image an agent points at in chat (a screenshot it saved), shown
+        # inline rather than downloaded. Same scope as /api/file, raster types
+        # only — no SVG, which can carry script.
+        target = resolve_scoped_path(path, allowed_file_roots())
+        media_type = INLINE_IMAGE_TYPES.get(target.suffix.lower()) if target else None
+        if target is None or media_type is None:
+            raise HTTPException(404, detail="image not found")
+        return FileResponse(target, media_type=media_type)
+
+    @app.get("/api/media/{name}")
+    async def agent_media(
+        name: str,
+        _user: str = Depends(require_auth),
+    ) -> FileResponse:
+        # Images agents produced (tool-result screenshots), see media_store.
+        if not MEDIA_NAME_RE.match(name):
+            raise HTTPException(404, detail="not found")
+        target = media_dir() / name
+        if not target.is_file():
+            raise HTTPException(404, detail="not found")
+        return FileResponse(
+            target,
+            media_type=INLINE_IMAGE_TYPES[target.suffix.lower()],
+            headers={"Cache-Control": "private, max-age=31536000, immutable"},
+        )
 
     def _resolve_files_path(cwd: str, rel: str) -> Path:
         root = Path(cwd).resolve()
