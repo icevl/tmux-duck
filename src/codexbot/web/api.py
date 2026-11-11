@@ -62,14 +62,19 @@ from pydantic import BaseModel, Field
 
 from ..config import config
 from ..media_store import MEDIA_NAME_RE, media_dir, prune_media
-from ..model_switch import ModelSwitchError, model_catalog, switch_model
+from ..model_switch import (
+    ModelSwitchError,
+    model_catalog,
+    restart_agent,
+    switch_model,
+)
 from ..runtimes import all_runtimes, get_runtime
 from ..accounts import account_manager, profile_key
 from ..profiles import DEFAULT_PROFILE_ID, SUPPORTED_RUNTIMES, profile_store
 from ..transcript_meta import TranscriptMeta, transcript_meta_cache
 from ..search import client as search_client
 from ..search.contracts import SearchRequest
-from ..session import session_manager
+from ..session import locate_claude_transcript, session_manager
 from ..skill_hints import skill_hint_registry
 from ..slash_commands import slash_command_registry
 from ..skills import discover_skills
@@ -292,6 +297,16 @@ INLINE_IMAGE_TYPES = {
     ".gif": "image/gif",
     ".webp": "image/webp",
 }
+
+
+def _has_transcript(ws: Any, runtime: str) -> bool:
+    """Whether the window's agent session has a saved conversation."""
+    if runtime == "claude":
+        path = locate_claude_transcript(ws.session_id, ws.cwd, ws.profile)
+        return path is not None and path.exists()
+    if session_manager._session_index.get(ws.session_id):
+        return True
+    return any(config.codex_sessions_path.glob(f"**/rollout-*{ws.session_id}.jsonl"))
 
 
 def user_requests(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1586,6 +1601,39 @@ def create_app(
             raise HTTPException(409, detail=str(e))
         await bus.publish_sessions_changed()
         return {"ok": True, "model": model, "effort": effort, "runtime": runtime}
+
+    @app.post("/api/sessions/{window_id}/restart")
+    async def restart_session(
+        window_id: str,
+        _user: str = Depends(require_auth),
+    ) -> dict[str, Any]:
+        # Quit the agent CLI and bring the same conversation back up (new CLI
+        # version, launch flags, instructions). Interrupts a turn in flight;
+        # the UI confirms that first.
+        ws = await _live_window_state(window_id)
+        runtime = ws.runtime or "codex"
+        # Resume only a conversation that exists: a session nothing was sent
+        # in has no transcript yet ("No conversation found"), so it starts
+        # fresh rather than picking up another conversation from the cwd.
+        session_id = (
+            ws.session_id
+            if ws.session_id and await asyncio.to_thread(_has_transcript, ws, runtime)
+            else None
+        )
+        model = effort = None
+        if runtime != "claude":
+            # Codex falls back to config.toml without flags: keep the
+            # session's model and effort.
+            meta = await _window_transcript_meta(ws)
+            model, effort = meta.model, meta.effort
+        try:
+            await restart_agent(
+                window_id, runtime, ws.profile, session_id, model, effort
+            )
+        except ModelSwitchError as e:
+            raise HTTPException(409, detail=str(e))
+        await bus.publish_sessions_changed()
+        return {"ok": True, "runtime": runtime}
 
     @app.get("/api/sessions/{window_id}/diff")
     async def get_diff(

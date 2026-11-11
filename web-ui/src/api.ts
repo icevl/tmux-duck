@@ -809,6 +809,11 @@ export const api = {
     ),
   listModels: (windowId: string) =>
     request<ModelCatalog>(`/api/sessions/${encodeURIComponent(windowId)}/models`),
+  restartSession: (windowId: string) =>
+    request<{ ok: boolean; runtime: string }>(
+      `/api/sessions/${encodeURIComponent(windowId)}/restart`,
+      { method: "POST" },
+    ),
   switchModel: (
     windowId: string,
     body: { model?: string | null; effort?: string | null },

@@ -143,3 +143,63 @@ class TestSwitch:
         ):
             await switch_model("@3", "codex", "sid-1", "gpt-5.5", None)
         typed.assert_not_awaited()
+
+
+class TestRestart:
+    def test_claude_resumes_the_known_session(self, monkeypatch):
+        monkeypatch.setattr(model_switch.config, "claude_command", "claude")
+        cmd = model_switch.restart_command("claude", "", "sid-1")
+        assert cmd.startswith("claude --resume sid-1")
+
+    def test_without_a_conversation_starts_fresh(self, monkeypatch):
+        monkeypatch.setattr(codex_runtime.shutil, "which", lambda _p: None)
+        monkeypatch.setattr(model_switch.config, "claude_command", "claude")
+        monkeypatch.setattr(model_switch.config, "codex_command", "codex")
+        for runtime in ("claude", "codex"):
+            cmd = model_switch.restart_command(runtime, "", None)
+            assert "--resume" not in cmd and "--continue" not in cmd
+            assert " resume" not in cmd
+
+    def test_codex_keeps_model_and_effort(self, monkeypatch):
+        monkeypatch.setattr(codex_runtime.shutil, "which", lambda _p: None)
+        monkeypatch.setattr(model_switch.config, "codex_command", "codex")
+        cmd = model_switch.restart_command("codex", "", "sid-1", "gpt-5.5", "high")
+        assert cmd.endswith("resume sid-1 -m gpt-5.5 -c model_reasoning_effort=high")
+
+    @pytest.mark.asyncio
+    async def test_quits_then_relaunches_on_the_same_session(self, monkeypatch):
+        monkeypatch.setattr(model_switch.config, "claude_command", "claude")
+        panes = iter(["claude", "zsh"])
+        tm = model_switch.tmux_manager
+        send = AsyncMock(return_value=True)
+        typed = AsyncMock(return_value=True)
+        with (
+            patch.object(
+                tm,
+                "find_window_by_id",
+                AsyncMock(side_effect=lambda _w: _window(next(panes))),
+            ),
+            patch.object(tm, "send_keys", send),
+            patch.object(tm, "type_start_command", typed),
+        ):
+            await model_switch.restart_agent("@3", "claude", "", "sid-1")
+        assert send.await_args_list[0].args == ("@3", "/exit")
+        window_id, cmd, runtime = typed.await_args.args
+        assert window_id == "@3" and cmd.startswith("claude --resume sid-1")
+        assert runtime.name == "claude"
+
+    @pytest.mark.asyncio
+    async def test_agent_that_never_exits_is_not_relaunched(self, monkeypatch):
+        monkeypatch.setattr(model_switch, "AGENT_EXIT_TIMEOUT", 0.1)
+        tm = model_switch.tmux_manager
+        typed = AsyncMock(return_value=True)
+        with (
+            patch.object(
+                tm, "find_window_by_id", AsyncMock(return_value=_window("claude"))
+            ),
+            patch.object(tm, "send_keys", AsyncMock(return_value=True)),
+            patch.object(tm, "type_start_command", typed),
+            pytest.raises(ModelSwitchError),
+        ):
+            await model_switch.restart_agent("@3", "claude", "", "sid-1")
+        typed.assert_not_awaited()

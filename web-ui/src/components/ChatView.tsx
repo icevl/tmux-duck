@@ -34,6 +34,7 @@ import {
   MoreVertical,
   Paperclip,
   Pencil,
+  RotateCw,
   Terminal as TerminalIcon,
   Square,
   Trash2,
@@ -54,6 +55,7 @@ import {
 import { SkillsModal } from "./SkillsModal";
 import { Markdown } from "./Markdown";
 import { MessageImages } from "./ChatImage";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { RuntimeIcon } from "./Sidebar";
 import { DuckLogo } from "./DuckLogo";
 import { ComposerChip, EffortMenu, ModelMenu } from "./ModelMenu";
@@ -1846,6 +1848,21 @@ export function ChatView({
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(session.name);
   const [awaitingResponse, setAwaitingResponse] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const restartSession = useCallback(async () => {
+    setConfirmRestart(false);
+    setRestarting(true);
+    showToast("Restarting the agent…");
+    try {
+      await api.restartSession(session.window_id);
+      showToast("Agent restarted on the same conversation");
+    } catch (err) {
+      showToast((err as Error).message, "error");
+    } finally {
+      setRestarting(false);
+    }
+  }, [session.window_id, showToast]);
   const [interactivePrompt, setInteractivePrompt] = useState<{
     uiName: string;
     options: Array<{ label: string }>;
@@ -3101,6 +3118,12 @@ export function ChatView({
               <Pencil /> Rename
             </DropdownMenuItem>
             <DropdownMenuItem
+              disabled={!!session.dormant || restarting}
+              onSelect={() => setConfirmRestart(true)}
+            >
+              <RotateCw /> Restart
+            </DropdownMenuItem>
+            <DropdownMenuItem
               onSelect={() => {
                 void onCommand("/clear");
                 setMessages([]);
@@ -3430,6 +3453,17 @@ export function ChatView({
         onCommand={onCommand}
         onNotice={(message) => showToast(message, "error")}
       />
+      {confirmRestart && (
+        <ConfirmDialog
+          title="Restart the agent?"
+          body={`${
+            session.runtime === "claude" ? "Claude Code" : "Codex"
+          } quits and starts again on this same conversation, picking up a new CLI version and settings. Work in progress is interrupted.`}
+          confirmLabel="Restart"
+          onConfirm={restartSession}
+          onCancel={() => setConfirmRestart(false)}
+        />
+      )}
       {showSkills && (
         <SkillsModal
           runtime={session.runtime}

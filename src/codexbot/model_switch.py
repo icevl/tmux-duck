@@ -222,3 +222,85 @@ async def switch_model(
         await switch_claude(window_id, model, effort)
     else:
         await switch_codex(window_id, session_id, model, effort)
+
+
+# How long an agent gets to exit cleanly before Ctrl+C, and again after it.
+AGENT_EXIT_TIMEOUT = 10.0
+# Each runtime's own clean-exit command.
+_EXIT_COMMANDS = {"claude": "/exit", "codex": "/quit"}
+
+
+async def _pane_runs_agent(window_id: str, runtime: str) -> bool:
+    tmux_manager.invalidate_windows_cache()
+    window = await tmux_manager.find_window_by_id(window_id)
+    if window is None:
+        raise ModelSwitchError("window not found")
+    return get_runtime(runtime).pane_command_matches(window.pane_current_command)
+
+
+async def _wait_agent_exit(window_id: str, runtime: str, timeout: float) -> bool:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if not await _pane_runs_agent(window_id, runtime):
+            return True
+        await asyncio.sleep(0.3)
+    return False
+
+
+def restart_command(
+    runtime: str,
+    profile: str,
+    session_id: str | None,
+    model: str | None = None,
+    effort: str | None = None,
+) -> str:
+    """The command that brings a session's conversation back up.
+
+    The session id is resumed exactly — not ``--continue`` / ``resume
+    --last``, which take the cwd's newest conversation and can grab another
+    session's when several share a folder. Without a saved conversation
+    there is nothing to resume, so the agent starts fresh.
+    """
+    cmd = get_runtime(runtime, profile).build_start_command(session_id)
+    if runtime == "claude":
+        return cmd
+    if model:
+        cmd = f"{cmd} -m {shlex.quote(model)}"
+    if effort:
+        cmd = f"{cmd} -c {shlex.quote(f'model_reasoning_effort={effort}')}"
+    return cmd
+
+
+async def restart_agent(
+    window_id: str,
+    runtime: str,
+    profile: str,
+    session_id: str | None,
+    model: str | None = None,
+    effort: str | None = None,
+) -> None:
+    """Quit the agent in its tmux window and relaunch it on the same session.
+
+    Picks up a new CLI version, launch flags and Codi's instructions while
+    keeping the conversation. A turn in flight is interrupted.
+    """
+    model = _validate(model, "model")
+    effort = _validate(effort, "effort")
+    if await _pane_runs_agent(window_id, runtime):
+        await tmux_manager.send_keys(window_id, _EXIT_COMMANDS.get(runtime, "/exit"))
+        if not await _wait_agent_exit(window_id, runtime, AGENT_EXIT_TIMEOUT / 2):
+            # Busy or a dialog has focus: Ctrl+C twice quits both CLIs.
+            for _ in range(2):
+                await tmux_manager.send_keys(
+                    window_id, "C-c", enter=False, literal=False
+                )
+                await asyncio.sleep(0.3)
+            if not await _wait_agent_exit(window_id, runtime, AGENT_EXIT_TIMEOUT / 2):
+                raise ModelSwitchError("the agent did not exit; restart aborted")
+    cmd = restart_command(runtime, profile, session_id, model, effort)
+    logger.info("Restarting %s in %s: %s", runtime, window_id, cmd)
+    if not await tmux_manager.type_start_command(
+        window_id, cmd, get_runtime(runtime, profile)
+    ):
+        raise ModelSwitchError("failed to relaunch the agent")
