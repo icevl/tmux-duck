@@ -377,3 +377,49 @@ class TestAccountsApi:
         )
         assert r.status_code == 409
         assert "signed out" in r.json()["detail"]
+
+
+class TestSharedMemory:
+    def test_profile_memory_links_and_merges_into_shared(self, home, tmp_path):
+        from codexbot import profiles
+
+        shared = home / ".claude" / "projects"
+        (shared / "-old" / "memory").mkdir(parents=True)
+        (shared / "-old" / "memory" / "MEMORY.md").write_text("- [A](a.md) — a\n")
+        (shared / "-old" / "memory" / "a.md").write_text("shared a")
+
+        profile = profiles.profile_store.create("claude", "Mem")
+        profile_home = Path(profile.home or "")
+        old_link = profile_home / "projects" / "-old" / "memory"
+        assert old_link.is_symlink()
+        assert old_link.resolve() == (shared / "-old" / "memory").resolve()
+
+        # Memory the profile wrote on its own before sharing gets merged.
+        work = tmp_path / "work"
+        work.mkdir()
+        slug = str(work.resolve()).replace("/", "-").replace(".", "-")
+        own = profile_home / "projects" / slug / "memory"
+        own.mkdir(parents=True)
+        (own / "MEMORY.md").write_text("- [B](b.md) — b\n")
+        (own / "b.md").write_text("own b")
+        (shared / slug / "memory").mkdir(parents=True)
+        (shared / slug / "memory" / "MEMORY.md").write_text("- [C](c.md) — c\n")
+        (shared / slug / "memory" / "b.md").write_text("other b")
+
+        profiles.share_claude_memory(profile.home, str(work))
+        merged = shared / slug / "memory"
+        assert own.is_symlink() and own.resolve() == merged.resolve()
+        assert (merged / "MEMORY.md").read_text().splitlines() == [
+            "- [C](c.md) — c",
+            "- [B](b.md) — b",
+        ]
+        assert (merged / "b.md").read_text() == "other b"
+        assert (merged / "b-2.md").read_text() == "own b"
+        # Transcripts stay per profile: projects/ itself is not a link.
+        assert not (profile_home / "projects").is_symlink()
+
+    def test_default_profile_is_untouched(self, home):
+        from codexbot import profiles
+
+        profiles.share_claude_memory(None, "/tmp")
+        assert not (home / ".claude" / "projects").exists()

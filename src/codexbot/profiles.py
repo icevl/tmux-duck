@@ -12,7 +12,8 @@ profiles existed keep working unchanged.
 Creating a Claude profile links the user's shared configuration (settings,
 skills, plugins, agents, CLAUDE.md …) from ``~/.claude`` into the new
 directory, and seeds ``.claude.json`` so first launch skips onboarding and
-keeps the user's MCP servers. Only credentials and history stay separate.
+keeps the user's MCP servers. Auto memory (``projects/*/memory``) is shared
+too; only credentials and history stay separate.
 """
 
 from __future__ import annotations
@@ -190,6 +191,7 @@ class ProfileStore:
             home = self._homes_root / profile_id
             home.mkdir(parents=True, exist_ok=True)
             _prepare_claude_home(home)
+            share_claude_memory(home)
             profile = Profile(
                 id=profile_id, runtime=runtime, label=label, home=str(home)
             )
@@ -240,6 +242,77 @@ def _prepare_claude_home(home: Path) -> None:
             if key in global_state:
                 seeded[key] = global_state[key]
     atomic_write_json(state_file, seeded)
+
+
+def share_claude_memory(home: str | Path | None, cwd: str | None = None) -> None:
+    """Point a profile's per-project ``memory/`` dirs at ``~/.claude``'s.
+
+    Auto memory lives in ``projects/<encoded-cwd>/memory/``; linking just
+    that dir (not the whole ``projects/``) gives every account one memory
+    while transcripts — and so per-account usage — stay separate. Links
+    every project that has memory on either side, plus ``cwd``'s project
+    (created on demand). Memory the profile wrote on its own is merged into
+    the shared dir first. Best-effort: never raises.
+    """
+    if home is None:
+        return  # the default profile already uses ~/.claude
+    shared_root = config.claude_projects_path
+    own_root = Path(home) / "projects"
+    slugs = {m.parent.name for m in shared_root.glob("*/memory") if m.is_dir()}
+    slugs |= {m.parent.name for m in own_root.glob("*/memory") if m.is_dir()}
+    if cwd:
+        from .session import _encode_claude_cwd, _strip_macos_firmlink
+
+        try:
+            resolved = str(Path(cwd).expanduser().resolve())
+        except (OSError, RuntimeError, ValueError):
+            resolved = ""
+        if resolved:
+            slugs.add(_encode_claude_cwd(_strip_macos_firmlink(resolved)))
+    for slug in slugs:
+        try:
+            _link_memory_dir(own_root / slug / "memory", slug)
+        except OSError as e:
+            logger.warning("Could not share memory %s into %s: %s", slug, home, e)
+
+
+def _link_memory_dir(link: Path, slug: str) -> None:
+    target = config.claude_projects_path / slug / "memory"
+    if link.is_symlink():
+        if link.resolve() == target.resolve():
+            return
+        link.unlink()
+    target.mkdir(parents=True, exist_ok=True)
+    if link.is_dir():
+        _merge_memory_dir(link, target)
+        shutil.rmtree(link)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target)
+
+
+def _merge_memory_dir(src: Path, dst: Path) -> None:
+    """Move a profile's own memory files into the shared dir, losing nothing."""
+    for f in sorted(src.iterdir()):
+        if not f.is_file():
+            continue
+        dest = dst / f.name
+        if not dest.exists():
+            shutil.move(str(f), dest)
+        elif f.name == "MEMORY.md":
+            known = set(dest.read_text(encoding="utf-8").splitlines())
+            extra = [
+                line
+                for line in f.read_text(encoding="utf-8").splitlines()
+                if line.strip() and line not in known
+            ]
+            if extra:
+                with dest.open("a", encoding="utf-8") as fh:
+                    fh.write("\n".join(extra) + "\n")
+        elif dest.read_bytes() != f.read_bytes():
+            n = 2
+            while (alt := dst / f"{f.stem}-{n}{f.suffix}").exists():
+                n += 1
+            shutil.move(str(f), alt)
 
 
 profile_store = ProfileStore()

@@ -663,6 +663,11 @@ class TmuxManager:
                     pane = window.active_pane
                     if pane:
                         if runtime is not None:
+                            profile = getattr(runtime, "profile", None)
+                            if runtime.name == "claude" and profile is not None:
+                                from .profiles import share_claude_memory
+
+                                share_claude_memory(profile.home, str(path))
                             cmd = runtime.build_start_command(
                                 resume_session_id,
                                 approval_gate=approval_gate,
