@@ -39,6 +39,16 @@ def get_session_monitor_heartbeat_age() -> float | None:
     return max(0.0, time.monotonic() - _monitor_heartbeat)
 
 
+# A monitor step slower than this holds up every later message (web too).
+_SLOW_STEP_SECONDS = 1.0
+
+
+def _warn_if_slow(what: str, started: float, detail: str) -> None:
+    elapsed = time.monotonic() - started
+    if elapsed > _SLOW_STEP_SECONDS:
+        logger.warning("%s took %.1fs (%s)", what, elapsed, detail)
+
+
 @dataclass
 class SessionInfo:
     """Information about a Codex session."""
@@ -127,6 +137,12 @@ class SessionMonitor:
         self._running = False
         self._task: asyncio.Task | None = None
         self._message_callback: Callable[[NewMessage], Awaitable[None]] | None = None
+        # The primary (Telegram) callback runs off the poll loop: it can wait
+        # seconds per message on Telegram rate limits, and the loop must keep
+        # feeding the web bus meanwhile. One worker keeps delivery in order.
+        self._callback_queue: asyncio.Queue[NewMessage] = asyncio.Queue()
+        self._callback_task: asyncio.Task | None = None
+        self._callback_warned_at = 0.0
         self._extra_listeners: list[Callable[[NewMessage], Awaitable[None]]] = []
         self._meta_listeners: list[Callable[[], Awaitable[None]]] = []
         self._session_meta: dict[str, TranscriptMeta] = {}
@@ -771,9 +787,16 @@ class SessionMonitor:
                         )
 
                     active_session_ids = set(self._last_window_sessions.values())
+                    check_started = time.monotonic()
                     new_messages = await self.check_for_updates(
                         active_session_ids,
                         bootstrap=bootstrap_cycle,
+                    )
+                    _warn_if_slow(
+                        "Transcript check",
+                        check_started,
+                        f"{len(active_session_ids)} sessions, "
+                        f"{len(new_messages)} new messages",
                     )
 
                     for msg in new_messages:
@@ -792,10 +815,8 @@ class SessionMonitor:
                             except Exception as e:
                                 logger.error("Extra listener error: %s", e)
                         if self._message_callback:
-                            try:
-                                await self._message_callback(msg)
-                            except Exception as e:
-                                logger.error("Message callback error: %s", e)
+                            self._ensure_callback_worker()
+                            self._callback_queue.put_nowait(msg)
                     await self._notify_meta_listeners()
                 except Exception as e:
                     logger.error("Monitor loop error: %s", e)
@@ -811,6 +832,34 @@ class SessionMonitor:
             if refresh_task is not None and not refresh_task.done():
                 refresh_task.cancel()
 
+    def _ensure_callback_worker(self) -> None:
+        if self._callback_task is None or self._callback_task.done():
+            self._callback_task = asyncio.create_task(self._callback_worker())
+
+    async def _callback_worker(self) -> None:
+        """Deliver messages to the primary callback, in order, one at a time."""
+        while True:
+            msg = await self._callback_queue.get()
+            started = time.monotonic()
+            try:
+                if self._message_callback:
+                    await self._message_callback(msg)
+            except Exception as e:
+                logger.error("Message callback error: %s", e)
+            finally:
+                self._callback_queue.task_done()
+            # Telegram backlogs can make every message slow; say so at most
+            # once a minute instead of per message.
+            now = time.monotonic()
+            if now - self._callback_warned_at > 60:
+                if now - started > _SLOW_STEP_SECONDS:
+                    self._callback_warned_at = now
+                _warn_if_slow(
+                    "Message callback",
+                    started,
+                    f"{msg.session_id}, {self._callback_queue.qsize()} queued",
+                )
+
     def start(self) -> None:
         if self._running:
             logger.warning("Monitor already running")
@@ -822,11 +871,14 @@ class SessionMonitor:
         self._running = False
         task = self._task
         self._task = None
-        if task:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        callback_task = self._callback_task
+        self._callback_task = None
+        for t in (task, callback_task):
+            if t:
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
         self.state.save()
         logger.info("Session monitor stopped and state saved")
