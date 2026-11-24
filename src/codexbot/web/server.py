@@ -238,8 +238,11 @@ async def start_web_server(
         app,
         host=config.web_ui_host,
         port=config.web_ui_port,
-        log_level="info",
+        log_level="warning",
         access_log=False,
+        # Use the app's logging setup (rotating file under launchd) instead
+        # of uvicorn's own stderr handlers.
+        log_config=None,
         loop="asyncio",
         lifespan="on",
     )
@@ -258,8 +261,9 @@ async def start_web_server(
                 port=WEB_UI_HTTPS_PORT,
                 ssl_certfile=str(tls[0]),
                 ssl_keyfile=str(tls[1]),
-                log_level="info",
+                log_level="warning",
                 access_log=False,
+                log_config=None,
                 loop="asyncio",
                 # The HTTP server already runs the app's startup/shutdown.
                 lifespan="off",

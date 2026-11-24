@@ -94,11 +94,15 @@ class TestConfigValid:
 @pytest.mark.usefixtures("_base_env")
 class TestConfigMissingEnv:
     def test_missing_telegram_bot_token(self, monkeypatch):
+        # Telegram on regardless of a local .env that turns it off.
+        monkeypatch.setenv("CODEXBOT_TELEGRAM_ENABLED", "true")
         monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         with pytest.raises(ValueError, match="TELEGRAM_BOT_TOKEN"):
             Config()
 
     def test_missing_allowed_users(self, monkeypatch):
+        # Telegram on regardless of a local .env that turns it off.
+        monkeypatch.setenv("CODEXBOT_TELEGRAM_ENABLED", "true")
         monkeypatch.delenv("ALLOWED_USERS", raising=False)
         with pytest.raises(ValueError, match="ALLOWED_USERS"):
             Config()

@@ -10,34 +10,46 @@ import logging
 import signal
 import sys
 
+from .log_setup import setup_logging
 from .utils import SingleInstanceLock, codexbot_dir
 
 
 async def _run_headless(logger: logging.Logger) -> None:
-    """Run connectors only — no Telegram polling, no web UI.
+    """Run without Telegram: the web UI (when enabled) and connectors.
 
-    Starts the tmux session, the transcript monitor, a loopback approval
-    server (so the Claude write-gate works without the web UI), and the
-    connector manager; then idles until SIGINT/SIGTERM.
+    Starts the tmux session, the transcript monitor, the web UI — or, without
+    one, a loopback approval server so the Claude write-gate still works —
+    and the connector manager; then idles until SIGINT/SIGTERM.
     """
     from .config import config
     from .connectors import connector_manager
     from .connectors.approval_server import ApprovalServer
+    from .session import session_manager
     from .session_monitor import SessionMonitor
     from .tmux_manager import tmux_manager
+    from .web import start_web_server, stop_web_server
 
     session = tmux_manager.get_or_create_session()
     logger.info("Tmux session '%s' ready", session.session_name)
+    await session_manager.resolve_stale_ids()
 
     monitor = SessionMonitor()
     monitor.start()
     logger.info("Session monitor started")
 
-    approval = ApprovalServer(port=config.web_ui_port)
-    await approval.start()
+    approval: ApprovalServer | None = None
+    if config.web_ui_enabled:
+        # The web app serves the connector approval endpoints itself.
+        await start_web_server(monitor, None)
+    else:
+        approval = ApprovalServer(port=config.web_ui_port)
+        await approval.start()
 
     await connector_manager.start(monitor, bot=None)
-    logger.info("Headless mode active — Telegram and web UI disabled.")
+    logger.info(
+        "Telegram disabled — running %s",
+        "the web UI and connectors" if config.web_ui_enabled else "connectors only",
+    )
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -51,7 +63,10 @@ async def _run_headless(logger: logging.Logger) -> None:
     finally:
         logger.info("Shutting down headless mode…")
         await connector_manager.stop()
-        await approval.stop()
+        if approval is not None:
+            await approval.stop()
+        else:
+            await stop_web_server(monitor)
         await monitor.stop()
 
 
@@ -63,10 +78,7 @@ def main() -> None:
         print(f"Error: another codexbot instance is already running{holder}.")
         sys.exit(1)
 
-    logging.basicConfig(
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        level=logging.INFO,
-    )
+    setup_logging()
 
     try:
         try:
@@ -96,7 +108,7 @@ def main() -> None:
         logger.info("Codex sessions path: %s", config.codex_sessions_path)
 
         if not config.telegram_enabled:
-            logger.info("Telegram disabled — starting in headless connector mode")
+            logger.info("Telegram disabled — starting without the bot")
             asyncio.run(_run_headless(logger))
             return
 

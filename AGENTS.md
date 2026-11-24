@@ -28,6 +28,8 @@ uv run pyright src/codexbot/
 - Default state dir: `~/.codexbot/` (override `CODEXBOT_DIR`). Env-var names keep the legacy `CODEXBOT_*` prefix.
 - State files: `state.json`, `monitor_state.json`, `web_ui_secret`, `web_ui_totp_secret`.
 - Required env vars depend on the enabled channel: Telegram needs `TELEGRAM_BOT_TOKEN` + `ALLOWED_USERS`; web needs `WEB_UI_PASSWORD`.
+- `CODEXBOT_TELEGRAM_ENABLED=false` runs without the bot: the web UI (when `WEB_UI_PASSWORD` is set) and connectors.
+- Logs: `~/.codexbot/logs/codexbot.log` (rotated, 20 MB x 5); `launchd.err.log` only gets crashes and child-process stderr.
 - Runtime startup overrides: `CODEX_COMMAND`, `CLAUDE_COMMAND`.
 
 <!-- GSD:project-start source:.planning/PROJECT.md -->

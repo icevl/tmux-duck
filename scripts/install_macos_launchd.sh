@@ -156,7 +156,7 @@ launchctl kickstart -k "${LAUNCH_TARGET}"
 
 echo "Installed and started ${LABEL}"
 echo "Plist: ${PLIST_PATH}"
-echo "Logs:  ${LOG_DIR}/launchd.out.log and ${LOG_DIR}/launchd.err.log"
+echo "Logs:  ${LOG_DIR}/codexbot.log (rotated); crashes in ${LOG_DIR}/launchd.err.log"
 
 # Web UI hint
 if grep -qE '^[[:space:]]*WEB_UI_PASSWORD=' "${PROJECT_DIR}/.env" 2>/dev/null; then
