@@ -325,6 +325,61 @@ class TestHistoryCache:
         assert parse_entries.call_count == 1
 
     @pytest.mark.asyncio
+    async def test_history_appends_while_a_tool_call_is_pending(
+        self,
+        mgr: SessionManager,
+        tmp_path,
+    ) -> None:
+        # An active agent almost always has a call in flight; new lines must
+        # still be appended, not re-parse the whole transcript.
+        transcript = tmp_path / "session.jsonl"
+        tool_use = _tool_use_entry(
+            "Bash", {"command": "make"}, "2026-05-19T10:00:00Z", tool_id="t1"
+        )
+        _write_transcript(
+            transcript,
+            _message_entry("user", "build it", "2026-05-19T09:59:59Z"),
+            tool_use,
+        )
+        session = CodexSession("session-1", "", 1, str(transcript))
+        result = {
+            "type": "user",
+            "timestamp": "2026-05-19T10:00:05Z",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}
+                ]
+            },
+        }
+        reply = _message_entry("assistant", "done", "2026-05-19T10:00:06Z")
+
+        with patch.object(
+            mgr, "resolve_session_for_window", new=AsyncMock(return_value=session)
+        ):
+            first = await mgr.get_history_snapshot("@1")
+            with transcript.open("a", encoding="utf-8") as f:
+                for entry in (result, reply):
+                    f.write(json.dumps(entry) + "\n")
+            with patch(
+                "codexbot.session.TranscriptParser.parse_entries",
+                wraps=TranscriptParser.parse_entries,
+            ) as parse_entries:
+                second = await mgr.get_history_snapshot("@1")
+
+        kinds = [m["content_type"] for m in first.messages]
+        # The call shows once, not again as an end-of-parse placeholder.
+        assert kinds == ["text", "tool_use"]
+        assert parse_entries.call_count == 1
+        assert len(parse_entries.call_args.args[0]) == 2  # only the new lines
+        assert [m["content_type"] for m in second.messages] == [
+            "text",
+            "tool_use",
+            "tool_result",
+            "text",
+        ]
+        assert second.messages[-1]["text"] == "done"
+
+    @pytest.mark.asyncio
     async def test_history_snapshot_preserves_tool_metadata(
         self,
         mgr: SessionManager,
@@ -1189,3 +1244,34 @@ class TestDiscoveryGating:
             await mgr.schedule_hint_discovery("@1")
 
         skill_reg.schedule_discovery.assert_called_once()
+
+
+class TestTranscriptSummary:
+    def test_reads_only_appended_lines(self, tmp_path) -> None:
+        from codexbot.session import _summarize_transcript
+
+        transcript = tmp_path / "s.jsonl"
+        _write_transcript(
+            transcript,
+            _message_entry("user", "first ask", "2026-05-19T10:00:00Z"),
+            _message_entry("assistant", "first answer", "2026-05-19T10:00:01Z"),
+        )
+        state = _summarize_transcript(transcript, None)
+        assert (state.summary, state.last_user, state.message_count) == (
+            "first answer",
+            "first ask",
+            2,
+        )
+        assert _summarize_transcript(transcript, state) is state  # unchanged file
+
+        with transcript.open("a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    _message_entry("assistant", "second", "2026-05-19T10:00:02Z")
+                )
+                + "\n"
+                + '{"partial": '  # still being written: not counted yet
+            )
+        updated = _summarize_transcript(transcript, state)
+        assert (updated.summary, updated.message_count) == ("second", 3)
+        assert state.summary == "first answer"  # cached state isn't mutated

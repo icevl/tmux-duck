@@ -33,6 +33,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 STREAM_POLL_INTERVAL = 0.3
+# Idle windows are checked this often for a turn starting; only windows
+# that are generating get the fast interval. Capturing every pane (30+
+# sessions) every 0.3s cost ~100 tmux forks a second.
+IDLE_WINDOW_POLL_INTERVAL = 2.0
 STREAM_BODY_MAX_LINES = 120
 
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -100,6 +104,8 @@ async def stream_pane_loop(
     interval = poll_interval if poll_interval is not None else STREAM_POLL_INTERVAL
     last_body: dict[str, str] = {}
     active: set[str] = set()
+    last_polled: dict[str, float] = {}
+    loop = asyncio.get_running_loop()
 
     logger.info("Pane streaming started (interval: %ss)", interval)
     # Skip the whole tmux-poll cycle when no web client is listening.
@@ -126,6 +132,14 @@ async def stream_pane_loop(
             continue
         try:
             for window_id, ws in list(session_manager.window_states.items()):
+                now = loop.time()
+                if (
+                    window_id not in active
+                    and now - last_polled.get(window_id, 0.0)
+                    < IDLE_WINDOW_POLL_INTERVAL
+                ):
+                    continue
+                last_polled[window_id] = now
                 try:
                     w = await tmux_manager.find_window_by_id(window_id)
                     if not w:

@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import aiofiles
 
 from .media_store import store_images
 from .config import config
@@ -235,6 +234,9 @@ class SessionManager:
     # transcript_path -> (mtime, (session_id, cwd)). Old session files don't
     # change, so re-parsing their session_meta header every 2s is wasted work
     # — only ~172 stat() calls per scan after the cache is warm.
+    _transcript_summaries: dict[Path, "_TranscriptSummary"] = field(
+        default_factory=dict
+    )
     _session_meta_cache: dict[Path, tuple[float, tuple[str, str]]] = field(
         default_factory=dict, init=False, repr=False
     )
@@ -1097,46 +1099,37 @@ class SessionManager:
     async def _get_session_direct(
         self, session_id: str, cwd: str | None = None
     ) -> CodexSession | None:
-        """Get session metadata directly from transcript file."""
-        await self._refresh_sessions_index(force=True)
+        """Get session metadata directly from transcript file.
+
+        Called on nearly every request and message (via
+        ``resolve_session_for_window``), so it must stay cheap: the index is
+        rescanned only when the session isn't in it, and the transcript
+        summary is read incrementally (see ``_TranscriptSummary``).
+        """
         file_path = self._session_index.get(session_id)
         if not file_path or not file_path.exists():
-            return None
+            await self._refresh_sessions_index(force=True)
+            file_path = self._session_index.get(session_id)
+            if not file_path or not file_path.exists():
+                return None
 
-        summary = ""
-        last_user = ""
-        message_count = 0
-
+        cached = self._transcript_summaries.get(file_path)
         try:
-            async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
-                async for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    message_count += 1
-                    try:
-                        data = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-
-                    parsed = TranscriptParser.parse_message(data)
-                    if not parsed or not parsed.text.strip():
-                        continue
-                    text = parsed.text.strip()
-                    if parsed.message_type == "assistant":
-                        summary = text
-                    elif parsed.message_type == "user":
-                        last_user = text
+            summary_state = await asyncio.to_thread(
+                _summarize_transcript, file_path, cached
+            )
         except OSError:
             return None
+        self._transcript_summaries[file_path] = summary_state
 
+        summary = summary_state.summary
         if not summary:
-            summary = (last_user or "Untitled")[:80]
+            summary = (summary_state.last_user or "Untitled")[:80]
 
         return CodexSession(
             session_id=session_id,
             summary=summary,
-            message_count=message_count,
+            message_count=summary_state.message_count,
             file_path=str(file_path),
         )
 
@@ -1413,9 +1406,13 @@ class SessionManager:
                 self._touch_history_cache(cache_key)
                 return cached
 
+            # History is parsed in carry-over mode: a tool call still waiting
+            # for its result stays in pending_tools instead of being emitted
+            # again, so new lines can always be appended — an active agent
+            # almost always has a call in flight, and re-parsing a long
+            # transcript on every change stalled the server.
             if (
                 cached is not None
-                and not cached.pending_tools
                 and cached.size < stat.st_size
                 and cached.file_path == str(file_path)
                 and cached.session_id == session.session_id
@@ -1424,10 +1421,10 @@ class SessionManager:
                     file_path, start_byte=cached.size, end_byte=stat.st_size
                 )
                 if appended:
-                    parsed_entries, pending_tools = TranscriptParser.parse_entries(
-                        appended, pending_tools={}
+                    messages, pending_tools = await asyncio.to_thread(
+                        _parse_history, appended, cached.pending_tools
                     )
-                    cached.messages.extend(_messages_from_parsed(parsed_entries))
+                    cached.messages.extend(messages)
                     cached.pending_tools = pending_tools
                 cached.size = complete_end
                 cached.mtime_ns = stat.st_mtime_ns
@@ -1437,13 +1434,15 @@ class SessionManager:
             entries, complete_end = await self._read_complete_transcript_entries(
                 file_path
             )
-            parsed_entries, pending_tools = TranscriptParser.parse_entries(entries)
+            messages, pending_tools = await asyncio.to_thread(
+                _parse_history, entries, {}
+            )
             rebuilt = _HistoryCacheEntry(
                 session_id=session.session_id,
                 file_path=str(file_path),
                 size=complete_end,
                 mtime_ns=stat.st_mtime_ns,
-                messages=_messages_from_parsed(parsed_entries),
+                messages=messages,
                 pending_tools=pending_tools,
             )
             self._history_cache[cache_key] = rebuilt
@@ -1478,27 +1477,12 @@ class SessionManager:
         Binary reads keep offsets true byte positions even when a transcript
         holds multi-byte UTF-8 text.
         """
-        entries: list[dict] = []
-        offset = start_byte
-        complete_end = start_byte
-        async with aiofiles.open(file_path, "rb") as f:
-            if start_byte > 0:
-                await f.seek(start_byte)
-            while end_byte is None or offset < end_byte:
-                raw = await f.readline()
-                if not raw:
-                    break
-                if not raw.endswith(b"\n"):
-                    break  # partial tail: the agent is still writing it
-                data = TranscriptParser.parse_line(
-                    raw.decode("utf-8", errors="replace")
-                )
-                if data:
-                    data[TranscriptParser.TRANSCRIPT_OFFSET_KEY] = offset
-                    entries.append(data)
-                offset += len(raw)
-                complete_end = offset
-        return entries, complete_end
+        # One thread hop for the whole read + JSON decode: transcripts run to
+        # tens of MB (screenshots as base64), and a hop per line kept the event
+        # loop — WebSockets included — busy for seconds.
+        return await asyncio.to_thread(
+            _read_transcript_lines, file_path, start_byte, end_byte
+        )
 
     def _touch_history_cache(self, cache_key: str) -> None:
         if cache_key in self._history_cache:
@@ -1508,6 +1492,88 @@ class SessionManager:
         max_entries = max(1, config.history_cache_max_sessions)
         while len(self._history_cache) > max_entries:
             self._history_cache.popitem(last=False)
+
+
+@dataclass
+class _TranscriptSummary:
+    """Last assistant / user text and line count of a transcript, read so far."""
+
+    size: int = 0
+    summary: str = ""
+    last_user: str = ""
+    message_count: int = 0
+
+
+def _summarize_transcript(
+    file_path: Path, cached: _TranscriptSummary | None
+) -> _TranscriptSummary:
+    """Update ``cached`` with lines appended since; re-read if it shrank."""
+    size = file_path.stat().st_size
+    if cached is not None and cached.size == size:
+        return cached
+    state = (
+        _TranscriptSummary(**vars(cached))
+        if cached is not None and cached.size < size
+        else _TranscriptSummary()
+    )
+    with open(file_path, "rb") as f:
+        f.seek(state.size)
+        for raw in f:
+            if not raw.endswith(b"\n"):
+                break  # partial tail: read it once it's complete
+            state.size += len(raw)
+            line = raw.strip()
+            if not line:
+                continue
+            state.message_count += 1
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            parsed = TranscriptParser.parse_message(data)
+            if not parsed or not parsed.text.strip():
+                continue
+            text = parsed.text.strip()
+            if parsed.message_type == "assistant":
+                state.summary = text
+            elif parsed.message_type == "user":
+                state.last_user = text
+    return state
+
+
+def _read_transcript_lines(
+    file_path: Path, start_byte: int, end_byte: int | None
+) -> tuple[list[dict], int]:
+    """Blocking core of ``_read_complete_transcript_entries``."""
+    entries: list[dict] = []
+    offset = start_byte
+    complete_end = start_byte
+    with open(file_path, "rb") as f:
+        if start_byte > 0:
+            f.seek(start_byte)
+        while end_byte is None or offset < end_byte:
+            raw = f.readline()
+            if not raw:
+                break
+            if not raw.endswith(b"\n"):
+                break  # partial tail: the agent is still writing it
+            data = TranscriptParser.parse_line(raw.decode("utf-8", errors="replace"))
+            if data:
+                data[TranscriptParser.TRANSCRIPT_OFFSET_KEY] = offset
+                entries.append(data)
+            offset += len(raw)
+            complete_end = offset
+    return entries, complete_end
+
+
+def _parse_history(
+    entries: list[dict], pending_tools: dict[str, PendingToolInfo]
+) -> tuple[list[dict[str, Any]], dict[str, PendingToolInfo]]:
+    """Entries to history messages (blocking: parsing + storing images)."""
+    parsed, pending = TranscriptParser.parse_entries(
+        entries, pending_tools=pending_tools
+    )
+    return _messages_from_parsed(parsed), pending
 
 
 def _messages_from_parsed(parsed_entries: list[Any]) -> list[dict[str, Any]]:
